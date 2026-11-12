@@ -1,0 +1,7 @@
+# Build the Chatter image from this folder, instead of downloading it.
+# Use it after you change the code, or to add your own FANUC FOCAS2 files (see docs/guide/fanuc.md):
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+
+services:
+  chatterbox:
+    build: .

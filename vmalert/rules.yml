@@ -1,0 +1,44 @@
+# The rules that vmalert runs against VictoriaMetrics.
+# Recording rules save new series (for example 1-minute averages, so long charts stay fast).
+# The alert rules come from the Alert rules tab on each machine page (see the end of this file).
+# Rule format: https://docs.victoriametrics.com/victoriametrics/vmalert/#groups
+# After a change, run: docker compose restart vmalert
+
+groups:
+  # One average for each minute of each machine value. ChatterBox reads these for
+  # chart windows of 1 minute or more. apps/server/src/recording/rulesFile.test.ts
+  # checks that each value in HISTORY_VALUES has one.
+  - name: chatter-minute-averages
+    interval: 1m
+    rules:
+      - record: chatter_spindle_speed:avg1m
+        expr: avg_over_time(chatter_spindle_speed[1m])
+      - record: chatter_spindle_load:avg1m
+        expr: avg_over_time(chatter_spindle_load[1m])
+      - record: chatter_feedrate:avg1m
+        expr: avg_over_time(chatter_feedrate[1m])
+      - record: chatter_part_count:avg1m
+        expr: avg_over_time(chatter_part_count[1m])
+      - record: chatter_part_goal:avg1m
+        expr: avg_over_time(chatter_part_goal[1m])
+      - record: chatter_tool_number:avg1m
+        expr: avg_over_time(chatter_tool_number[1m])
+      - record: chatter_connected:avg1m
+        expr: avg_over_time(chatter_connected[1m])
+      - record: chatter_running:avg1m
+        expr: avg_over_time(chatter_running[1m])
+      - record: chatter_alarm:avg1m
+        expr: avg_over_time(chatter_alarm[1m])
+      - record: chatter_emergency:avg1m
+        expr: avg_over_time(chatter_emergency[1m])
+
+  # Utilization: the part of each hour that a program ran (0 to 1).
+  - name: chatter-utilization
+    interval: 1h
+    rules:
+      - record: chatter_running:avg1h
+        expr: avg_over_time(chatter_running[1h])
+
+  # The alert rules are not in this file. Set them on each machine page, in the Alert rules tab.
+  # Chatter writes them to its own file, which vmalert also reads, so an update keeps them.
+  # How to write your own query: docs/guide/custom-alert-queries.md

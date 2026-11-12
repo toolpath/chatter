@@ -1,0 +1,34 @@
+{
+  "name": "local-chatter",
+  "version": "1.0.0",
+  "description": "React + Hono app for monitoring CNC machine status",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "dev:history": "mkdir -p apps/server/data/alert-rules && docker compose -f docker-compose.dev.yml up -d",
+    "client": "npm run dev -w apps/web",
+    "server": "npm run dev -w apps/server",
+    "build": "npm run build -w @local-chatter/shared && npm run build -w apps/web && npm run build -w apps/server",
+    "build:shared": "npm run build -w @local-chatter/shared",
+    "typecheck": "npm run typecheck -w @local-chatter/shared && npm run typecheck -w apps/web && npm run typecheck -w apps/server && tsc -p tools/fake-machines",
+    "test": "npm run test:run -w @local-chatter/shared && npm run test:run -w apps/web && npm run test:run -w apps/server && npm run test:tools",
+    "test:tools": "vitest run --root tools/fake-machines",
+    "test:client": "npm run test:run -w apps/web",
+    "test:server": "npm run test:run -w apps/server",
+    "fake-machines": "tsx tools/fake-machines/index.ts",
+    "docs:dev": "npm --prefix docs run dev --",
+    "docs:build": "npm --prefix docs run build --",
+    "test:shared": "npm run test:run -w @local-chatter/shared"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

@@ -1,0 +1,103 @@
+/*
+ * The Chatter look, from apps/web/src/styles/app.css and the Toolpath UI theme.
+ * The site is always dark, like the app. The surfaces are the Toolpath zinc steps:
+ * zinc-950 page, zinc-900 card, zinc-800 line, zinc-700 strong line.
+ */
+.dark {
+  --vp-c-bg: #282828;
+  --vp-c-bg-alt: #2f2f2f;
+  --vp-c-bg-soft: #2f2f2f;
+  --vp-c-bg-elv: #2f2f2f;
+  --vp-c-divider: #3d3d3d;
+  --vp-c-border: #4b4b4b;
+  --vp-c-gutter: #3d3d3d;
+
+  --vp-c-text-1: #eeeeee;
+  --vp-c-text-2: #aeaeae;
+  --vp-c-text-3: #7b7b7b;
+
+  /* Toolpath green. Text on it must be dark: white text fails the contrast check. */
+  --vp-c-brand-1: #83c49f;
+  --vp-c-brand-2: #68b688;
+  --vp-c-brand-3: #4f9a6f;
+  --vp-c-brand-soft: rgba(104, 182, 136, 0.16);
+  --vp-button-brand-text: #1a1c23;
+  --vp-button-brand-hover-text: #1a1c23;
+  --vp-button-brand-active-text: #1a1c23;
+
+  /* The machine state colors: idle yellow for warnings, alarm red for danger. */
+  --vp-c-warning-1: #ffe066;
+  --vp-c-warning-soft: rgba(255, 224, 102, 0.14);
+  --vp-c-danger-1: #f4b1a3;
+  --vp-c-danger-soft: rgba(186, 91, 75, 0.2);
+
+  --vp-code-block-bg: #2f2f2f;
+}
+
+:root {
+  --vp-font-family-base: 'Open Sans', ui-sans-serif, system-ui, sans-serif;
+  --vp-font-family-mono: 'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Nunito for the headings, like the app. */
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3,
+.VPHero .text,
+.VPFeature .title {
+  font-family: Nunito, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 800;
+}
+
+/*
+ * A box is small, with the title in front of the first paragraph.
+ * Only the title and the paragraph after it are on one line: more paragraphs, lists, and code stay as blocks.
+ */
+.vp-doc .custom-block:not(details) {
+  width: fit-content;
+  margin: 8px 0;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.vp-doc .custom-block:not(details) p {
+  margin: 4px 0 0;
+}
+
+.vp-doc .custom-block:not(details) .custom-block-title,
+.vp-doc .custom-block:not(details) .custom-block-title + p {
+  display: inline;
+  margin: 0;
+}
+
+.vp-doc .custom-block:not(details) .custom-block-title {
+  margin-right: 4px;
+  font-size: 13px;
+}
+
+/* An info box uses the Toolpath info color (teal). */
+.dark {
+  --vp-custom-block-info-bg: rgba(107, 176, 179, 0.14);
+}
+
+.vp-doc .custom-block:not(details) ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.vp-doc .custom-block:not(details) li + li {
+  margin-top: 2px;
+}
+
+/*
+ * VitePress puts 96px of empty space under the last menu item. On a desktop screen that space
+ * makes the menu a little taller than the window, so a scroll bar shows for nothing.
+ * "aside" makes this rule win over the VitePress rule.
+ */
+@media (min-width: 960px) {
+  .Layout aside.VPSidebar {
+    padding-bottom: 32px;
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "name": "hardware-monitor-server",
+  "version": "1.0.0",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    "./app": {
+      "types": "./src/app.ts"
+    }
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "reset-password": "node dist/resetPassword.js",
+    "reset-password:dev": "tsx src/resetPassword.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.6",
+    "@local-chatter/shared": "*",
+    "basic-ftp": "^5.0.5",
+    "better-sqlite3": "^13.0.3",
+    "dotenv": "^16.3.1",
+    "hono": "^4.13.16",
+    "koffi": "^2.15.0",
+    "node-opcua-certificate-manager": "^2.187.16",
+    "node-opcua-client": "^2.187.16",
+    "ping": "^0.4.4",
+    "xml2js": "^0.6.2",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.0.0",
+    "@types/ping": "^0.4.4",
+    "@types/xml2js": "^0.4.14",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^1.1.0"
+  }
+}

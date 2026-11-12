@@ -1,0 +1,90 @@
+# Builds the Raspberry Pi card image (chatter.img.xz) for a release, and adds it to the GitHub Release
+# with chatter-imager.json (the list file for Raspberry Pi Imager). The list file has the checksum of the card.
+# The card gets the exact Chatter image that the release published, so the card and the update file match.
+#
+# docker.yml runs it after the release job. To make the card again, or for a release made before this
+# workflow, run it by hand: Actions > Pi card > Run workflow, with the tag. A run by hand uses the build
+# scripts of the branch that you pick, and the published Chatter image of the tag.
+
+name: Pi card
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release tag, such as v1.2.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: read
+
+# One card build for each tag at a time, so a run by hand and the release run do not upload over each other
+concurrency:
+  group: pi-card-${{ inputs.tag }}
+
+jobs:
+  card:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Only a release version. A pre-release such as v1.2.0-rc1 has no update file, so it gets no card.
+      - name: Check the tag
+        id: version
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::The tag must be a release tag, such as v1.2.0. It is \"$TAG\"."
+            exit 1
+          fi
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # build.sh saves the images for one processor type with "docker save --platform", which needs this store
+      - name: Turn on the containerd image store
+        run: |
+          config=/etc/docker/daemon.json
+          sudo mkdir -p /etc/docker
+          [ -s "$config" ] || echo '{}' | sudo tee "$config" > /dev/null
+          jq '.features["containerd-snapshotter"] = true' "$config" | sudo tee "$config.new" > /dev/null
+          sudo mv "$config.new" "$config"
+          sudo systemctl restart docker
+          docker info --format '{{.DriverStatus}}' | grep -q io.containerd.snapshotter
+
+      # customize.sh runs the setup scripts in the Pi's files. QEMU emulates the Pi's 32-bit ARM chip.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      # A login is not needed for a public package, but it avoids the pull limits of ghcr.io
+      - name: Log in to the GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build the card
+        env:
+          CHATTER_VERSION: ${{ steps.version.outputs.version }}
+          CHATTER_USE_RELEASE_IMAGE: 1
+          CHATTER_IMAGE_URL: https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag }}/chatter.img.xz
+        run: tools/pi-image/build.sh
+
+      - name: Add the card to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          tools/release/add-to-release.sh "$TAG" \
+            tools/pi-image/deploy/chatter.img.xz \
+            tools/pi-image/deploy/chatter-imager.json

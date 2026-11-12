@@ -1,0 +1,23 @@
+[Unit]
+Description=Chatter, the CNC machine monitor
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/chatter
+# Undoes an install of an update that a power cut or a hard kill stopped. "-": Chatter starts also when this fails.
+ExecStartPre=-/opt/chatter/update-chatter.sh recover
+# The first start loads the images that came on the card. On a Pi, this takes some minutes.
+ExecStartPre=/opt/chatter/load-images.sh
+# The images are already on the Pi, so this needs no internet.
+ExecStart=/usr/bin/docker compose up --detach
+ExecStop=/usr/bin/docker compose stop
+TimeoutStartSec=0
+# A Pi in a shop often has no screen. If a start fails (for example, an image does not load), try again.
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

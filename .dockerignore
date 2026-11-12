@@ -1,0 +1,16 @@
+# Files that must not go into the Docker image.
+# The image installs its own Linux packages, so local ones would only break it.
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+
+# Local settings, secrets, and data
+**/.env
+apps/server/data
+
+# Not needed to run ChatterBox
+.git
+.github
+.claude
+tools
+**/*.log

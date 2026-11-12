@@ -1,0 +1,12 @@
+# Only on the Pi card, in /opt/chatter next to docker-compose.yml. Docker Compose reads this file by itself.
+# It gives Chatter the update folder of the update helper (update-chatter.sh):
+# - Chatter can read update/status.json and update/helper.json, but not change them (read-only).
+# - Chatter can write the update file and the request into update/inbox/.
+# The update file never holds this file, so an update cannot change it.
+# It names the "chatterbox" service. If a later docker-compose.yml gives that service a new name,
+# this file must change too (with a new card, or by hand).
+services:
+  chatterbox:
+    volumes:
+      - ./update:/app/update:ro
+      - ./update/inbox:/app/update/inbox

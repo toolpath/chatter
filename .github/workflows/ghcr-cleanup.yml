@@ -1,0 +1,44 @@
+# Deletes the images on ghcr.io that no release uses, because each image uses the organisation's Packages storage.
+# It deletes the old "edge" images and the untagged images. It keeps every image with a version tag, such as 1.2.0,
+# with its parts (one image for each processor, and the build attestations), so people can still pull old versions.
+#
+# It runs after each "Docker image" run of a release tag, because only a release pushes images.
+# To run it by hand: Actions > ghcr cleanup > Run workflow.
+# Pick "dry run" to see what it would delete, without deleting.
+
+name: ghcr cleanup
+
+on:
+  workflow_run:
+    workflows: [Docker image]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Only show what it would delete
+        type: boolean
+        default: true
+
+permissions:
+  packages: write
+
+concurrency:
+  group: ghcr-cleanup
+
+jobs:
+  cleanup:
+    # For a tag, workflow_run gives the tag name, such as v1.2.0, as head_branch
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.workflow_run.head_branch, 'v')
+    runs-on: ubuntu-latest
+    steps:
+      # The action knows about images for more than one processor: it never deletes a part that a tagged image uses.
+      # A release build pushes the parts first and tags the image after. "older-than" keeps the parts of a release
+      # that is still building, because another Docker run can start this cleanup at the same time.
+      - name: Delete the edge and untagged images
+        uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
+        with:
+          package: chatter
+          delete-tags: edge
+          delete-untagged: true
+          older-than: 2 hours
+          dry-run: ${{ inputs.dry-run || false }}

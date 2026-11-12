@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chatter</title>
+    <!-- The icon and the app name for the browser tab and for "Add to Home Screen" on a phone -->
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#282828" />
+    <meta name="apple-mobile-web-app-title" content="Chatter" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <script>
+      // Show the light colors before the page draws, so a light page does not flash dark.
+      // src/theme/theme.ts does the same after the app starts. Keep the key and the rules the same.
+      try {
+        var choice = localStorage.getItem('chatter-theme');
+        var computerIsLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+        if (choice === 'light' || (choice === 'system' && computerIsLight)) {
+          document.documentElement.dataset.theme = 'light';
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#f2f2f2');
+        }
+      } catch (e) {
+        // The storage is blocked, so the page stays dark
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

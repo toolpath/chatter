@@ -1,0 +1,12 @@
+[Unit]
+Description=Start the Chatter update helper when Chatter asks for a check or an install
+
+[Path]
+# Chatter (in its container) writes this file. The helper takes it out of the inbox at each run.
+PathExists=/opt/chatter/update/inbox/request.json
+Unit=chatter-update.service
+# Each request must start the helper, also many requests in a short time.
+TriggerLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target

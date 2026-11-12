@@ -1,0 +1,16 @@
+{
+  "name": "chatter-docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vitepress dev",
+    "build": "vitepress build",
+    "preview": "vitepress preview"
+  },
+  "devDependencies": {
+    "@fontsource/nunito": "^5.3.0",
+    "@fontsource/open-sans": "^5.3.0",
+    "@fontsource/roboto-mono": "^5.3.0",
+    "vitepress": "1.6.4"
+  }
+}

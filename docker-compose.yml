@@ -1,0 +1,103 @@
+# Chatter: the server and the web app in one container, plus the machine history database.
+# Start everything:  docker compose up -d
+# Then open http://localhost:3001 (or http://<this computer's IP>:3001 from another computer)
+# To build the image from this folder instead of downloading it, see docker-compose.build.yml.
+
+# Docker keeps what each container writes (see it with "docker logs chatterbox").
+# Without a limit, that log grows until the disk is full, and on a Raspberry Pi the disk is the SD card.
+# Each container keeps at most 3 files of 10 MB, so the logs of all three use 90 MB at most.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  chatterbox:
+    # The image is published for Intel/AMD (linux/amd64), 64-bit ARM (linux/arm64), and 32-bit ARM (linux/arm/v7).
+    # Docker picks the one for the processor of this computer.
+    image: ghcr.io/toolpath/chatter:latest
+    # FANUC supplies its FOCAS library only for Intel/AMD and 32-bit ARM, not for 64-bit ARM.
+    # To read FANUC machines on 64-bit ARM, remove the # before one line below.
+    # platform: linux/amd64    # Mac with Apple silicon (runs slower, because the Mac emulates an Intel processor)
+    # platform: linux/arm/v7   # 64-bit Raspberry Pi OS (not tested on a real Pi yet)
+    container_name: chatterbox
+    ports:
+      - "3001:3001"
+    # Only behind a reverse proxy (for HTTPS): the address of the proxy. See docs/guide/https.md.
+    # Settings > HTTPS and proxy can set it too. When TRUST_PROXY is set here, it wins, and Settings cannot change it.
+    environment:
+      # Where ChatterBox saves and reads the machine history (numbers such as spindle speed).
+      VICTORIA_METRICS_URL: "http://victoriametrics:8428"
+      # vmalert sends its alerts to port 3002. That port has no login, so it is not in "ports:" above.
+      # Only the containers on the compose network can reach it.
+      ALERT_HOST: "0.0.0.0"
+      # ChatterBox writes the alert rules of each machine (the Alert rules tab) to this folder, and vmalert reads them.
+      ALERT_RULES_DIR: "/app/alert-rules"
+      # ChatterBox asks vmalert here to read the rules again after a change.
+      VMALERT_URL: "http://vmalert:8880"
+      # TRUST_PROXY: "172.18.0.1"   # an example only: use the address from Settings > HTTPS and proxy
+    volumes:
+      # The machine list, users, upload history, and machine events. Kept when the image is rebuilt or updated.
+      - chatterbox-data:/app/data
+      # The vmalert file made from the alert rules. The rules themselves are saved in chatterbox-data.
+      - chatter-alert-rules:/app/alert-rules
+    restart: unless-stopped
+    logging: *logging
+
+  # The machine history database (a time series database: it keeps numbers with a time).
+  # It has no login, so its port is not published. Only ChatterBox talks to it, on the compose network.
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.155.0
+    container_name: chatter-victoriametrics
+    command:
+      - "-storageDataPath=/storage"
+      # Keep the machine history for 1 year, then delete it.
+      - "-retentionPeriod=1y"
+      # The most memory its caches can use. Small, for a Raspberry Pi with 512 MB.
+      # On a Pi Zero 2 W with 4 machines, VictoriaMetrics used about 45 MB (see docs/install/raspberry-pi.md, "Memory on a Pi").
+      - "-memory.allowedPercent=30"
+    volumes:
+      # The machine history. Kept when the image is updated. Back it up with chatterbox-data.
+      - victoriametrics-data:/storage
+    restart: unless-stopped
+    logging: *logging
+
+  # Runs the rules every 15 seconds: it saves averages (vmalert/rules.yml) and sends the alerts
+  # of the Alert rules tab to ChatterBox. It has no login, so its port is not published.
+  vmalert:
+    image: victoriametrics/vmalert:v1.155.0
+    container_name: chatter-vmalert
+    command:
+      - "-rule=/etc/vmalert/rules.yml"
+      # The alert rules that ChatterBox writes
+      - "-rule=/etc/vmalert-chatter/*.yml"
+      # Reads the rules again each 30 seconds, also when ChatterBox could not ask it to
+      - "-configCheckInterval=30s"
+      - "-evaluationInterval=15s"
+      # Reads the machine history
+      - "-datasource.url=http://victoriametrics:8428"
+      # Saves the averages and the alert state
+      - "-remoteWrite.url=http://victoriametrics:8428"
+      # Reads the alert state again after a restart
+      - "-remoteRead.url=http://victoriametrics:8428"
+      # Sends the alerts to ChatterBox
+      - "-notifier.url=http://chatterbox:3002"
+    volumes:
+      # The folder, not the single file: the update helper on a Pi puts a new rules.yml in place with a rename,
+      # and a single-file mount would keep showing the old file.
+      - ./vmalert:/etc/vmalert:ro
+      - chatter-alert-rules:/etc/vmalert-chatter:ro
+    depends_on:
+      - victoriametrics
+      # ChatterBox mounts chatter-alert-rules first, so Docker fills the new volume from the ChatterBox image
+      # (an empty rules file, owned by the user that ChatterBox runs as)
+      - chatterbox
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  chatterbox-data:
+  victoriametrics-data:
+  # ChatterBox writes it, vmalert reads it. ChatterBox writes it again at each start, so it needs no backup.
+  chatter-alert-rules:

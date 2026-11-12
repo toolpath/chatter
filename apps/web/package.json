@@ -1,0 +1,42 @@
+{
+  "name": "hardware-monitor-client",
+  "private": true,
+  "version": "1.0.0",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fontsource/nunito": "^5.3.0",
+    "@fontsource/open-sans": "^5.3.0",
+    "@fontsource/roboto-mono": "^5.3.0",
+    "@local-chatter/shared": "*",
+    "@toolpath/ui": "^1.6.0",
+    "hono": "^4.13.16",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^6.21.0",
+    "tailwindcss": "^4.3.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.5",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^6.2.0",
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^4.2.1",
+    "hardware-monitor-server": "*",
+    "jsdom": "^23.0.1",
+    "typescript": "^5.9.3",
+    "vite": "^5.0.8",
+    "vitest": "^1.1.0"
+  }
+}

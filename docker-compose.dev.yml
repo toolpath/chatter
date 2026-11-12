@@ -1,0 +1,49 @@
+# Only the machine history database, for "npm run dev" (ChatterBox runs on this computer, not in Docker).
+# Start:  npm run dev:history
+# Stop:   docker compose -f docker-compose.dev.yml down   (the history stays)
+# ChatterBox finds VictoriaMetrics at http://localhost:8428 (or the VICTORIA_METRICS_URL in apps/server/.env).
+
+name: chatter-dev
+
+services:
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.155.0
+    command:
+      - "-storageDataPath=/storage"
+      - "-retentionPeriod=1y"
+    ports:
+      # Only this computer can connect, because VictoriaMetrics has no login.
+      - "127.0.0.1:8428:8428"
+    volumes:
+      - victoriametrics-data:/storage
+
+  vmalert:
+    image: victoriametrics/vmalert:v1.155.0
+    command:
+      - "-rule=/etc/vmalert/rules.yml"
+      # The alert rules that ChatterBox writes (ALERT_RULES_DIR, default apps/server/data/alert-rules)
+      - "-rule=/etc/vmalert-chatter/*.yml"
+      - "-configCheckInterval=30s"
+      - "-evaluationInterval=15s"
+      - "-datasource.url=http://victoriametrics:8428"
+      - "-remoteWrite.url=http://victoriametrics:8428"
+      - "-remoteRead.url=http://victoriametrics:8428"
+      # ChatterBox runs on this computer, outside Docker. It gets the alerts on port 3002.
+      # On Linux, also set ALERT_HOST=0.0.0.0 in apps/server/.env, because Docker cannot reach 127.0.0.1 of the computer.
+      - "-notifier.url=http://host.docker.internal:3002"
+    ports:
+      # ChatterBox asks vmalert here to read the rules again (VMALERT_URL). Only this computer can connect.
+      - "127.0.0.1:8880:8880"
+    extra_hosts:
+      # Linux needs this line for host.docker.internal. Docker Desktop has it already.
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # The folder, not the single file: many editors save with a rename,
+      # and a single-file mount would keep showing the old file.
+      - ./vmalert:/etc/vmalert:ro
+      - ./apps/server/data/alert-rules:/etc/vmalert-chatter:ro
+    depends_on:
+      - victoriametrics
+
+volumes:
+  victoriametrics-data:

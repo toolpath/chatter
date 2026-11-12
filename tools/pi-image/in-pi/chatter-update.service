@@ -1,0 +1,17 @@
+[Unit]
+Description=Chatter update helper: checks and installs signed update files
+Requires=docker.service
+# At a start of the Pi, chatter.service first undoes an install that stopped, and loads the images.
+After=docker.service chatter.service
+# Each request must start the helper, also many requests in a short time.
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=/opt/chatter/update-chatter.sh request
+# Also after a crash or a hard kill: undo an install that stopped, so the old version runs again.
+ExecStopPost=/opt/chatter/update-chatter.sh recover
+# An install loads images and waits up to 5 minutes for the new version. On a Pi, this takes long.
+TimeoutStartSec=0
+# On a stop (for example, a shutdown during an install), give the helper time to roll back.
+TimeoutStopSec=15min

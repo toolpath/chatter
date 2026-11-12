@@ -1,0 +1,26 @@
+node_modules/
+.env
+dist/
+*.tsbuildinfo
+data/
+# FANUC FOCAS2 library files are owned by FANUC and are not part of this repo.
+# See apps/server/native/focas/README.md for how to add your own copy.
+apps/server/native/focas/**
+!apps/server/native/focas/README.md
+
+# Files of the fake machine FTP servers
+tools/fake-machines/.ftp-files/
+
+# The update folder of the Pi card (tools/pi-image/in-pi/docker-compose.override.yml), if you try the override here
+/update/
+
+# The Raspberry Pi card image build (tools/pi-image/build.sh)
+tools/pi-image/.work/
+tools/pi-image/deploy/
+
+# The docs site build (docs/, VitePress)
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+
+# macOS folder files
+.DS_Store

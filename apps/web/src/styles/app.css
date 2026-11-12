@@ -1,0 +1,109 @@
+/* Tailwind CSS 4 and the Toolpath UI theme. The order matters. */
+@import 'tailwindcss';
+@import '@toolpath/ui/theme.css';
+
+/* How long a side panel takes to slide in or out. useSlideOut reads this value, so it is in one place only. */
+:root {
+  --slide-duration: 200ms;
+}
+
+/*
+ * ChatterBox colors, on top of the Toolpath theme.
+ * The classes are written for the dark page. The surfaces are the theme's zinc steps:
+ * zinc-950 page, zinc-900 card, zinc-800 line, zinc-700 strong line, and zinc-50 the strongest text.
+ * The light theme (below) swaps the zinc steps, so the same classes give a light page.
+ */
+@theme {
+  /* A side panel comes in from the right and goes out the same way */
+  --animate-slide-in-right: slide-in-right var(--slide-duration) ease-out;
+  --animate-slide-out-right: slide-out-right var(--slide-duration) ease-in forwards;
+  --animate-fade-in: fade-in var(--slide-duration) ease-out;
+  --animate-fade-out: fade-out var(--slide-duration) ease-in forwards;
+  @keyframes slide-in-right {
+    from { transform: translateX(100%); }
+  }
+  @keyframes slide-out-right {
+    to { transform: translateX(100%); }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+  }
+  @keyframes fade-out {
+    to { opacity: 0; }
+  }
+
+  /* Toolpath green. Text on it must be dark: white text fails the contrast check. */
+  --color-primary: #68b688;
+  --color-primary-darken: #4f9a6f;
+  --color-primary-lighten: #83c49f;
+  --color-on-primary: #1a1c23;
+  /* Green text and links. In the light theme they are darker, so they are easy to read on white. */
+  --color-primary-text: #68b688;
+  --color-primary-text-hover: #83c49f;
+
+  /* Machine states. Each state also has a word and an icon, never only a color. */
+  --color-running: #68b688;
+  --color-idle: #ffe066;
+  --color-idle-text: #ffe066;
+  --color-alarm: #ba5b4b;
+  --color-alarm-icon: #d9826f;
+  --color-alarm-soft: #f4b1a3;
+  --color-offline: #7b7b7b;
+  --color-offline-icon: #9a9a9a;
+}
+
+/*
+ * The light theme. theme.ts sets data-theme="light" on <html>.
+ * Each zinc step gets the light color for the same job: zinc-950 is still the page, and zinc-50 is still the strongest text.
+ * The state fills and the green of the buttons and the logo stay the same. Only the colors used for text get darker.
+ */
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --color-zinc-50: #1f1f1f;
+  --color-zinc-100: #2a2a2a;
+  --color-zinc-200: #3d3d3d;
+  --color-zinc-300: #555555;
+  --color-zinc-400: #6b6b6b;
+  --color-zinc-500: #8a8a8a;
+  --color-zinc-600: #a8a8a8;
+  --color-zinc-700: #c9c9c9;
+  --color-zinc-800: #dedede;
+  --color-zinc-900: #ffffff;
+  --color-zinc-950: #f2f2f2;
+
+  --color-primary-text: #2f7a4f;
+  --color-primary-text-hover: #22573a;
+  --color-idle: #f2c200;
+  --color-idle-text: #7a6000;
+  --color-alarm-icon: #b4483a;
+  --color-alarm-soft: #8f2f22;
+  --color-offline-icon: #6b6b6b;
+  --color-info: #3f8a8d;
+}
+
+/* The knob of the Toolpath switch uses zinc-100 in the dark theme. Swapped, that is near black, so keep it white. */
+:root[data-theme='light'] [data-thumb] {
+  background-color: #ffffff;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    /* The whole app at 80%, like the browser zoomed out. Every size is in rem, so it follows this. */
+    font-size: 80%;
+  }
+
+  body {
+    @apply bg-zinc-950 font-body text-sm text-zinc-50;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-info);
+    outline-offset: 2px;
+  }
+
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+}
