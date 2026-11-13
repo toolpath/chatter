@@ -2,7 +2,7 @@ import { createRequire } from 'module';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { Worker } from 'worker_threads';
-import { Focas, type FocasAlarm, type FocasMacro, type FocasOperatorMessage, type FocasProgram, type FocasSpindleSpeed, type FocasStatus } from './focas.js';
+import { Focas, type FocasAlarm, type FocasMacro, type FocasOperatorMessage, type FocasProgram, type FocasSpindleSpeed, type FocasStatus, type FocasSystemInfo } from './focas.js';
 import type { FocasLoader } from './focasLibraryInstaller.js';
 import type { FocasCommand, FocasRead, FocasRequest, FocasResponse } from './focasRequests.js';
 import { FocasError, isBusy } from './focasError.js';
@@ -220,6 +220,15 @@ export class FocasSession {
 
   readOperatorMessages(): Promise<FocasOperatorMessage[]> {
     return this.read('readOperatorMessages') as Promise<FocasOperatorMessage[]>;
+  }
+
+  readSystemInfo(): Promise<FocasSystemInfo> {
+    return this.read('readSystemInfo') as Promise<FocasSystemInfo>;
+  }
+
+  /** How many paths the control has. Chatter reads only the first. */
+  readPathCount(): Promise<number> {
+    return this.read('readPathCount') as Promise<number>;
   }
 
   /** A control that is busy (EW_BUSY) gets a few more tries, a moment apart */

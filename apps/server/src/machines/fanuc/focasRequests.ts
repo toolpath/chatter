@@ -14,7 +14,9 @@ export type FocasRead =
   | 'readMacro'
   | 'readProgram'
   | 'readAlarms'
-  | 'readOperatorMessages';
+  | 'readOperatorMessages'
+  | 'readSystemInfo'
+  | 'readPathCount';
 
 export type FocasCommand =
   | { kind: 'initialize'; libraryPath: string; startProcess: boolean }
@@ -51,6 +53,8 @@ const READS: ReadonlySet<string> = new Set<FocasRead>([
   'readProgram',
   'readAlarms',
   'readOperatorMessages',
+  'readSystemInfo',
+  'readPathCount',
 ]);
 
 /**

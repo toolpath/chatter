@@ -2,6 +2,7 @@ import { BaseMachineConnector, errorMessage } from '../BaseMachineConnector.js';
 import { Focas } from './focas.js';
 import { isConnectionLost } from './focasError.js';
 import { focasThreads, type FocasSession, type FocasThread } from './focasThread.js';
+import { createLogger } from '../../logging/logger.js';
 import type {
   FanucMachineConfig,
   FanucMachineData,
@@ -21,16 +22,24 @@ const UNKNOWN_ALARM_CODE = 'ALARM';
 const UNKNOWN_ALARM_MESSAGE = 'Alarm active (the control gave no details)';
 
 /**
- * Run a read that some controls or setups do not support. Gives undefined when the read fails.
- * A lost connection (EW_SOCKET or EW_HANDLE) still throws, so the poll fails and the next poll connects again.
+ * The reads of one poll stop after this time, so a connection that dies in the middle of a poll fails it
+ * before the poll limit of the scheduler (10 seconds), instead of waiting out the timeout of each read
  */
-async function readIfSupported<T>(read: () => Promise<T>): Promise<T | undefined> {
-  try {
-    return await read();
-  } catch (error) {
-    if (isConnectionLost(error)) throw error;
-    return undefined;
-  }
+const POLL_READS_DEADLINE_MS = 8000;
+
+/** The Series 15 controls give cnc_statinfo another layout (ODBST), which Chatter does not read */
+const SERIES_15 = '15';
+
+const log = createLogger('fanuc');
+
+/** What the control is, read once after each connect */
+interface ControlInfo {
+  /** The series, for example "31" or "0" */
+  series?: string;
+  /** M (mill), T (lathe), TT ... */
+  type?: string;
+  /** The number of paths. Chatter reads only path 1. */
+  paths?: number;
 }
 
 /**
@@ -55,6 +64,15 @@ export class FanucConnector extends BaseMachineConnector {
   private data: FanucMachineData = {};
   private prevData: FanucMachineData = {};
   private connectionTimeoutSeconds: number;
+  /** After this time (Date.now()), the reads of the poll that runs stop */
+  private pollDeadline = Infinity;
+  /** The optional reads that failed, each logged once until it works again */
+  private readonly failingReads = new Set<string>();
+  private controlInfo: ControlInfo = {};
+  /** ODBST.tmmode of the last status read, as the control gives it */
+  private tmMode: number | undefined;
+  /** The last control information that was logged, so each control is logged once */
+  private loggedControlInfo = '';
 
   constructor(config: FanucMachineConfig) {
     super({
@@ -96,6 +114,7 @@ export class FanucConnector extends BaseMachineConnector {
       const disconnects = this.disconnects;
       this.thread ??= focasThreads.thread();
       const session = await this.thread.connect(this.host, this.focasPort, this.connectionTimeoutSeconds);
+      await this.readControlInfo(session);
       if (disconnects !== this.disconnects) {
         // The machine was disconnected or removed while it connected, so it must not keep the connection
         session.disconnect().catch(() => undefined);
@@ -152,9 +171,78 @@ export class FanucConnector extends BaseMachineConnector {
     return this.getStatus();
   }
 
+  /**
+   * What the control is: its series and type (cnc_sysinfo), and its number of paths (cnc_getpath).
+   * Each read may fail, and then that value stays unknown. A Series 15 control is refused,
+   * because its status reply has another layout, so every value would be wrong.
+   */
+  private async readControlInfo(session: FocasSession): Promise<void> {
+    try {
+      const system = await this.readIfSupported('system information', () => session.readSystemInfo());
+      const paths = await this.readIfSupported('path count', () => session.readPathCount());
+      this.controlInfo = { series: system?.cncType, type: system?.mtType, paths };
+    } catch (error) {
+      session.disconnect().catch(() => undefined);
+      throw error;
+    }
+
+    if (this.controlInfo.series === SERIES_15) {
+      session.disconnect().catch(() => undefined);
+      log.warn('Chatter cannot read a FANUC Series 15 control', { machine: this.id });
+      throw new Error('This is a Series 15 control. Chatter cannot read its status.');
+    }
+    this.logControlInfo();
+  }
+
+  /** Log the control once, and warn once when it has more than one path */
+  private logControlInfo(): void {
+    const info = JSON.stringify(this.controlInfo);
+    if (info === this.loggedControlInfo) return;
+    this.loggedControlInfo = info;
+
+    log.info('FANUC control', { machine: this.id, ...this.controlInfo });
+    if ((this.controlInfo.paths ?? 1) > 1) {
+      log.warn('The FANUC control has more than one path. Chatter reads only path 1.', {
+        machine: this.id, paths: this.controlInfo.paths,
+      });
+    }
+  }
+
+  /**
+   * Run a read that some controls or setups do not support. Gives undefined when the read fails,
+   * and logs the failure once, until the read works again.
+   * A lost connection (EW_SOCKET or EW_HANDLE) still throws, so the poll stops its other reads at once,
+   * fails, and the next poll connects again. A poll that runs past its deadline fails the same way.
+   */
+  private async readIfSupported<T>(name: string, read: () => Promise<T>): Promise<T | undefined> {
+    if (Date.now() > this.pollDeadline) throw new Error('The reads of this poll took too long');
+    try {
+      const value = await read();
+      this.failingReads.delete(name);
+      return value;
+    } catch (error) {
+      if (isConnectionLost(error)) throw error;
+      if (!this.failingReads.has(name)) {
+        this.failingReads.add(name);
+        log.info('A FANUC read did not work, so its value is left out', { machine: this.id, read: name, error: errorMessage(error) });
+      }
+      return undefined;
+    }
+  }
+
   /** The status read must work, or the poll fails. The other values are optional. */
   private async readMachineValues(focas: FocasSession): Promise<void> {
+    this.pollDeadline = Date.now() + POLL_READS_DEADLINE_MS;
+    try {
+      await this.readAllValues(focas);
+    } finally {
+      this.pollDeadline = Infinity;
+    }
+  }
+
+  private async readAllValues(focas: FocasSession): Promise<void> {
     const status = await focas.readStatus();
+    this.tmMode = status.tmMode;
     this.data.mode = status.mode;
     this.data.runState = status.runState;
     this.data.emergency = status.emergency;
@@ -172,12 +260,12 @@ export class FanucConnector extends BaseMachineConnector {
 
   /** A read that fails forgets the old value, so an old value is never shown as the current one */
   private async readSpindleAndProgram(focas: FocasSession): Promise<void> {
-    this.data.spindleSpeed = await readIfSupported(async () => (await focas.readSpindleSpeed()).speed);
+    this.data.spindleSpeed = await this.readIfSupported('spindle speed', async () => (await focas.readSpindleSpeed()).speed);
 
     // An analog spindle gives no load
-    this.data.spindleLoad = await readIfSupported(() => focas.readSpindleLoad());
+    this.data.spindleLoad = await this.readIfSupported('spindle load', () => focas.readSpindleLoad());
 
-    const program = await readIfSupported(() => focas.readProgram());
+    const program = await this.readIfSupported('program', () => focas.readProgram());
     this.data.program = program ? program.name || `O${program.number}` : undefined;
   }
 
@@ -203,7 +291,7 @@ export class FanucConnector extends BaseMachineConnector {
 
   /** The value of a macro variable, or undefined when the variable does not exist */
   private readMacroValue(focas: FocasSession, macroNumber: number): Promise<number | undefined> {
-    return readIfSupported(async () => (await focas.readMacro(macroNumber)).value);
+    return this.readIfSupported(`macro ${macroNumber}`, async () => (await focas.readMacro(macroNumber)).value);
   }
 
   /**
@@ -211,7 +299,7 @@ export class FanucConnector extends BaseMachineConnector {
    * An alarm with no list gets a general code and message, never the text of an older alarm.
    */
   private async readAlarmData(focas: FocasSession, statusAlarm: boolean): Promise<void> {
-    const alarms = await readIfSupported(() => focas.readAlarms());
+    const alarms = await this.readIfSupported('alarms', () => focas.readAlarms());
     if (alarms && alarms.length > 0) {
       this.data.alarm = true;
       this.data.alarmCode = String(alarms[0].alarmNo);
@@ -243,7 +331,7 @@ export class FanucConnector extends BaseMachineConnector {
    * No message, or a read that fails, clears the old message.
    */
   private async readOperatorMessageData(focas: FocasSession): Promise<void> {
-    const messages = await readIfSupported(() => focas.readOperatorMessages()) ?? [];
+    const messages = await this.readIfSupported('operator messages', () => focas.readOperatorMessages()) ?? [];
     const shownMessages = messages.filter(message => !this.ignoredMessageTypes.includes(message.type));
     this.data.operatorMessage = shownMessages.at(-1)?.message;
   }
@@ -284,6 +372,20 @@ export class FanucConnector extends BaseMachineConnector {
     return this.focas !== null && this.connected;
   }
 
+  /** What the control is, as read-only snapshot fields. Only the values the control gave. */
+  private controlInfoFields(): Record<string, string | number | boolean> {
+    const { series, type, paths } = this.controlInfo;
+    const fields: Record<string, string | number | boolean> = {};
+    if (series) fields.controlSeries = series;
+    if (type) {
+      fields.controlType = type;
+      fields.lathe = type.startsWith('T');
+    }
+    if (paths !== undefined) fields.paths = paths;
+    if (this.tmMode !== undefined) fields.tmMode = this.tmMode;
+    return fields;
+  }
+
   getDataSnapshot(): MachineDataSnapshot {
     const custom: Record<string, string | number | boolean> = {};
     if (this.data.motion !== undefined) {
@@ -292,6 +394,7 @@ export class FanucConnector extends BaseMachineConnector {
     if (this.data.operatorMessage) {
       custom.operatorMessage = this.data.operatorMessage;
     }
+    Object.assign(custom, this.controlInfoFields());
 
     return this.buildSnapshot({
       mode: this.data.mode,

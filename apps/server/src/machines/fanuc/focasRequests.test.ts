@@ -12,6 +12,8 @@ function fakeConnection(name: string): FocasConnection {
     readProgram: vi.fn(() => ({ name: 'O1', number: 1 })),
     readAlarms: vi.fn(() => []),
     readOperatorMessages: vi.fn(() => []),
+    readSystemInfo: vi.fn(() => ({ cncType: '31', mtType: 'M', series: 'G421', version: '0010', maxAxes: 32 })),
+    readPathCount: vi.fn(() => 1),
   };
 }
 

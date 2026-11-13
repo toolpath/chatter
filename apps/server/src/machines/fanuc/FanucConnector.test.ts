@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FanucConnector } from './FanucConnector.js';
 import { EW_HANDLE, EW_SOCKET, FocasError } from './focasError.js';
+import { captureLog } from '../../logging/testSupport.js';
 
 // Type definitions for mock return values
 interface MockStatus {
@@ -39,6 +40,8 @@ const mockFocasInstance = {
   readAlarms: vi.fn<[], MockAlarm[]>(() => []),
   readMacro: vi.fn(() => ({ value: 100 })),
   readOperatorMessages: vi.fn<[], MockOperatorMessage[]>(() => []),
+  readSystemInfo: vi.fn<[], { cncType: string; mtType: string }>(() => ({ cncType: '31', mtType: 'M' })),
+  readPathCount: vi.fn<[], number>(() => 1),
 };
 
 // Track availability for tests
@@ -89,6 +92,8 @@ describe('FanucConnector', () => {
     mockFocasInstance.readAlarms.mockReturnValue([]);
     mockFocasInstance.readMacro.mockReturnValue({ value: 100 });
     mockFocasInstance.readOperatorMessages.mockReturnValue([]);
+    mockFocasInstance.readSystemInfo.mockReset().mockReturnValue({ cncType: '31', mtType: 'M' });
+    mockFocasInstance.readPathCount.mockReset().mockReturnValue(1);
 
     connector = new FanucConnector({
       id: 'test_fanuc',
@@ -840,6 +845,101 @@ describe('FanucConnector', () => {
 
       expect(status.connected).toBe(true);
       expect(status.errors).toEqual([]);
+    });
+  });
+
+  describe('a poll whose connection dies', () => {
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('stops the other reads of the poll at once after a lost connection', async () => {
+      await connector.connect();
+      mockFocasInstance.readSpindleSpeed.mockImplementationOnce(() => { throw new FocasError('Failed to read spindle speed: Socket error', EW_SOCKET); });
+
+      const status = await connector.poll();
+
+      expect(status.connected).toBe(false);
+      expect(mockFocasInstance.readProgram).not.toHaveBeenCalled();
+      expect(mockFocasInstance.readAlarms).not.toHaveBeenCalled();
+      expect(mockFocasInstance.readOperatorMessages).not.toHaveBeenCalled();
+    });
+
+    it('fails the poll when its reads run past the deadline, before the poll limit of the scheduler', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      await connector.connect();
+      // Each read waits out a long timeout
+      mockFocasInstance.readSpindleSpeed.mockImplementationOnce(() => {
+        vi.setSystemTime(Date.now() + 9000);
+        return { speed: 5000 };
+      });
+
+      const status = await connector.poll();
+
+      expect(status.connected).toBe(false);
+      expect(status.errors).toEqual(['Poll failed: The reads of this poll took too long']);
+      expect(mockFocasInstance.readSpindleLoad).not.toHaveBeenCalled();
+    });
+
+    it('logs a read that does not work once, until it works again', async () => {
+      const log = captureLog();
+      try {
+        await connector.connect();
+        mockFocasInstance.readProgram.mockImplementation(() => { throw new FocasError('Failed to read program: No option error', 6); });
+        await connector.poll();
+        await connector.poll();
+        expect(log.text().match(/A FANUC read did not work/g)).toHaveLength(1);
+
+        mockFocasInstance.readProgram.mockReturnValue({ name: 'O1', number: 1 });
+        await connector.poll();
+        mockFocasInstance.readProgram.mockImplementation(() => { throw new FocasError('Failed to read program: No option error', 6); });
+        await connector.poll();
+        expect(log.text().match(/A FANUC read did not work/g)).toHaveLength(2);
+      } finally {
+        log.restore();
+      }
+    });
+  });
+
+  describe('the control information', () => {
+    it('gives the series, the type and the paths as read-only snapshot fields', async () => {
+      mockFocasInstance.readSystemInfo.mockReturnValue({ cncType: '0', mtType: 'T' });
+      await connector.connect();
+      await connector.poll();
+
+      expect(connector.getDataSnapshot().custom).toMatchObject({ controlSeries: '0', controlType: 'T', lathe: true, paths: 1 });
+    });
+
+    it('leaves the information out when the control cannot give it', async () => {
+      mockFocasInstance.readSystemInfo.mockImplementation(() => { throw new FocasError('Failed to read system information: Busy', -1); });
+      mockFocasInstance.readPathCount.mockImplementation(() => { throw new FocasError('Failed to read path count: No option error', 6); });
+
+      await connector.connect();
+      await connector.poll();
+
+      expect(connector.connected).toBe(true);
+      expect(connector.getDataSnapshot().custom).not.toHaveProperty('controlSeries');
+      expect(connector.getDataSnapshot().custom).not.toHaveProperty('paths');
+    });
+
+    it('warns once that only path 1 is read, when the control has more paths', async () => {
+      const log = captureLog();
+      try {
+        mockFocasInstance.readPathCount.mockReturnValue(2);
+        await connector.connect();
+        connector.disconnect();
+        await connector.connect();
+
+        expect(log.text('warn').match(/more than one path/g)).toHaveLength(1);
+      } finally {
+        log.restore();
+      }
+    });
+
+    it('refuses a Series 15 control, whose status has another layout', async () => {
+      mockFocasInstance.readSystemInfo.mockReturnValue({ cncType: '15', mtType: 'M' });
+
+      await expect(connector.connect()).rejects.toThrow('Series 15');
+      expect(connector.connected).toBe(false);
+      expect(mockFocasInstance.disconnect).toHaveBeenCalledTimes(1);
     });
   });
 
