@@ -1,16 +1,19 @@
 import { cn } from '@toolpath/ui';
 import { useState } from 'react';
 import {
-  fetchChannels, fetchChannelTypes, fetchMessages, fetchNotificationSettings, inputOf, saveNotificationSettings, sendTestMessage, updateChannel,
-  type ChannelTestResult, type ChannelTypeInfo, type NotificationChannel, type NotificationMessage, type NotificationSettings,
+  addChannel, fetchChannels, fetchChannelTypes, fetchMessages, fetchNotificationSettings, inputOf, removeChannel, saveNotificationSettings,
+  sendTestMessage, updateChannel,
+  type ChannelInput, type ChannelTestResult, type ChannelTypeInfo, type NotificationChannel, type NotificationMessage, type NotificationSettings,
 } from '../../api/notifications';
 import { Button } from '../../components/ui/Button';
+import { PlusIcon } from '../../components/ui/icons';
 import { Notice } from '../../components/ui/Notice';
 import { Panel } from '../../components/ui/Panel';
 import { Switch } from '../../components/ui/Switch';
 import { CELL, HEAD_CELL, HEAD_ROW, ROW, TABLE } from '../../components/ui/table';
 import { errorMessageOf } from '../../utils/errorMessage';
 import { formatAgo } from '../../utils/formatters';
+import { ChannelForm } from './ChannelForm';
 import { MessagesPanel } from './MessagesPanel';
 import { NotificationSettingsPanel } from './NotificationSettingsPanel';
 import { MessageResult } from './MessageResult';
@@ -33,8 +36,11 @@ async function loadNotifications(): Promise<NotificationsReport> {
   return { types, channels, messages, settings };
 }
 
-/** The panel whose last change failed, so the error shows next to the button that the user clicked */
-type ChangedPanel = 'channels' | 'settings';
+/** The place of the last change, so its error shows next to the button that the user clicked */
+type ChangedPanel = 'channels' | 'settings' | 'form';
+
+/** The channel form, when it is open. Without a channel, it adds one. */
+type OpenForm = { channel?: NotificationChannel } | null;
 
 /** The result of the last "Send test" of the channel list */
 interface TestOutcome {
@@ -48,7 +54,8 @@ interface TestOutcome {
  */
 export function NotificationsTab({ machines }: { machines: MachineName[] }) {
   const { report, loadError, changeError, isChanging, change, refresh } = useServerReport(loadNotifications);
-  const [changedPanel, setChangedPanel] = useState<ChangedPanel>('channels');
+  const [changedPanel, setChangedPanel] = useState<ChangedPanel | null>(null);
+  const [openForm, setOpenForm] = useState<OpenForm>(null);
   if (loadError || !report) return <ReportPending loadError={loadError} />;
 
   const changeIn = (panel: ChangedPanel, action: () => Promise<NotificationsReport>) => {
@@ -63,6 +70,19 @@ export function NotificationsTab({ machines }: { machines: MachineName[] }) {
   const saveSettings = (settings: NotificationSettings) => changeIn('settings', async () => ({
     ...report, settings: await saveNotificationSettings(settings),
   }));
+  const saveChannel = (saved: NotificationChannel | undefined, input: ChannelInput) => changeIn('form', async () => {
+    if (saved) await updateChannel(saved.id, input);
+    else await addChannel(input);
+    return loadNotifications();
+  });
+  const deleteChannel = (channel: NotificationChannel) => changeIn('form', async () => {
+    await removeChannel(channel.id);
+    return loadNotifications();
+  });
+  const openChannelForm = (channel?: NotificationChannel) => {
+    setChangedPanel(null);
+    setOpenForm({ channel });
+  };
 
   return (
     <>
@@ -73,9 +93,24 @@ export function NotificationsTab({ machines }: { machines: MachineName[] }) {
         error={errorIn('channels')}
         onSetEnabled={setEnabled}
         onTested={refresh}
+        onAdd={() => openChannelForm()}
+        onEdit={openChannelForm}
       />
       <MessagesPanel channels={report.channels} messages={report.messages} />
       <NotificationSettingsPanel settings={report.settings} canSave={!isChanging} error={errorIn('settings')} onSave={saveSettings} />
+      {openForm && (
+        <ChannelForm
+          types={report.types}
+          machines={machines}
+          channel={openForm.channel}
+          error={errorIn('form')}
+          isSaving={isChanging}
+          onSave={input => saveChannel(openForm.channel, input)}
+          onDelete={async () => openForm.channel !== undefined && deleteChannel(openForm.channel)}
+          onTested={refresh}
+          onClose={() => setOpenForm(null)}
+        />
+      )}
     </>
   );
 }
@@ -88,9 +123,11 @@ interface ChannelsPanelProps {
   onSetEnabled: (channel: NotificationChannel, enabled: boolean) => void;
   /** A test of a saved channel goes in the message list, so the tab loads it again */
   onTested: () => void;
+  onAdd: () => void;
+  onEdit: (channel: NotificationChannel) => void;
 }
 
-function ChannelsPanel({ report, machines, canChange, error, onSetEnabled, onTested }: ChannelsPanelProps) {
+function ChannelsPanel({ report, machines, canChange, error, onSetEnabled, onTested, onAdd, onEdit }: ChannelsPanelProps) {
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testOutcome, setTestOutcome] = useState<TestOutcome | null>(null);
 
@@ -106,7 +143,11 @@ function ChannelsPanel({ report, machines, canChange, error, onSetEnabled, onTes
   };
 
   return (
-    <Panel title="Channels" description="Chatter sends the machine alerts to these channels when an alert starts and when it ends.">
+    <Panel
+      title="Channels"
+      description="Chatter sends the machine alerts to these channels when an alert starts and when it ends."
+      actions={<Button variant="primary" onClick={onAdd}><PlusIcon /> Add channel</Button>}
+    >
       {testOutcome && <TestOutcomeNotice outcome={testOutcome} onClose={() => setTestOutcome(null)} />}
       {error && <Notice tone="error" title={error} className="mx-5 mt-4" />}
       {report.channels.length === 0 ? (
@@ -134,6 +175,7 @@ function ChannelsPanel({ report, machines, canChange, error, onSetEnabled, onTes
                   isTesting={testingId === channel.id}
                   onSetEnabled={enabled => onSetEnabled(channel, enabled)}
                   onSendTest={() => sendTest(channel)}
+                  onEdit={() => onEdit(channel)}
                 />
               ))}
             </tbody>
@@ -170,9 +212,10 @@ interface ChannelRowProps {
   isTesting: boolean;
   onSetEnabled: (enabled: boolean) => void;
   onSendTest: () => void;
+  onEdit: () => void;
 }
 
-function ChannelRow({ channel, report, machines, canChange, isTesting, onSetEnabled, onSendTest }: ChannelRowProps) {
+function ChannelRow({ channel, report, machines, canChange, isTesting, onSetEnabled, onSendTest, onEdit }: ChannelRowProps) {
   return (
     <tr className={ROW}>
       <td className={CELL}>
@@ -190,7 +233,10 @@ function ChannelRow({ channel, report, machines, canChange, isTesting, onSetEnab
         <Switch checked={channel.enabled} label={`${channel.name} on`} disabled={!canChange} onChange={onSetEnabled} />
       </td>
       <td className={cn(CELL, 'text-right')}>
-        <Button size="sm" disabled={isTesting} onClick={onSendTest}>{isTesting ? 'Sending…' : 'Send test'}</Button>
+        <div className="flex justify-end gap-1">
+          <Button size="sm" disabled={isTesting} onClick={onSendTest}>{isTesting ? 'Sending…' : 'Send test'}</Button>
+          <Button size="sm" variant="quiet" aria-label={`Edit ${channel.name}`} onClick={onEdit}>Edit</Button>
+        </div>
       </td>
     </tr>
   );

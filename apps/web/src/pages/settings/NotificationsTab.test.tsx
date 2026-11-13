@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  fetchChannels, fetchChannelTypes, fetchMessages, fetchNotificationSettings, saveNotificationSettings, sendTestMessage, updateChannel,
+  addChannel, fetchChannels, fetchChannelTypes, fetchMessages, fetchNotificationSettings, removeChannel, saveNotificationSettings, sendTestMessage, updateChannel,
   type ChannelTypeInfo, type NotificationChannel, type NotificationMessage,
 } from '../../api/notifications';
 import { NotificationsTab } from './NotificationsTab';
@@ -71,6 +71,7 @@ describe('NotificationsTab', () => {
     vi.mocked(sendTestMessage).mockReset();
     vi.mocked(saveNotificationSettings).mockReset();
     vi.mocked(fetchMessages).mockReset();
+    vi.mocked(fetchChannels).mockReset();
   });
 
   it('shows each channel with its type, what it gets, and its machines', async () => {
@@ -116,6 +117,43 @@ describe('NotificationsTab', () => {
     expect(await screen.findByText('Twilio does not accept the Auth token.')).toBeInTheDocument();
     expect(sendTestMessage).toHaveBeenCalledWith(expect.objectContaining({ name: 'Shop phones' }), 'phones');
     await waitFor(() => expect(fetchMessages).toHaveBeenCalledTimes(2));
+  });
+
+  it('adds a channel in the side panel, and closes the panel', async () => {
+    vi.mocked(addChannel).mockResolvedValue(slack);
+    await renderTab();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add channel' }));
+    const panel = screen.getByRole('dialog', { name: 'Add channel' });
+    fireEvent.change(within(panel).getByLabelText('Type'), { target: { value: 'webhook' } });
+    fireEvent.change(within(panel).getByLabelText('Name'), { target: { value: 'Slack' } });
+    fireEvent.change(within(panel).getByLabelText('Web address'), { target: { value: 'https://hooks.slack.com/x' } });
+    fireEvent.click(within(panel).getByRole('button', { name: 'Save channel' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add channel' })).not.toBeInTheDocument());
+    expect(addChannel).toHaveBeenCalledWith(expect.objectContaining({ type: 'webhook', name: 'Slack', values: { url: 'https://hooks.slack.com/x' } }));
+  });
+
+  it('opens a saved channel to change it', async () => {
+    await renderTab();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Shop phones' }));
+
+    expect(screen.getByRole('dialog', { name: 'Edit Shop phones' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Account SID')).toHaveValue('AC1');
+  });
+
+  it('deletes a channel after the admin confirms, and closes the panel', async () => {
+    vi.mocked(removeChannel).mockResolvedValue();
+    await renderTab();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Slack #shop-floor' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete channel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete the channel' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(removeChannel).toHaveBeenCalledWith('slack');
+    expect(fetchChannels).toHaveBeenCalledTimes(2);
   });
 
   it('shows the messages, and filters them by channel', async () => {
