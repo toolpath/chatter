@@ -1,0 +1,9 @@
+{
+  "name": "chatter",
+  "description": "Skills for shops that run Chatter: set it up, fix a machine that does not connect, write alert rules, and report on machine history.",
+  "author": { "name": "Toolpath" },
+  "homepage": "https://toolpath.github.io/chatter/",
+  "repository": "https://github.com/toolpath/chatter",
+  "license": "MIT",
+  "keywords": ["cnc", "machine-monitoring", "chatter"]
+}
