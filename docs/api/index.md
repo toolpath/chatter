@@ -36,5 +36,6 @@ An error reply has the form `{ "error": "<the reason>" }`.
 - [Login and settings](./auth-and-settings.md): log in, log out, users, proxies, and login tries
 - [Machines and files](./machines.md): the machine status, the machine list, the network scan, the program files, and the upload history
 - [History and alerts](./history.md): values over time, periods, reports, and alerts
+- [Notifications](./notifications.md): the channels that get the alert messages, the message list, and the message settings
 - [FANUC library and updates](./admin.md): the FOCAS2 file, and updates on the Pi card
 - [Live events](./live-events.md): live machine status with server-sent events

@@ -82,7 +82,8 @@ The **Alerts** panel shows the alerts of the last 7 days. The alerts that fire n
 - A critical alert has a red dot. A warning has a yellow dot.
 - When you remove a rule or turn it off, its alert stops.
 
-Chatter keeps each alert for 1 year after it ends, in `chatter.db`. Chatter does not send an email or a message for an alert yet.
+Chatter keeps each alert for 1 year after it ends, in `chatter.db`.
+To get a text message or a Slack message when an alert starts and ends, see [Notifications](./notifications.md).
 
 To read the alerts from a program, see [`GET /api/alerts`](../api/history.md#alerts).
 
