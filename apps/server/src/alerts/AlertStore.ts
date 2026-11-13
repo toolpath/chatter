@@ -25,7 +25,8 @@ export interface AlertQuery {
   limit: number;
 }
 
-interface AlertRow {
+/** One row of the "alerts" table */
+export interface AlertRow {
   name: string;
   machine_id: string | null;
   labels: string;
@@ -107,7 +108,7 @@ function toSqlParameters(alert: Alert) {
   };
 }
 
-function toAlert(row: AlertRow): Alert {
+export function toAlert(row: AlertRow): Alert {
   return {
     name: row.name,
     machineId: row.machine_id ?? undefined,
