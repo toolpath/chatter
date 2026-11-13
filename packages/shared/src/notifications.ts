@@ -32,6 +32,8 @@ export interface ChannelTypeInfo {
   /** For example 'Text message (Twilio)' */
   name: string;
   fields: ChannelField[];
+  /** A fact that the admin must know before they use this type. The form shows it in a box. */
+  note?: string;
 }
 
 /** A `phone-list` field has a list of numbers. Each other field has one text. */

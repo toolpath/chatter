@@ -15,5 +15,5 @@ export function findChannelType(id: string): ChannelType | undefined {
 
 /** For GET /api/notification-types: the web app makes the form of each type from its fields */
 export function channelTypeInfos(): ChannelTypeInfo[] {
-  return CHANNEL_TYPES.map(({ id, name, fields }) => ({ id, name, fields }));
+  return CHANNEL_TYPES.map(({ id, name, fields, note }) => ({ id, name, fields, note }));
 }

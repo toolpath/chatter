@@ -55,6 +55,12 @@ describe('channel types', () => {
     expect(webhook?.fields.map(field => field.key)).toEqual(['url', 'secret']);
   });
 
+  it('gives the note of a type, for a fact that the admin must know before they use it', () => {
+    const twilio = channelTypeInfos().find(type => type.id === 'twilio-sms');
+
+    expect(twilio?.note).toMatch(/A2P 10DLC/);
+  });
+
   it('finds a type by its id, and gives nothing for an id that it does not know', () => {
     expect(findChannelType('webhook')?.name).toBe('Webhook');
     expect(findChannelType('carrier-pigeon')).toBeUndefined();

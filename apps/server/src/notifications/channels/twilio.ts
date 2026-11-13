@@ -60,6 +60,8 @@ export function createTwilioChannel(apiBase: string): ChannelDefinition<TwilioSe
       },
       { key: 'to', label: 'Phone numbers', kind: 'phone-list', required: true, mono: true },
     ],
+    note: 'In the US, Twilio sends from a normal number only after you register it for A2P 10DLC. '
+      + 'Before that, Twilio stops the messages (error 30034). A trial account sends only to the numbers that you verify in Twilio.',
     settings: twilioSettings,
     // All the phones at the same time, so a slow answer does not use the time limit of the other phones
     async send(settings, message, context) {

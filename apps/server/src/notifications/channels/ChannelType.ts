@@ -53,11 +53,12 @@ export interface ChannelType extends ChannelTypeInfo {
 }
 
 export function defineChannelType<Settings>(definition: ChannelDefinition<Settings>): ChannelType {
-  const { id, name, fields } = definition;
+  const { id, name, fields, note } = definition;
   return {
     id,
     name,
     fields,
+    note,
     checkSettings(values) {
       const result = definition.settings.safeParse(values);
       return result.success ? { ok: true } : { ok: false, error: firstProblem(result.error) };
