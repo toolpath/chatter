@@ -29,8 +29,8 @@ function handlerWith(connections: FocasConnection[]) {
 describe('FocasRequestHandler', () => {
   it('loads the library from the path that the server sends', () => {
     const { library, handler } = handlerWith([]);
-    expect(handler.handle({ id: 1, kind: 'initialize', libraryPath: '/data/focas/lib.so' })).toEqual({ id: 1, ok: true, value: undefined });
-    expect(library.initialize).toHaveBeenCalledWith('/data/focas/lib.so');
+    expect(handler.handle({ id: 1, kind: 'initialize', libraryPath: '/data/focas/lib.so', startProcess: true })).toEqual({ id: 1, ok: true, value: undefined });
+    expect(library.initialize).toHaveBeenCalledWith('/data/focas/lib.so', true);
   });
 
   it('gives each connection its own session, and reads from that connection', () => {
@@ -56,7 +56,7 @@ describe('FocasRequestHandler', () => {
     const { handler } = handlerWith([]);
     expect(handler.handle({ id: 1, kind: 'connect', host: 'h', port: 1, timeoutSeconds: 1 }))
       .toEqual({ id: 1, ok: false, message: 'Connection failed: Socket error' });
-    expect(handler.handle({ id: 2, kind: 'initialize', libraryPath: 'x' }).ok).toBe(true);
+    expect(handler.handle({ id: 2, kind: 'initialize', libraryPath: 'x', startProcess: false }).ok).toBe(true);
   });
 
   it('ends a connection, after which its session cannot read', () => {

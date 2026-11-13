@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { FocasThread, type FocasWorkerPort } from './focasThread.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Focas } from './focas.js';
+import { FocasThread, FocasThreads, type FocasWorkerPort } from './focasThread.js';
 import { FocasRequestHandler, type FocasConnection, type FocasRequest } from './focasRequests.js';
 
 /** A worker that answers with a FocasRequestHandler on a later turn, as a real thread does */
@@ -51,7 +52,7 @@ describe('FocasThread', () => {
 
     expect(workers).toHaveLength(1);
     expect(workers[0].unref).toHaveBeenCalled();
-    expect(workers[0].initialize).toHaveBeenCalledWith('/lib.so');
+    expect(workers[0].initialize).toHaveBeenCalledWith('/lib.so', true);
     expect(thread.isLoaded()).toBe(true);
   });
 
@@ -145,6 +146,144 @@ describe('FocasThread', () => {
       expect(workers[0].terminate).toHaveBeenCalled();
       expect(thread.isLoaded()).toBe(false);
     });
+  });
+});
+
+/** onStart can set up each worker before its first request */
+function threadsWithFakeWorkers(onStart: (worker: FakeWorker) => void = () => undefined) {
+  const workers: FakeWorker[] = [];
+  const threads = new FocasThreads(() => {
+    const worker = new FakeWorker();
+    onStart(worker);
+    workers.push(worker);
+    return worker;
+  });
+  return { threads, workers };
+}
+
+/** The startProcess flag of each library load, worker by worker */
+function processStarts(workers: FakeWorker[]): boolean[] {
+  return workers.flatMap(worker => worker.requests.flatMap(request => request.kind === 'initialize' ? [request.startProcess] : []));
+}
+
+describe('FocasThreads', () => {
+  // connect() loads the library from the path for this computer, which the tests do not have
+  beforeEach(() => { vi.spyOn(Focas, 'libraryPath').mockReturnValue('/lib.so'); });
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('gives each machine its own thread, started at its first call', async () => {
+    const { threads, workers } = threadsWithFakeWorkers();
+    const first = threads.thread();
+    const second = threads.thread();
+    expect(workers).toHaveLength(0);
+
+    await first.connect('10.0.0.1', 8193, 10);
+    await second.connect('10.0.0.2', 8193, 10);
+
+    expect(workers).toHaveLength(2);
+    expect(threads.isLoaded()).toBe(true);
+  });
+
+  it('does not hold up a machine while another control is slow to answer', async () => {
+    const { threads, workers } = threadsWithFakeWorkers();
+    const slow = await threads.thread().connect('10.0.0.1', 8193, 10);
+    const fast = await threads.thread().connect('10.0.0.2', 8193, 10);
+    // The first control does not answer, for example while cnc_allclibhndl3 waits for its timeout
+    workers[0].held = true;
+
+    let slowAnswered = false;
+    const slowRead = slow.readStatus().then(() => { slowAnswered = true; });
+
+    expect(await fast.readStatus()).toEqual({ mode: '10.0.0.2' });
+    expect(slowAnswered).toBe(false);
+
+    workers[0].release();
+    await slowRead;
+  });
+
+  it('starts the Linux FOCAS process on the first thread only', async () => {
+    const { threads, workers } = threadsWithFakeWorkers();
+    await Promise.all([
+      threads.thread().connect('a', 8193, 10),
+      threads.thread().connect('b', 8193, 10),
+      threads.thread().connect('c', 8193, 10),
+    ]);
+
+    expect(processStarts(workers)).toEqual([true, false, false]);
+  });
+
+  it('lets the next thread start the process when the first load fails', async () => {
+    let started = 0;
+    const { threads, workers } = threadsWithFakeWorkers(worker => {
+      if (started++ === 0) worker.initialize.mockImplementationOnce(() => { throw new Error('Failed to initialize FOCAS library'); });
+    });
+    const first = threads.thread();
+    const second = threads.thread();
+    const failing = first.initialize('/lib.so');
+    const waiting = second.initialize('/lib.so');
+
+    await expect(failing).rejects.toThrow('Failed to initialize FOCAS library');
+    await waiting;
+    expect(processStarts(workers)).toEqual([true, true]);
+  });
+
+  it('starts the process again when no thread has the library any more', async () => {
+    const { threads, workers } = threadsWithFakeWorkers();
+    const thread = threads.thread();
+    await thread.initialize('/lib.so');
+    await thread.stop();
+    expect(threads.isLoaded()).toBe(false);
+
+    await threads.thread().initialize('/lib.so');
+    expect(processStarts(workers)).toEqual([true, true]);
+  });
+
+  it('gives the thread that loaded the library for the upload to the next machine', async () => {
+    const { threads, workers } = threadsWithFakeWorkers();
+    await threads.initialize('/lib.so');
+    const session = await threads.thread().connect('h', 8193, 10);
+
+    expect(workers).toHaveLength(1);
+    expect(await session.readStatus()).toEqual({ mode: 'h' });
+  });
+
+  it('stops only the thread of a removed machine', async () => {
+    const { threads, workers } = threadsWithFakeWorkers();
+    const removed = threads.thread();
+    const kept = threads.thread();
+    await removed.connect('a', 8193, 10);
+    const session = await kept.connect('b', 8193, 10);
+
+    await removed.stop();
+
+    expect(workers[0].terminate).toHaveBeenCalled();
+    expect(workers[1].terminate).not.toHaveBeenCalled();
+    expect(await session.readStatus()).toEqual({ mode: 'b' });
+  });
+
+  it('keeps the crash behaviour of each thread: its connections fail, and it starts again at the next call', async () => {
+    const { threads, workers } = threadsWithFakeWorkers();
+    const thread = threads.thread();
+    const old = await thread.connect('h', 8193, 10);
+    workers[0].emit('exit', 1);
+
+    await expect(old.readStatus()).rejects.toThrow('connection is gone');
+    const fresh = await thread.connect('h', 8193, 10);
+    expect(workers).toHaveLength(2);
+    expect(await fresh.readStatus()).toEqual({ mode: 'h' });
+    // No other thread had the library, so the new one starts the process again
+    expect(processStarts(workers)).toEqual([true, true]);
+  });
+
+  it('stops every thread', async () => {
+    const { threads, workers } = threadsWithFakeWorkers();
+    await threads.thread().connect('a', 8193, 10);
+    await threads.thread().connect('b', 8193, 10);
+
+    await threads.stop();
+
+    expect(workers.every(worker => worker.terminate.mock.calls.length === 1)).toBe(true);
+    expect(threads.isLoaded()).toBe(false);
   });
 });
 

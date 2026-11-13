@@ -398,14 +398,18 @@ export class Focas {
   private handle = 0;
   private isConnected = false;
 
-  /** Load and start the FOCAS library. A library that is loaded already stays. */
-  static initialize(libraryPath: string = getLibraryPath()): void {
+  /**
+   * Load and start the FOCAS library. A library that is loaded already stays.
+   * On Linux, startProcess also calls cnc_startupprocess. That process is for the whole server,
+   * so when each machine has its own FOCAS thread, only the first thread starts it (see FocasThreads).
+   */
+  static initialize(libraryPath: string = getLibraryPath(), startProcess = true): void {
     if (functions) return;
 
     try {
       library = koffi.load(libraryPath);
       const declared = declareFunctions(library);
-      exitLinuxProcess = process.platform === 'linux' ? startLinuxProcess(library) : null;
+      exitLinuxProcess = process.platform === 'linux' && startProcess ? startLinuxProcess(library) : null;
       functions = declared;
     } catch (error) {
       unloadLibrary();

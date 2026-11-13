@@ -73,6 +73,11 @@ export abstract class BaseMachineConnector extends EventEmitter {
 
   abstract disconnect(): void;
 
+  /** Disconnect for good, and free what the connector holds, because the machine is removed */
+  dispose(): void {
+    this.disconnect();
+  }
+
   /** Read the current values of the machine */
   abstract poll(): Promise<BaseMachineStatus>;
 

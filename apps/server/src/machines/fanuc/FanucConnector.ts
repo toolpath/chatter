@@ -1,6 +1,6 @@
 import { BaseMachineConnector, errorMessage } from '../BaseMachineConnector.js';
 import { Focas } from './focas.js';
-import { focasThread, type FocasSession } from './focasThread.js';
+import { focasThreads, type FocasSession, type FocasThread } from './focasThread.js';
 import type {
   FanucMachineConfig,
   FanucMachineData,
@@ -27,7 +27,8 @@ async function readIfSupported<T>(read: () => Promise<T>): Promise<T | undefined
 
 /**
  * Connector for FANUC CNC machines via FOCAS2 protocol.
- * The FOCAS calls run on the FOCAS thread (focasThread.ts), so a slow control never stops the server.
+ * The FOCAS calls run on a FOCAS thread of this machine (focasThread.ts), so a slow control never stops
+ * the server or the other machines.
  */
 export class FanucConnector extends BaseMachineConnector {
   readonly type: MachineType = 'fanuc';
@@ -39,6 +40,10 @@ export class FanucConnector extends BaseMachineConnector {
   public macros: MacroConfig[];
 
   private focas: FocasSession | null = null;
+  /** The FOCAS thread of this machine. It starts at the first connect, and stops when the machine is removed. */
+  private thread: FocasThread | null = null;
+  /** Counts the disconnects, so a connect that ends after a disconnect does not keep its connection */
+  private disconnects = 0;
   private data: FanucMachineData = {};
   private prevData: FanucMachineData = {};
   private connectionTimeoutSeconds: number;
@@ -80,7 +85,15 @@ export class FanucConnector extends BaseMachineConnector {
       }
 
       this.disconnect();
-      this.focas = await focasThread.connect(this.host, this.focasPort, this.connectionTimeoutSeconds);
+      const disconnects = this.disconnects;
+      this.thread ??= focasThreads.thread();
+      const session = await this.thread.connect(this.host, this.focasPort, this.connectionTimeoutSeconds);
+      if (disconnects !== this.disconnects) {
+        // The machine was disconnected or removed while it connected, so it must not keep the connection
+        session.disconnect().catch(() => undefined);
+        throw new Error('Disconnected while connecting');
+      }
+      this.focas = session;
 
       this.connected = true;
       this.clearErrors();
@@ -92,6 +105,7 @@ export class FanucConnector extends BaseMachineConnector {
   }
 
   disconnect(): void {
+    this.disconnects++;
     if (this.focas) {
       this.focas.disconnect().catch(() => {
         // The connection may be gone already; the connector is disconnected either way
@@ -99,6 +113,14 @@ export class FanucConnector extends BaseMachineConnector {
       this.focas = null;
     }
     this.connected = false;
+  }
+
+  /** Stop the FOCAS thread of the machine too. A connect that still waits on it fails. */
+  dispose(): void {
+    this.disconnect();
+    const thread = this.thread;
+    this.thread = null;
+    thread?.stop().catch(() => undefined);
   }
 
   async poll(): Promise<FanucMachineStatus> {

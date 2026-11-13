@@ -239,7 +239,7 @@ export class HardwarePoller extends EventEmitter {
     if (!connector) return false;
 
     try {
-      connector.disconnect();
+      connector.dispose();
     } catch {
       // The connector may already be in a bad state, and the machine is removed all the same
     }

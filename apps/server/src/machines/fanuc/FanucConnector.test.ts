@@ -52,15 +52,17 @@ vi.mock('./focas.js', () => ({
   },
 }));
 
-// The FOCAS thread gives the mock session
-vi.mock('./focasThread.js', () => ({
-  focasThread: {
-    connect: vi.fn(async (host: string, port: number, timeoutSeconds: number) => {
-      mockFocasInstance.connect(host, port, timeoutSeconds);
-      return mockFocasInstance;
-    }),
-  },
-}));
+// The FOCAS thread of each machine gives the mock session
+const mockThread = {
+  connect: vi.fn(async (host: string, port: number, timeoutSeconds: number) => {
+    mockFocasInstance.connect(host, port, timeoutSeconds);
+    return mockFocasInstance;
+  }),
+  stop: vi.fn(async () => undefined),
+};
+const mockThreads = vi.hoisted(() => ({ thread: (): unknown => undefined }));
+mockThreads.thread = vi.fn(() => mockThread);
+vi.mock('./focasThread.js', () => ({ focasThreads: mockThreads }));
 
 describe('FanucConnector', () => {
   let connector: FanucConnector;
@@ -231,6 +233,47 @@ describe('FanucConnector', () => {
     it('should be safe to call when not connected', () => {
       expect(() => connector.disconnect()).not.toThrow();
       expect(connector.connected).toBe(false);
+    });
+
+    it('keeps the FOCAS thread of the machine, for the next connect', async () => {
+      await connector.connect();
+      connector.disconnect();
+      await connector.connect();
+
+      expect(mockThreads.thread).toHaveBeenCalledTimes(1);
+      expect(mockThread.stop).not.toHaveBeenCalled();
+    });
+
+    it('does not keep a connection that ends after a disconnect', async () => {
+      let finishConnect: () => void = () => undefined;
+      mockThread.connect.mockImplementationOnce(() => new Promise(resolve => {
+        finishConnect = () => resolve(mockFocasInstance);
+      }));
+      const connecting = connector.connect();
+      await vi.waitFor(() => expect(mockThread.connect).toHaveBeenCalled());
+
+      connector.disconnect();
+      finishConnect();
+
+      await expect(connecting).rejects.toThrow('Disconnected while connecting');
+      expect(connector.connected).toBe(false);
+      expect(mockFocasInstance.disconnect).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('dispose', () => {
+    it('ends the session and stops the FOCAS thread of the machine', async () => {
+      await connector.connect();
+      connector.dispose();
+
+      expect(connector.connected).toBe(false);
+      expect(mockFocasInstance.disconnect).toHaveBeenCalledTimes(1);
+      expect(mockThread.stop).toHaveBeenCalledTimes(1);
+    });
+
+    it('does nothing to a thread when the machine never connected', () => {
+      connector.dispose();
+      expect(mockThread.stop).not.toHaveBeenCalled();
     });
   });
 

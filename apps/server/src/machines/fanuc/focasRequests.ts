@@ -16,7 +16,7 @@ export type FocasRead =
   | 'readOperatorMessages';
 
 export type FocasCommand =
-  | { kind: 'initialize'; libraryPath: string }
+  | { kind: 'initialize'; libraryPath: string; startProcess: boolean }
   | { kind: 'connect'; host: string; port: number; timeoutSeconds: number }
   | { kind: 'disconnect'; session: number }
   | { kind: 'read'; session: number; read: FocasRead; args: number[] };
@@ -32,7 +32,8 @@ export type FocasConnection = Pick<Focas, FocasRead | 'disconnect'>;
 
 /** The parts of the FOCAS library that the FOCAS thread uses */
 export interface FocasLibrary {
-  initialize(libraryPath: string): void;
+  /** Load the library. On Linux, startProcess also calls cnc_startupprocess, which only one thread of the server may do. */
+  initialize(libraryPath: string, startProcess: boolean): void;
   connect(host: string, port: number, timeoutSeconds: number): FocasConnection;
 }
 
@@ -67,7 +68,7 @@ export class FocasRequestHandler {
   private run(command: FocasCommand): unknown {
     switch (command.kind) {
       case 'initialize':
-        this.library.initialize(command.libraryPath);
+        this.library.initialize(command.libraryPath, command.startProcess);
         return undefined;
       case 'connect': {
         const connection = this.library.connect(command.host, command.port, command.timeoutSeconds);

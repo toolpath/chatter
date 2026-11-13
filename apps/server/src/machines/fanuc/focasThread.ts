@@ -38,13 +38,31 @@ interface Waiting {
   reject: (error: Error) => void;
 }
 
+/** What a FocasThread asks of the threads around it (FocasThreads) */
+export interface FocasThreadOwner {
+  /** Load the library on the thread. Only one thread starts the Linux FOCAS process. */
+  load(thread: FocasThread, libraryPath: string): Promise<void>;
+  /** The thread lost its library, because it failed or stopped */
+  unloaded(thread: FocasThread): void;
+  /** stop() ended the thread */
+  stopped(thread: FocasThread): void;
+}
+
+/** A thread on its own starts the Linux FOCAS process each time it loads the library */
+const OWN_PROCESS: FocasThreadOwner = {
+  load: (thread, libraryPath) => thread.loadLibrary(libraryPath, true),
+  unloaded: () => undefined,
+  stopped: () => undefined,
+};
+
 /**
- * Runs the FOCAS library on its own thread (focasWorker.ts), and gives each call as a promise.
+ * Runs the FOCAS library on a thread of its own (focasWorker.ts), and gives each call as a promise.
  * The cnc_* calls block until the control answers, for up to the connection timeout.
  * On the server's thread, that stopped every other machine, the web app and the live events.
+ * Each FANUC machine gets its own FocasThread (see FocasThreads), so a slow control holds up only its own machine.
  * The thread starts at the first call. When it stops, it starts again at the next call, with no connections.
  */
-export class FocasThread implements FocasLoader {
+export class FocasThread {
   private worker: FocasWorkerPort | null = null;
   /** Counts the started threads, so a connection of a stopped thread is never used on the next one */
   private generation = 0;
@@ -53,28 +71,28 @@ export class FocasThread implements FocasLoader {
   private loading: Promise<void> | null = null;
   private loaded = false;
 
-  constructor(private readonly startWorker: () => FocasWorkerPort = startFocasWorker) {}
+  constructor(
+    private readonly startWorker: () => FocasWorkerPort = startFocasWorker,
+    private readonly owner: FocasThreadOwner = OWN_PROCESS,
+  ) {}
 
-  uploadPath(): string {
-    return Focas.uploadPath();
-  }
-
-  libraryPath(): string {
-    return Focas.libraryPath();
-  }
-
-  /** True when the FOCAS thread has loaded the library */
+  /** True when this thread has loaded the library */
   isLoaded(): boolean {
     return this.loaded;
   }
 
-  /** Load the library on the FOCAS thread. Rejects when it does not load. */
+  /** Load the library on this thread. Rejects when it does not load. */
   initialize(libraryPath?: string): Promise<void> {
     this.loading ??= Promise.resolve()
-      .then(() => this.send({ kind: 'initialize', libraryPath: libraryPath ?? Focas.libraryPath() }))
+      .then(() => this.owner.load(this, libraryPath ?? Focas.libraryPath()))
       .then(() => { this.loaded = true; })
       .finally(() => { this.loading = null; });
     return this.loading;
+  }
+
+  /** @internal Used by the owner: load the library, and start the Linux FOCAS process when it says so */
+  loadLibrary(libraryPath: string, startProcess: boolean): Promise<void> {
+    return this.send({ kind: 'initialize', libraryPath, startProcess }).then(() => undefined);
   }
 
   /** Connect to a control. Loads the library first, when it is not loaded yet. */
@@ -85,12 +103,12 @@ export class FocasThread implements FocasLoader {
     return new FocasSession(this, session, generation);
   }
 
-  /** Stop the thread, for example when the server shuts down */
+  /** Stop the thread, for example when its machine is removed. Its connections end with it. */
   async stop(): Promise<void> {
     const worker = this.worker;
-    if (!worker) return;
-    this.forgetWorker(new Error('The FOCAS thread stopped'));
-    await worker.terminate();
+    if (worker) this.forgetWorker(new Error('The FOCAS thread stopped'));
+    this.owner.stopped(this);
+    await worker?.terminate();
   }
 
   /** @internal Used by FocasSession */
@@ -143,10 +161,11 @@ export class FocasThread implements FocasLoader {
     this.loaded = false;
     for (const waiting of this.waiting.values()) waiting.reject(reason);
     this.waiting.clear();
+    this.owner.unloaded(this);
   }
 }
 
-/** One connection to a control. Each read runs on the FOCAS thread. */
+/** One connection to a control. Each read runs on the FOCAS thread that made the connection. */
 export class FocasSession {
   constructor(
     private readonly thread: FocasThread,
@@ -192,5 +211,87 @@ export class FocasSession {
   }
 }
 
-/** The one FOCAS thread of the server */
-export const focasThread = new FocasThread();
+/**
+ * The FOCAS threads of the server: one for each FANUC machine, so a control that is slow to answer
+ * (for example one that is off, with a 10 second connect timeout) never holds up the other machines.
+ *
+ * Each thread loads the library for itself, and each connection stays on the thread that made it.
+ * On Linux, cnc_startupprocess is for the whole server, not for one thread, so only the first thread
+ * that loads the library calls it. When no thread has the library any more, the next one calls it again.
+ */
+export class FocasThreads implements FocasLoader {
+  private readonly threads = new Set<FocasThread>();
+  /** The threads that have the library */
+  private readonly loadedThreads = new Set<FocasThread>();
+  /** The load that starts the Linux FOCAS process, while it runs */
+  private starting: Promise<void> | null = null;
+  /** The thread that loaded the library for initialize(), kept for the next machine */
+  private spare: FocasThread | null = null;
+
+  constructor(private readonly startWorker: () => FocasWorkerPort = startFocasWorker) {}
+
+  uploadPath(): string {
+    return Focas.uploadPath();
+  }
+
+  libraryPath(): string {
+    return Focas.libraryPath();
+  }
+
+  /** True when a FOCAS thread has loaded the library */
+  isLoaded(): boolean {
+    return this.loadedThreads.size > 0;
+  }
+
+  /** Load the library, to see that it loads. The thread that loads it goes to the next machine that asks for one. */
+  initialize(libraryPath?: string): Promise<void> {
+    this.spare ??= this.newThread();
+    return this.spare.initialize(libraryPath);
+  }
+
+  /** A thread for one machine. It starts at its first call. Stop it when the machine is removed. */
+  thread(): FocasThread {
+    const thread = this.spare ?? this.newThread();
+    this.spare = null;
+    return thread;
+  }
+
+  /** Stop every thread, for example when the server shuts down */
+  async stop(): Promise<void> {
+    await Promise.all([...this.threads].map(thread => thread.stop()));
+  }
+
+  private newThread(): FocasThread {
+    const thread = new FocasThread(this.startWorker, {
+      load: (loading, libraryPath) => this.load(loading, libraryPath),
+      unloaded: unloaded => { this.loadedThreads.delete(unloaded); },
+      stopped: stopped => {
+        this.threads.delete(stopped);
+        this.loadedThreads.delete(stopped);
+        if (this.spare === stopped) this.spare = null;
+      },
+    });
+    this.threads.add(thread);
+    return thread;
+  }
+
+  /** The first thread starts the Linux FOCAS process. The others wait for it, and then only load the library. */
+  private async load(thread: FocasThread, libraryPath: string): Promise<void> {
+    while (this.starting && this.loadedThreads.size === 0) {
+      await this.starting.catch(() => undefined);
+    }
+    const startProcess = this.loadedThreads.size === 0;
+    const loading = thread.loadLibrary(libraryPath, startProcess).then(() => { this.loadedThreads.add(thread); });
+    if (!startProcess) return loading;
+
+    this.starting = loading;
+    try {
+      await loading;
+    } finally {
+      if (this.starting === loading) this.starting = null;
+    }
+  }
+}
+
+/** The FOCAS threads of the server */
+export const focasThreads = new FocasThreads();

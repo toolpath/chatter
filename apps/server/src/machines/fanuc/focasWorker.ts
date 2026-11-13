@@ -1,6 +1,7 @@
 /**
- * The FOCAS thread. It makes every cnc_* call, so a control that is slow to answer never stops the server.
- * The calls run one at a time, and each connection stays on this one thread.
+ * A FOCAS thread. It makes the cnc_* calls of one FANUC machine, so a control that is slow to answer
+ * never stops the server or the other machines.
+ * The calls run one at a time, and each connection stays on the thread that made it.
  * FocasThread (focasThread.ts) starts it.
  */
 
@@ -12,7 +13,7 @@ if (!parentPort) throw new Error('focasWorker.ts must run as a worker thread');
 const server = parentPort;
 
 const handler = new FocasRequestHandler({
-  initialize: libraryPath => Focas.initialize(libraryPath),
+  initialize: (libraryPath, startProcess) => Focas.initialize(libraryPath, startProcess),
   connect: (host, port, timeoutSeconds) => {
     const focas = new Focas();
     focas.connect(host, port, timeoutSeconds);
