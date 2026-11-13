@@ -52,7 +52,7 @@ To change it, type the new one. To stop sending a webhook secret, select **Delet
 
 [Twilio](https://www.twilio.com) is a service that sends text messages. You need your own Twilio account. Twilio asks a small price for each message.
 
-1. Make a Twilio account, and get a phone number that can send SMS.
+1. Make a Twilio account, upgrade it from the trial, and get a phone number that can send SMS.
 2. On the Twilio Console home page, copy the **Account SID** and the **Auth token**.
 3. In Chatter, add a channel of the type **Text message (Twilio)**:
    - **Account SID** and **Auth token:** from step 2.
@@ -61,8 +61,9 @@ To change it, type the new one. To stop sending a webhook secret, select **Delet
 
 ### Before the first message
 
-- **In the US, register your number for A2P 10DLC.** A2P 10DLC is the US rule for text messages that a program sends from a normal phone number. Twilio stops the messages of a number that is not registered (error 30034). Do the registration in the Twilio Console. It can take some days.
-- **A trial account sends only to verified numbers.** With a Twilio trial account, add each phone as a verified number in the Twilio Console first (error 21608).
+- **Upgrade the Twilio account.** A Twilio trial account can send only the message templates of Twilio, not the messages of Chatter (error 572006).
+- **In the US, register your number for A2P 10DLC.** A2P 10DLC is the US rule for text messages that a program sends from a normal phone number. Do the registration in the Twilio Console. It can take some days.
+  Before the registration, Twilio takes each message, but does not deliver it. Chatter then shows **Sent**, but the phones get nothing. The Twilio message logs show error 30034.
 - **A phone that sent STOP gets no messages** (error 21610). The phone can send START to your Twilio number to get them again.
 
 ## Webhooks
@@ -119,7 +120,7 @@ The **Messages** panel shows each message of the last 30 days, the newest first.
 
 | Result | Meaning |
 | --- | --- |
-| **Sent** | The service took the message. Under it is the answer of the service, for example "Sent to 2 phones". |
+| **Sent** | The service took the message. Under it is the answer of the service, for example "Sent to 2 phones". Twilio can still fail to deliver a text after that. |
 | **Waiting** | Chatter sends it soon, or tries again soon. |
 | **Failed** | Chatter did not send it. Under it is the reason. |
 | **In an "And more alerts" message** | The channel got too many messages, so this alert went in an "And N more alerts" message. |
@@ -130,8 +131,9 @@ The **Messages** panel shows each message of the last 30 days, the newest first.
 | --- | --- |
 | No message comes when an alert starts | Check that the channel is **On**, and that its **Level** and **Machines** include the alert. Then look in the message list. |
 | **Failed:** Twilio refused the login | The Account SID or the auth token is wrong. Copy them again from the Twilio Console. |
-| **Failed:** error 30034 | Your US number is not registered for A2P 10DLC. See [Before the first message](#before-the-first-message). |
-| **Failed:** a number is not verified | A trial account sends only to verified numbers. Verify the number in Twilio, or upgrade the account. |
+| **Sent**, but the phone gets no text | **Sent** means only that Twilio took the message. In the Twilio Console, open **Monitor > Logs > Messaging** and look at the status of the message. Error 30034 means that your US number is not registered for A2P 10DLC. See [Before the first message](#before-the-first-message). |
+| **Failed:** a Twilio trial account can send only the message templates of Twilio | Upgrade the Twilio account. |
+| **Failed:** a number is not verified | An old Twilio trial account sends only to verified numbers. Verify the number in Twilio, or upgrade the account. |
 | **Failed:** Sent to 1 of 2 phones | One number has a problem. For a wrong or blocked number, the reason tells which one. Chatter does not try again, so no phone gets the message two times. |
 | **Failed:** the address answered 404 | The web address is wrong. Copy it again. |
 | **Failed:** the address answered 401 or 403 | The secret is wrong, or the app needs one. |
