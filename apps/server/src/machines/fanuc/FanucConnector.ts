@@ -15,6 +15,9 @@ const DEFAULT_FOCAS_TIMEOUT_SECONDS = 10;
 
 const EMERGENCY_STOP_ALARM_CODE = 'E-STOP';
 const EMERGENCY_STOP_ALARM_MESSAGE = 'Emergency Stop Active';
+/** The status says there is an alarm, but the alarm list is empty or cannot be read */
+const UNKNOWN_ALARM_CODE = 'ALARM';
+const UNKNOWN_ALARM_MESSAGE = 'Alarm active (the control gave no details)';
 
 /** Run a read that some controls or setups do not support. Gives undefined when the read fails. */
 async function readIfSupported<T>(read: () => Promise<T>): Promise<T | undefined> {
@@ -140,40 +143,34 @@ export class FanucConnector extends BaseMachineConnector {
     await this.readConfiguredMacros(focas);
   }
 
+  /** A read that fails forgets the old value, so an old value is never shown as the current one */
   private async readSpindleAndProgram(focas: FocasSession): Promise<void> {
-    const spindleSpeed = await readIfSupported(async () => (await focas.readSpindleSpeed()).speed);
-    if (spindleSpeed !== undefined) {
-      this.data.spindleSpeed = spindleSpeed;
-    }
+    this.data.spindleSpeed = await readIfSupported(async () => (await focas.readSpindleSpeed()).speed);
 
-    // An analog spindle gives no load, so a failed read forgets the old value
+    // An analog spindle gives no load
     this.data.spindleLoad = await readIfSupported(() => focas.readSpindleLoad());
 
     const program = await readIfSupported(() => focas.readProgram());
-    if (program) {
-      this.data.program = program.name || `O${program.number}`;
-    }
+    this.data.program = program ? program.name || `O${program.number}` : undefined;
   }
 
-  /** The tool number and the part count, from the macro variables that the user set */
+  /** The tool number and the part count, from the macro variables that the user set. A failed read forgets the old value. */
   private async readCounterMacros(focas: FocasSession): Promise<void> {
     if (this.toolNumberVariable) {
       const toolNumber = await this.readMacroValue(focas, this.toolNumberVariable);
-      if (toolNumber !== undefined) this.data.toolNumber = Math.floor(toolNumber);
+      this.data.toolNumber = toolNumber === undefined ? undefined : Math.floor(toolNumber);
     }
 
     if (this.partCounterVariable) {
       const partCount = await this.readMacroValue(focas, this.partCounterVariable);
-      if (partCount !== undefined) this.data.partCount = Math.floor(partCount);
+      this.data.partCount = partCount === undefined ? undefined : Math.floor(partCount);
     }
   }
 
+  /** A failed read forgets the old value */
   private async readConfiguredMacros(focas: FocasSession): Promise<void> {
     for (const macro of this.macros) {
-      const value = await this.readMacroValue(focas, macro.location);
-      if (value !== undefined) {
-        this.data[this.formatMacroLabel(macro.location, macro.name)] = value;
-      }
+      this.data[this.formatMacroLabel(macro.location, macro.name)] = await this.readMacroValue(focas, macro.location);
     }
   }
 
@@ -182,14 +179,21 @@ export class FanucConnector extends BaseMachineConnector {
     return readIfSupported(async () => (await focas.readMacro(macroNumber)).value);
   }
 
-  /** When the alarm list cannot be read, the alarm flag of the status decides */
+  /**
+   * When the alarm list is empty or cannot be read, the alarm flag of the status decides.
+   * An alarm with no list gets a general code and message, never the text of an older alarm.
+   */
   private async readAlarmData(focas: FocasSession, statusAlarm: boolean): Promise<void> {
     const alarms = await readIfSupported(() => focas.readAlarms());
     if (alarms && alarms.length > 0) {
       this.data.alarm = true;
       this.data.alarmCode = String(alarms[0].alarmNo);
       this.data.alarmMessage = alarms[0].message;
-    } else if (!statusAlarm) {
+    } else if (statusAlarm) {
+      this.data.alarm = true;
+      this.data.alarmCode = UNKNOWN_ALARM_CODE;
+      this.data.alarmMessage = UNKNOWN_ALARM_MESSAGE;
+    } else {
       this.data.alarm = false;
       this.data.alarmCode = undefined;
       this.data.alarmMessage = undefined;
@@ -201,17 +205,18 @@ export class FanucConnector extends BaseMachineConnector {
     if (!this.data.emergency) return;
 
     this.data.alarm = true;
-    if (!this.data.alarmCode) {
+    if (!this.data.alarmCode || this.data.alarmCode === UNKNOWN_ALARM_CODE) {
       this.data.alarmCode = EMERGENCY_STOP_ALARM_CODE;
       this.data.alarmMessage = EMERGENCY_STOP_ALARM_MESSAGE;
     }
   }
 
-  /** Show the newest message whose type the user does not ignore. Some controls cannot read messages. */
+  /**
+   * Show the newest message whose type the user does not ignore. Some controls cannot read messages.
+   * No message, or a read that fails, clears the old message.
+   */
   private async readOperatorMessageData(focas: FocasSession): Promise<void> {
-    const messages = await readIfSupported(() => focas.readOperatorMessages());
-    if (!messages || messages.length === 0) return;
-
+    const messages = await readIfSupported(() => focas.readOperatorMessages()) ?? [];
     const shownMessages = messages.filter(message => !this.ignoredMessageTypes.includes(message.type));
     this.data.operatorMessage = shownMessages.at(-1)?.message;
   }

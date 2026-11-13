@@ -494,6 +494,131 @@ describe('FanucConnector', () => {
     });
   });
 
+  describe('a value that the next poll cannot read', () => {
+    const failing = () => { throw new Error('Read error'); };
+
+    it('clears the operator message when the control has no message any more', async () => {
+      mockFocasInstance.readOperatorMessages.mockReturnValue([{ number: 1, type: 0, message: 'Load part' }]);
+      await connector.connect();
+      expect((await connector.poll()).data.operatorMessage).toBe('Load part');
+
+      mockFocasInstance.readOperatorMessages.mockReturnValue([]);
+      expect((await connector.poll()).data.operatorMessage).toBeUndefined();
+    });
+
+    it('clears the operator message when the read fails', async () => {
+      mockFocasInstance.readOperatorMessages.mockReturnValue([{ number: 1, type: 0, message: 'Load part' }]);
+      await connector.connect();
+      await connector.poll();
+
+      mockFocasInstance.readOperatorMessages.mockImplementation(failing);
+      expect((await connector.poll()).data.operatorMessage).toBeUndefined();
+    });
+
+    it('gives a general alarm, not the old one, when the alarm flag is on and the list is empty', async () => {
+      mockFocasInstance.readStatus.mockReturnValue({ mode: 'MEM', runState: 'STOP', emergency: false, alarm: true, motion: 0 });
+      mockFocasInstance.readAlarms.mockReturnValue([{ alarmNo: 1001, message: 'Spindle overheat' }]);
+      await connector.connect();
+      expect((await connector.poll()).data.alarmCode).toBe('1001');
+
+      mockFocasInstance.readAlarms.mockReturnValue([]);
+      const status = await connector.poll();
+
+      expect(status.data.alarm).toBe(true);
+      expect(status.data.alarmCode).toBe('ALARM');
+      expect(status.data.alarmMessage).toBe('Alarm active (the control gave no details)');
+    });
+
+    it('gives a general alarm, not the old one, when the alarm flag is on and the list read fails', async () => {
+      mockFocasInstance.readStatus.mockReturnValue({ mode: 'MEM', runState: 'STOP', emergency: false, alarm: true, motion: 0 });
+      mockFocasInstance.readAlarms.mockReturnValue([{ alarmNo: 1001, message: 'Spindle overheat' }]);
+      await connector.connect();
+      await connector.poll();
+
+      mockFocasInstance.readAlarms.mockImplementation(failing);
+      const status = await connector.poll();
+
+      expect(status.data.alarmCode).toBe('ALARM');
+      expect(status.data.alarmMessage).toBe('Alarm active (the control gave no details)');
+    });
+
+    it('shows the emergency stop, not the general alarm, when the alarm list is empty', async () => {
+      mockFocasInstance.readStatus.mockReturnValue({ mode: 'MEM', runState: 'STOP', emergency: true, alarm: true, motion: 0 });
+      mockFocasInstance.readAlarms.mockReturnValue([]);
+      await connector.connect();
+      const status = await connector.poll();
+
+      expect(status.data.alarmCode).toBe('E-STOP');
+      expect(status.data.alarmMessage).toBe('Emergency Stop Active');
+    });
+
+    it('clears the alarm when the flag goes off and the list is empty', async () => {
+      mockFocasInstance.readStatus.mockReturnValue({ mode: 'MEM', runState: 'STOP', emergency: false, alarm: true, motion: 0 });
+      mockFocasInstance.readAlarms.mockReturnValue([{ alarmNo: 1001, message: 'Spindle overheat' }]);
+      await connector.connect();
+      await connector.poll();
+
+      mockFocasInstance.readStatus.mockReturnValue({ mode: 'MEM', runState: 'STOP', emergency: false, alarm: false, motion: 0 });
+      mockFocasInstance.readAlarms.mockReturnValue([]);
+      const status = await connector.poll();
+
+      expect(status.data.alarm).toBe(false);
+      expect(status.data.alarmCode).toBeUndefined();
+      expect(status.data.alarmMessage).toBeUndefined();
+    });
+
+    it('clears the spindle speed when its read fails', async () => {
+      await connector.connect();
+      expect((await connector.poll()).data.spindleSpeed).toBe(5000);
+
+      mockFocasInstance.readSpindleSpeed.mockImplementation(failing);
+      expect((await connector.poll()).data.spindleSpeed).toBeUndefined();
+    });
+
+    it('clears the program when its read fails', async () => {
+      await connector.connect();
+      expect((await connector.poll()).data.program).toBe('O1234');
+
+      mockFocasInstance.readProgram.mockImplementation(failing);
+      expect((await connector.poll()).data.program).toBeUndefined();
+    });
+
+    it('clears the tool number, the part count and the macros when their reads fail', async () => {
+      const macroConnector = new FanucConnector({
+        name: 'MacroFanuc',
+        host: '192.168.1.100',
+        toolNumberVariable: 500,
+        partCounterVariable: 501,
+        macros: [{ location: 600, name: 'Feed' }],
+      });
+      await macroConnector.connect();
+      const before = await macroConnector.poll();
+      expect(before.data.toolNumber).toBe(100);
+      expect(before.data.partCount).toBe(100);
+      expect(before.data.Feed).toBe(100);
+
+      mockFocasInstance.readMacro.mockImplementation(failing);
+      const after = await macroConnector.poll();
+
+      expect(after.data.toolNumber).toBeUndefined();
+      expect(after.data.partCount).toBeUndefined();
+      expect(after.data.Feed).toBeUndefined();
+      expect(macroConnector.getDataSnapshot().custom?.Feed).toBeUndefined();
+    });
+
+    it('tells the listeners that a value went away', async () => {
+      await connector.connect();
+      await connector.poll();
+      const changes = vi.fn();
+      connector.on('data', changes);
+
+      mockFocasInstance.readProgram.mockImplementation(failing);
+      await connector.poll();
+
+      expect(changes).toHaveBeenCalledWith([{ label: 'program', value: undefined }]);
+    });
+  });
+
   describe('macro reading', () => {
     it('should read toolNumberVariable if configured', async () => {
       const macroConnector = new FanucConnector({
@@ -759,9 +884,9 @@ describe('FanucConnector', () => {
 
       // Should still show alarm from status flag
       expect(status.data.alarm).toBe(true);
-      // But no alarm details since read failed
-      expect(status.data.alarmCode).toBeUndefined();
-      expect(status.data.alarmMessage).toBeUndefined();
+      // With a general code and message, since the read failed
+      expect(status.data.alarmCode).toBe('ALARM');
+      expect(status.data.alarmMessage).toBe('Alarm active (the control gave no details)');
     });
 
     it('should handle readOperatorMessages failure silently', async () => {
