@@ -17,6 +17,7 @@ import { VmalertClient } from './alert-rules/VmalertClient.js';
 import { VictoriaQueryChecker } from './alert-rules/QueryChecker.js';
 import { AlertStore } from './alerts/AlertStore.js';
 import { alertReceiverApp } from './alerts/alertReceiverApp.js';
+import { Notifications } from './notifications/Notifications.js';
 import { getDb, initDatabase, closeDatabase, dataFolder } from './storage/database.js';
 import { Focas } from './machines/fanuc/focas.js';
 import { useSinumerikCertificateFolder } from './machines/siemens/sinumerikClient.js';
@@ -82,6 +83,13 @@ async function start(): Promise<void> {
     // The alerts of vmalert
     const alerts = new AlertStore(getDb());
     poller.addRemovalListener(alerts);
+    const settings = new SettingsTable(getDb());
+    // The messages that go out when an alert starts or ends, for example a text message or a Slack post
+    const notifications = new Notifications({
+      db: getDb(), settingsTable: settings, machineName: machineId => poller.getMachine(machineId)?.name ?? null,
+    });
+    poller.addRemovalListener(notifications);
+    notifications.start();
     // The alert rules of each machine. Chatter writes them to a file that vmalert reads.
     const alertRules = new AlertRuleService({
       store: new AlertRuleStore(getDb()),
@@ -100,7 +108,6 @@ async function start(): Promise<void> {
     const sessions = new SessionStore(getDb());
     const auth = new Auth(users, sessions);
     const accounts = new UserAccounts(users, sessions);
-    const settings = new SettingsTable(getDb());
     const proxySettings = new ProxySettings(sqliteProxySettingStore(settings), TRUST_PROXY);
     if (proxySettings.addresses.length > 0) log.info('Trusted reverse proxies', { addresses: proxySettings.addresses.join(', ') });
     const history = new MetricsReader({ url: VICTORIA_METRICS_URL });
@@ -123,7 +130,10 @@ async function start(): Promise<void> {
       log.info('Server running', { url: `http://localhost:${PORT}`, webApp: WEB_DIR, liveEvents: '/api/events' });
       poller.start();
     }) as Server;
-    const receiver = alertReceiverApp(alerts, { isKnownMachine: machineId => poller.getMachine(machineId) !== null });
+    const receiver = alertReceiverApp(alerts, {
+      isKnownMachine: machineId => poller.getMachine(machineId) !== null,
+      afterSave: () => notifications.findAlertChanges(),
+    });
     const alertServer = serve({ fetch: receiver.fetch, port: ALERT_PORT, hostname: ALERT_HOST }, () => {
       log.info('Alerts from vmalert received', { url: `http://${ALERT_HOST}:${ALERT_PORT}/api/v2/alerts` });
     }) as Server;
@@ -138,6 +148,7 @@ async function start(): Promise<void> {
       releases.stop();
       alertServer.close();
       alertServer.closeAllConnections();
+      await notifications.stop();
       await metrics.stop();
       try {
         stateRecorder.stop();
