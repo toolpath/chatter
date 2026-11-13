@@ -43,6 +43,7 @@ export default defineConfig({
         text: 'Guide',
         items: [
           { text: 'Get started', link: '/guide/get-started' },
+          { text: 'AI agent skills', link: '/guide/ai-agents' },
           { text: 'FANUC machines', link: '/guide/fanuc' },
           { text: 'Siemens machines', link: '/guide/siemens' },
           { text: 'Alerts', link: '/guide/alerts' },
