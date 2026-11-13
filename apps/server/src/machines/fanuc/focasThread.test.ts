@@ -3,17 +3,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Focas } from './focas.js';
 import { FocasThread, FocasThreads, type FocasWorkerPort } from './focasThread.js';
 import { FocasRequestHandler, type FocasConnection, type FocasRequest } from './focasRequests.js';
+import { EW_BUSY, EW_SOCKET, FocasError } from './focasError.js';
 
 /** A worker that answers with a FocasRequestHandler on a later turn, as a real thread does */
 class FakeWorker extends EventEmitter implements FocasWorkerPort {
   readonly requests: FocasRequest[] = [];
   readonly initialize = vi.fn();
+  /** The status read of each connection, by the host it connected to */
+  readonly readStatus = vi.fn((host: string): unknown => ({ mode: host }));
   /** While held, requests wait until release() */
   held = false;
   private readonly queue: FocasRequest[] = [];
   private readonly handler = new FocasRequestHandler({
     initialize: this.initialize,
-    connect: host => ({ readStatus: () => ({ mode: host }), disconnect: vi.fn() }) as unknown as FocasConnection,
+    connect: host => ({ readStatus: () => this.readStatus(host), disconnect: vi.fn() }) as unknown as FocasConnection,
   });
 
   postMessage(request: FocasRequest): void {
@@ -105,6 +108,52 @@ describe('FocasThread', () => {
     workers[0].release();
     await read;
     expect(answered).toBe(true);
+  });
+
+  describe('FOCAS return codes', () => {
+    const busy = () => { throw new FocasError('Failed to read status: Busy', EW_BUSY); };
+
+    it('gives a failed cnc_* call as a FocasError with its code', async () => {
+      const { thread, workers } = threadWithFakeWorkers();
+      await thread.initialize('/lib.so');
+      const session = await thread.connect('h', 8193, 10);
+      workers[0].readStatus.mockImplementation(() => { throw new FocasError('Failed to read status: Socket error', EW_SOCKET); });
+
+      const error = await session.readStatus().catch((failure: unknown) => failure);
+
+      expect(error).toBeInstanceOf(FocasError);
+      expect(error).toMatchObject({ code: EW_SOCKET, message: 'Failed to read status: Socket error' });
+    });
+
+    it('tries a read again when the control is busy', async () => {
+      const { thread, workers } = threadWithFakeWorkers();
+      await thread.initialize('/lib.so');
+      const session = await thread.connect('h', 8193, 10);
+      workers[0].readStatus.mockImplementationOnce(busy).mockImplementationOnce(busy);
+
+      expect(await session.readStatus()).toEqual({ mode: 'h' });
+      expect(workers[0].readStatus).toHaveBeenCalledTimes(3);
+    });
+
+    it('gives up after a few tries when the control stays busy', async () => {
+      const { thread, workers } = threadWithFakeWorkers();
+      await thread.initialize('/lib.so');
+      const session = await thread.connect('h', 8193, 10);
+      workers[0].readStatus.mockImplementation(busy);
+
+      await expect(session.readStatus()).rejects.toMatchObject({ code: EW_BUSY });
+      expect(workers[0].readStatus).toHaveBeenCalledTimes(3);
+    });
+
+    it('does not try again after another failure', async () => {
+      const { thread, workers } = threadWithFakeWorkers();
+      await thread.initialize('/lib.so');
+      const session = await thread.connect('h', 8193, 10);
+      workers[0].readStatus.mockImplementation(() => { throw new FocasError('Failed to read status: Socket error', EW_SOCKET); });
+
+      await expect(session.readStatus()).rejects.toMatchObject({ code: EW_SOCKET });
+      expect(workers[0].readStatus).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('when the thread stops', () => {

@@ -1,5 +1,6 @@
 import { BaseMachineConnector, errorMessage } from '../BaseMachineConnector.js';
 import { Focas } from './focas.js';
+import { isConnectionLost } from './focasError.js';
 import { focasThreads, type FocasSession, type FocasThread } from './focasThread.js';
 import type {
   FanucMachineConfig,
@@ -16,11 +17,15 @@ const DEFAULT_FOCAS_TIMEOUT_SECONDS = 10;
 const EMERGENCY_STOP_ALARM_CODE = 'E-STOP';
 const EMERGENCY_STOP_ALARM_MESSAGE = 'Emergency Stop Active';
 
-/** Run a read that some controls or setups do not support. Gives undefined when the read fails. */
+/**
+ * Run a read that some controls or setups do not support. Gives undefined when the read fails.
+ * A lost connection (EW_SOCKET or EW_HANDLE) still throws, so the poll fails and the next poll connects again.
+ */
 async function readIfSupported<T>(read: () => Promise<T>): Promise<T | undefined> {
   try {
     return await read();
-  } catch {
+  } catch (error) {
+    if (isConnectionLost(error)) throw error;
     return undefined;
   }
 }

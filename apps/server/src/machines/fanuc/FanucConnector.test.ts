@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FanucConnector } from './FanucConnector.js';
+import { EW_HANDLE, EW_SOCKET, FocasError } from './focasError.js';
 
 // Type definitions for mock return values
 interface MockStatus {
@@ -685,6 +686,35 @@ describe('FanucConnector', () => {
       const status = errorConnector.getStatus();
       expect(status.errors.length).toBeGreaterThan(0);
       expect(status.errors[0]).toContain('Connection failed');
+    });
+  });
+
+  describe('a lost connection in a read that may fail', () => {
+    for (const [name, code] of [['EW_SOCKET', EW_SOCKET], ['EW_HANDLE', EW_HANDLE]] as const) {
+      it(`fails the poll on ${name}, and the next poll connects again`, async () => {
+        await connector.connect();
+        mockFocasInstance.readProgram.mockImplementationOnce(() => { throw new FocasError('Failed to read program: lost', code); });
+
+        const failed = await connector.poll();
+
+        expect(failed.connected).toBe(false);
+        expect(failed.errors).toEqual(['Poll failed: Failed to read program: lost']);
+        expect(mockFocasInstance.disconnect).toHaveBeenCalledTimes(1);
+
+        const next = await connector.poll();
+        expect(next.connected).toBe(true);
+        expect(mockThread.connect).toHaveBeenCalledTimes(2);
+      });
+    }
+
+    it('keeps the connection when the control does not have the value', async () => {
+      await connector.connect();
+      mockFocasInstance.readProgram.mockImplementationOnce(() => { throw new FocasError('Failed to read program: No option error', 6); });
+
+      const status = await connector.poll();
+
+      expect(status.connected).toBe(true);
+      expect(status.errors).toEqual([]);
     });
   });
 

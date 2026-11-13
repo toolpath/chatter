@@ -12,6 +12,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { focasLibraryPath } from './focasLibraryPath.js';
+import { FocasError } from './focasError.js';
 
 /** The FOCAS return code for success. Every other code is in FOCAS_ERROR_MESSAGES. */
 const EW_OK = 0;
@@ -374,7 +375,7 @@ function loadedFunctions(): FocasFunctions {
 
 function throwIfFailed(result: number, action: string): void {
   if (result !== EW_OK) {
-    throw new Error(`Failed to ${action}: ${errorText(result)}`);
+    throw new FocasError(`Failed to ${action}: ${errorText(result)}`, result);
   }
 }
 
@@ -485,7 +486,7 @@ export class Focas {
     const handleOut = [0];
     const result = loadedFunctions().allclibhndl3(host, port, timeoutSeconds, handleOut);
     if (result !== EW_OK) {
-      throw new Error(`Connection failed: ${FOCAS_ERROR_MESSAGES[result] || `Error code ${result}`}`);
+      throw new FocasError(`Connection failed: ${FOCAS_ERROR_MESSAGES[result] || `Error code ${result}`}`, result);
     }
 
     this.handle = handleOut[0];
@@ -560,12 +561,11 @@ export class Focas {
       }));
   }
 
-  /** Read the operator messages. A control that does not support cnc_rdopmsg3 gives none. */
+  /** Read the operator messages. A control that does not support cnc_rdopmsg3 throws, as for the other reads. */
   readOperatorMessages(): FocasOperatorMessage[] {
     const messages = {};
     const length = [MAX_OPERATOR_MESSAGES];
-    const result = this.connectedFunctions().rdopmsg3(this.handle, ALL_TYPES, length, messages);
-    if (result !== EW_OK) return [];
+    throwIfFailed(this.connectedFunctions().rdopmsg3(this.handle, ALL_TYPES, length, messages), 'read operator messages');
 
     return numberedMessages<OperatorMessageReply>(messages, length[0])
       .filter(message => message.char_num > 0)

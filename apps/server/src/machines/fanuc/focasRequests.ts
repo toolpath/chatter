@@ -4,6 +4,7 @@
  */
 
 import type { Focas } from './focas.js';
+import { FocasError } from './focasError.js';
 
 /** The reads of one connection that the server can ask for */
 export type FocasRead =
@@ -25,7 +26,8 @@ export type FocasRequest = FocasCommand & { id: number };
 
 export type FocasResponse =
   | { id: number; ok: true; value: unknown }
-  | { id: number; ok: false; message: string };
+  /** code is the FOCAS return code, when the failure came from a cnc_* call */
+  | { id: number; ok: false; message: string; code?: number };
 
 /** One connection to a control, as the Focas class gives it */
 export type FocasConnection = Pick<Focas, FocasRead | 'disconnect'>;
@@ -61,7 +63,9 @@ export class FocasRequestHandler {
     try {
       return { id: request.id, ok: true, value: this.run(request) };
     } catch (error) {
-      return { id: request.id, ok: false, message: error instanceof Error ? error.message : String(error) };
+      const message = error instanceof Error ? error.message : String(error);
+      if (error instanceof FocasError) return { id: request.id, ok: false, message, code: error.code };
+      return { id: request.id, ok: false, message };
     }
   }
 

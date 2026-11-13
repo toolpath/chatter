@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FocasRequestHandler, type FocasConnection, type FocasLibrary } from './focasRequests.js';
+import { EW_SOCKET, FocasError } from './focasError.js';
 
 function fakeConnection(name: string): FocasConnection {
   return {
@@ -57,6 +58,16 @@ describe('FocasRequestHandler', () => {
     expect(handler.handle({ id: 1, kind: 'connect', host: 'h', port: 1, timeoutSeconds: 1 }))
       .toEqual({ id: 1, ok: false, message: 'Connection failed: Socket error' });
     expect(handler.handle({ id: 2, kind: 'initialize', libraryPath: 'x', startProcess: false }).ok).toBe(true);
+  });
+
+  it('answers a failed cnc_* call with its FOCAS return code', () => {
+    const connection = fakeConnection('A');
+    vi.mocked(connection.readStatus).mockImplementation(() => { throw new FocasError('Failed to read status: Socket error', EW_SOCKET); });
+    const { handler } = handlerWith([connection]);
+    handler.handle({ id: 1, kind: 'connect', host: 'h', port: 1, timeoutSeconds: 1 });
+
+    expect(handler.handle({ id: 2, kind: 'read', session: 1, read: 'readStatus', args: [] }))
+      .toEqual({ id: 2, ok: false, message: 'Failed to read status: Socket error', code: EW_SOCKET });
   });
 
   it('ends a connection, after which its session cannot read', () => {

@@ -5,9 +5,14 @@ import { Worker } from 'worker_threads';
 import { Focas, type FocasAlarm, type FocasMacro, type FocasOperatorMessage, type FocasProgram, type FocasSpindleSpeed, type FocasStatus } from './focas.js';
 import type { FocasLoader } from './focasLibraryInstaller.js';
 import type { FocasCommand, FocasRead, FocasRequest, FocasResponse } from './focasRequests.js';
+import { FocasError, isBusy } from './focasError.js';
 import { createLogger } from '../../logging/logger.js';
 
 const log = createLogger('fanuc');
+
+/** How many more times a read tries when the control is busy (EW_BUSY), and how long it waits before each try */
+const BUSY_RETRIES = 2;
+const BUSY_RETRY_DELAY_MS = 50;
 
 /** The parts of a Worker that FocasThread uses, so tests can give their own */
 export interface FocasWorkerPort {
@@ -152,7 +157,7 @@ export class FocasThread {
     if (!waiting) return;
     this.waiting.delete(response.id);
     if (response.ok) waiting.resolve(response.value);
-    else waiting.reject(new Error(response.message));
+    else waiting.reject(response.code === undefined ? new Error(response.message) : new FocasError(response.message, response.code));
   }
 
   /** The library and every connection went with the thread */
@@ -206,8 +211,16 @@ export class FocasSession {
     return this.read('readOperatorMessages') as Promise<FocasOperatorMessage[]>;
   }
 
-  private read(read: FocasRead, ...args: number[]): Promise<unknown> {
-    return this.thread.sendFor(this.generation, { kind: 'read', session: this.session, read, args });
+  /** A control that is busy (EW_BUSY) gets a few more tries, a moment apart */
+  private async read(read: FocasRead, ...args: number[]): Promise<unknown> {
+    for (let retry = 0; ; retry++) {
+      try {
+        return await this.thread.sendFor(this.generation, { kind: 'read', session: this.session, read, args });
+      } catch (error) {
+        if (!isBusy(error) || retry >= BUSY_RETRIES) throw error;
+        await new Promise(resolve => setTimeout(resolve, BUSY_RETRY_DELAY_MS));
+      }
+    }
   }
 }
 
