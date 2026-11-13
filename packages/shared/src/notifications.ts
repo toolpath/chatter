@@ -73,12 +73,18 @@ export interface ChannelInput extends ChannelRouting {
   clearSecrets?: string[];
 }
 
-/** Why Chatter made a message. A "combined" message tells that an alert started and ended. */
-export const NOTIFICATION_KINDS = ['started', 'ended', 'combined', 'test'] as const;
+/**
+ * Why Chatter made a message. A "combined" message tells that an alert started and ended.
+ * A "more" message goes in place of the messages over the limit of a channel, for example "And 7 more alerts".
+ */
+export const NOTIFICATION_KINDS = ['started', 'ended', 'combined', 'more', 'test'] as const;
 export type NotificationKind = typeof NOTIFICATION_KINDS[number];
 
-/** "waiting" is in the outbox. "failed" means that Chatter stopped trying. */
-export const MESSAGE_STATUSES = ['waiting', 'sent', 'failed'] as const;
+/**
+ * "waiting" is in the outbox. "failed" means that Chatter stopped trying.
+ * "grouped" means that the message went into one "more" message, because the channel was at its limit.
+ */
+export const MESSAGE_STATUSES = ['waiting', 'sent', 'failed', 'grouped'] as const;
 export type MessageStatus = typeof MESSAGE_STATUSES[number];
 
 /** One message in the list, from GET /api/notification-messages */
