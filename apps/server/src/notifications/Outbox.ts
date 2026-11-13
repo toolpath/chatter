@@ -110,6 +110,17 @@ export class Outbox implements MachineRemovalListener {
     `).run(combined.kind, JSON.stringify(combined), channelId, alertId).changes > 0;
   }
 
+  /**
+   * True when the channel got the start message of the alert, in any status. A channel without it gets no end message,
+   * for example a channel that the admin added while the alert was on. The clean-up can delete the start message of an
+   * alert that is still on (after 30 days, or over MAX_KEPT_MESSAGES), so that alert gets no end message.
+   */
+  hasStartMessage(channelId: string, alertId: number): boolean {
+    return this.db.prepare(`
+      SELECT 1 FROM notification_messages WHERE channel_id = ? AND alert_id = ? AND kind = 'started'
+    `).get(channelId, alertId) !== undefined;
+  }
+
   /** A test goes at once, not through the outbox. Its result goes in the message list, so the admin sees it there too. */
   keepTestResult(channelId: string, message: OutgoingMessage, result: ChannelTestResult, now: number): void {
     const id = this.insert({ channelId, alertId: null, message }, null, now);

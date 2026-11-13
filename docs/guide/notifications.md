@@ -147,6 +147,7 @@ When an alert starts or ends, Chatter makes one message for each channel that wa
 The message waits in a queue in `chatter.db`.
 After a restart or a power cut, the message is still in the queue, and Chatter sends it.
 If the end of an alert comes before Chatter sent its start, Chatter sends one message for both.
+A channel that did not get the start of an alert gets no end message for it, for example a channel that you add while the alert is on.
 
 Sometimes the service does not answer, or answers that it is busy. Then Chatter tries the message again.
 The waits are 30 seconds, 1 minute, 2 minutes, and 5 minutes, then 10 minutes each time. After 24 hours, the message fails.

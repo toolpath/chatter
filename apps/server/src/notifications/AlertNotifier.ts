@@ -10,7 +10,7 @@ const log = createLogger('notifications');
 
 export interface NotifierOptions {
   channels: { list(): NotificationChannel[] };
-  outbox: Pick<Outbox, 'queue' | 'combineWithWaitingStart'>;
+  outbox: Pick<Outbox, 'queue' | 'combineWithWaitingStart' | 'hasStartMessage'>;
   /** null when the machine is not there any more */
   machineName: (machineId: string) => string | null;
   textOptions: () => TextOptions;
@@ -20,6 +20,7 @@ export interface NotifierOptions {
 /**
  * Queues the messages of each alert change, one for each channel that wants the alert.
  * When an alert ends while its start message still waits, the channel gets one combined message.
+ * A channel that did not get the start message gets no end message, so nobody reads "OK" for an alert they never saw.
  */
 export class AlertNotifier implements AlertChangeListener {
   constructor(private readonly options: NotifierOptions) {}
@@ -42,7 +43,10 @@ export class AlertNotifier implements AlertChangeListener {
     const message = (messageKind: 'started' | 'ended' | 'combined') =>
       alertOutgoingMessage({ kind: messageKind, alert, machineName }, textOptions());
     for (const channel of this.channelsThatWant(alert)) {
-      if (kind === 'ended' && outbox.combineWithWaitingStart(channel.id, alertId, message('combined'))) continue;
+      if (kind === 'ended') {
+        if (!outbox.hasStartMessage(channel.id, alertId)) continue;
+        if (outbox.combineWithWaitingStart(channel.id, alertId, message('combined'))) continue;
+      }
       outbox.queue({ channelId: channel.id, alertId, message: message(kind) }, now());
     }
   }

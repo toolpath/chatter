@@ -164,6 +164,30 @@ describe('Outbox', () => {
     });
   });
 
+  describe('hasStartMessage', () => {
+    it('is true when the channel got the start message of the alert, also when it waits, failed, or went in a "more" message', () => {
+      queue('waiting', 1);
+      const failed = queue('failed', 1);
+      outbox.takeDue(NOW);
+      outbox.markFailed(failed, 'Twilio refused the login.');
+      sendMessages('grouped', SEND_LIMIT - 1, NOW);
+      [1, 2].forEach(alertId => queue('grouped', alertId, alertMessage('started'), NOW + MINUTE));
+      outbox.takeDue(NOW + MINUTE);
+
+      expect(outbox.hasStartMessage('waiting', 1)).toBe(true);
+      expect(outbox.hasStartMessage('failed', 1)).toBe(true);
+      expect(outbox.list({ channelId: 'grouped' }).find(message => message.alertId === 1)?.status).toBe('grouped');
+      expect(outbox.hasStartMessage('grouped', 1)).toBe(true);
+    });
+
+    it('is false for another channel or another alert', () => {
+      queue('phones', 1);
+
+      expect(outbox.hasStartMessage('slack', 1)).toBe(false);
+      expect(outbox.hasStartMessage('phones', 2)).toBe(false);
+    });
+  });
+
   describe(`the limit of ${SEND_LIMIT} messages in 10 minutes`, () => {
     it('holds the messages of a channel at its limit, until the oldest sent message is 10 minutes old', () => {
       sendMessages('phones', SEND_LIMIT, NOW);

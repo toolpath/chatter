@@ -96,6 +96,29 @@ describe('AlertNotifier', () => {
     ]);
   });
 
+  it('sends no end message to a channel that did not get the start message, for example a channel added during the alert', () => {
+    channels = [channel('phones')];
+    notifier.alertChanged(change('started'));
+    channels = [channel('phones'), channel('added-later')];
+    const [start] = outbox.takeDue(NOW);
+    outbox.markSent(start.id, 'Sent', NOW);
+
+    notifier.alertChanged(change('ended'));
+
+    expect(queued()).toEqual([
+      'phones started: CRITICAL - Haas VF-2: In alarm. Started 9:02 AM.',
+      'phones ended: OK - Haas VF-2: In alarm ended at 9:03 AM.',
+    ]);
+  });
+
+  it('sends no end message when no channel got the start message, for example an alert that was on before the update', () => {
+    channels = [channel('phones')];
+
+    notifier.alertChanged(change('ended'));
+
+    expect(queued()).toEqual([]);
+  });
+
   it('sends an alert that is not about one machine only to the channels for all machines', () => {
     channels = [channel('all'), channel('one-machine', { machineIds: ['haas-vf2'] })];
 

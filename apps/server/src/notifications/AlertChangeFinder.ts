@@ -58,7 +58,8 @@ export class AlertChangeFinder {
 
   /**
    * At the first start after the update that adds notifications, the alerts that are already saved get notes.
-   * So the update sends no messages about old changes. A firing alert gets only a start note, so its end sends a message.
+   * So the update sends no messages about old changes. A firing alert gets only a start note, so its end is still a change.
+   * No channel got its start message, so AlertNotifier sends no message for that end.
    */
   private createNoticeTable(now: number): void {
     const isFirstStart = !this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'alert_notices'").get();
