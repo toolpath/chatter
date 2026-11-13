@@ -1,11 +1,7 @@
-import type { HistoryValue } from '@local-chatter/shared';
+import { isMachineRunning, type HistoryValue } from '@local-chatter/shared';
 import type { MachineDataSnapshot } from '../types/index.js';
 
 type ReadValue = (snapshot: MachineDataSnapshot) => number | boolean | undefined;
-
-/** The FANUC run state, and the execution value (MTConnect, Haas and Brother), when a program runs */
-const RUNNING_FANUC = 'START';
-const RUNNING_MTCONNECT = 'ACTIVE';
 
 /**
  * The machine values that go to VictoriaMetrics, and where each one is in a snapshot.
@@ -20,7 +16,9 @@ const METRICS: Record<Exclude<HistoryValue, 'connected'>, ReadValue> = {
   'tool-number': snapshot => snapshot.toolNumber,
   alarm: snapshot => snapshot.alarm,
   emergency: snapshot => snapshot.emergency,
-  running: isRunning,
+  // The same rule as the dashboard. Undefined when the machine does not tell whether a program runs
+  // (for example a Haas with no query port).
+  running: isMachineRunning,
 };
 
 /**
@@ -50,13 +48,6 @@ export function historyMetricName(value: HistoryValue): string {
 /** The selector of every series of one machine, for a MetricsQL query or a delete */
 export function machineSelector(machineId: string): string {
   return `{machine="${escapeLabelValue(machineId)}"}`;
-}
-
-/** Undefined when the machine does not tell whether a program runs (for example a Haas with no query port) */
-function isRunning(snapshot: MachineDataSnapshot): boolean | undefined {
-  if (snapshot.runState !== undefined) return snapshot.runState === RUNNING_FANUC;
-  if (snapshot.execution !== undefined) return snapshot.execution === RUNNING_MTCONNECT;
-  return undefined;
 }
 
 function toMetricNumber(value: number | boolean | undefined): number | undefined {

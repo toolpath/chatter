@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { testMachine } from '../../test/testMachine';
 import { byUrgency, countByState, filterMachines } from './machineFilter';
 
-const running = testMachine({ id: 'a', name: 'Lathe', host: '10.0.0.1' }, { spindleSpeed: 5000, program: 'O1234' });
+const running = testMachine({ id: 'a', name: 'Lathe', host: '10.0.0.1' }, { execution: 'ACTIVE', spindleSpeed: 5000, program: 'O1234' });
 const idle = testMachine({ id: 'b', name: 'Mill 2', host: '10.0.0.2' });
 const alarm = testMachine({ id: 'c', name: 'Mill 1', host: '10.0.0.3' }, { alarm: true });
 const offline = testMachine({ id: 'd', name: 'Drill', host: '10.0.0.4', connected: false });

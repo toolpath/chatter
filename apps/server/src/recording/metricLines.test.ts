@@ -39,8 +39,10 @@ describe('metricLines', () => {
 
   it.each([
     [{ runState: 'START' }, 1],
+    [{ runState: 'MSTR' }, 1],
     [{ runState: 'STOP' }, 0],
     [{ runState: 'HOLD' }, 0],
+    [{ runState: 'HOLD', spindleSpeed: 8000 }, 0],
     [{ execution: 'ACTIVE' }, 1],
     [{ execution: 'READY' }, 0],
     [{ execution: 'FEED_HOLD' }, 0],
