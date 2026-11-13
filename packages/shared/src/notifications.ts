@@ -118,6 +118,11 @@ export type ChannelTestResult =
 export interface NotificationSettings {
   /** The address that people use to open Chatter, for example http://chatter.local:3001. null sends no links. */
   linkBaseUrl: string | null;
+  /**
+   * The time zone of the shop for the times in the messages, for example America/Chicago.
+   * null gives the times in UTC. The web app fills it from the browser of the Admin until it is saved.
+   */
+  timeZone: string | null;
 }
 
 /** The message list keeps this many days */
