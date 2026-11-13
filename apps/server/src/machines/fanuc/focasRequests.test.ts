@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FocasRequestHandler, type FocasConnection, type FocasLibrary } from './focasRequests.js';
+import { EW_SOCKET, FocasError } from './focasError.js';
 
 function fakeConnection(name: string): FocasConnection {
   return {
@@ -11,12 +12,15 @@ function fakeConnection(name: string): FocasConnection {
     readProgram: vi.fn(() => ({ name: 'O1', number: 1 })),
     readAlarms: vi.fn(() => []),
     readOperatorMessages: vi.fn(() => []),
+    readSystemInfo: vi.fn(() => ({ cncType: '31', mtType: 'M', series: 'G421', version: '0010', maxAxes: 32 })),
+    readPathCount: vi.fn(() => 1),
   };
 }
 
 function handlerWith(connections: FocasConnection[]) {
   const library: FocasLibrary = {
     initialize: vi.fn(),
+    cleanup: vi.fn(),
     connect: vi.fn(() => {
       const next = connections.shift();
       if (!next) throw new Error('Connection failed: Socket error');
@@ -29,8 +33,8 @@ function handlerWith(connections: FocasConnection[]) {
 describe('FocasRequestHandler', () => {
   it('loads the library from the path that the server sends', () => {
     const { library, handler } = handlerWith([]);
-    expect(handler.handle({ id: 1, kind: 'initialize', libraryPath: '/data/focas/lib.so' })).toEqual({ id: 1, ok: true, value: undefined });
-    expect(library.initialize).toHaveBeenCalledWith('/data/focas/lib.so');
+    expect(handler.handle({ id: 1, kind: 'initialize', libraryPath: '/data/focas/lib.so', startProcess: true })).toEqual({ id: 1, ok: true, value: undefined });
+    expect(library.initialize).toHaveBeenCalledWith('/data/focas/lib.so', true);
   });
 
   it('gives each connection its own session, and reads from that connection', () => {
@@ -56,7 +60,17 @@ describe('FocasRequestHandler', () => {
     const { handler } = handlerWith([]);
     expect(handler.handle({ id: 1, kind: 'connect', host: 'h', port: 1, timeoutSeconds: 1 }))
       .toEqual({ id: 1, ok: false, message: 'Connection failed: Socket error' });
-    expect(handler.handle({ id: 2, kind: 'initialize', libraryPath: 'x' }).ok).toBe(true);
+    expect(handler.handle({ id: 2, kind: 'initialize', libraryPath: 'x', startProcess: false }).ok).toBe(true);
+  });
+
+  it('answers a failed cnc_* call with its FOCAS return code', () => {
+    const connection = fakeConnection('A');
+    vi.mocked(connection.readStatus).mockImplementation(() => { throw new FocasError('Failed to read status: Socket error', EW_SOCKET); });
+    const { handler } = handlerWith([connection]);
+    handler.handle({ id: 1, kind: 'connect', host: 'h', port: 1, timeoutSeconds: 1 });
+
+    expect(handler.handle({ id: 2, kind: 'read', session: 1, read: 'readStatus', args: [] }))
+      .toEqual({ id: 2, ok: false, message: 'Failed to read status: Socket error', code: EW_SOCKET });
   });
 
   it('ends a connection, after which its session cannot read', () => {
@@ -68,6 +82,22 @@ describe('FocasRequestHandler', () => {
     expect(connection.disconnect).toHaveBeenCalledTimes(1);
     expect(handler.handle({ id: 3, kind: 'read', session: 1, read: 'readStatus', args: [] }))
       .toEqual({ id: 3, ok: false, message: 'Not connected to CNC controller' });
+  });
+
+  it('frees every connection and then unloads the library at cleanup', () => {
+    const first = fakeConnection('A');
+    const second = fakeConnection('B');
+    const { library, handler } = handlerWith([first, second]);
+    handler.handle({ id: 1, kind: 'connect', host: 'a', port: 1, timeoutSeconds: 1 });
+    handler.handle({ id: 2, kind: 'connect', host: 'b', port: 1, timeoutSeconds: 1 });
+    vi.mocked(first.disconnect).mockImplementation(() => { throw new Error('Socket error'); });
+
+    expect(handler.handle({ id: 3, kind: 'cleanup', exitProcess: true }).ok).toBe(true);
+
+    expect(first.disconnect).toHaveBeenCalledTimes(1);
+    expect(second.disconnect).toHaveBeenCalledTimes(1);
+    expect(library.cleanup).toHaveBeenCalledWith(true);
+    expect(handler.handle({ id: 4, kind: 'read', session: 2, read: 'readStatus', args: [] }).ok).toBe(false);
   });
 
   it('refuses a read that is not a FOCAS read', () => {

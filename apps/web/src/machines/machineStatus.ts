@@ -1,9 +1,10 @@
+import { isMachineRunning } from '@local-chatter/shared';
 import type { Machine, MachineData } from '../types';
 
 /**
  * What a machine does now. The pages show these states with a color, a word and an icon.
  * - alarm: the machine reports an alarm
- * - running: a program runs, or the spindle turns
+ * - running: a program runs (isMachineRunning, the same rule as the machine history). A turning spindle alone does not count.
  * - idle: connected, but nothing runs
  * - connecting: the server tries to reach the machine for the first time, for at most 30 seconds
  * - offline: the server cannot reach the machine
@@ -21,21 +22,12 @@ export const STATE_LABELS: Record<MachineState, string> = {
   offline: 'Offline',
 };
 
-/** The machine says a program runs: MTConnect "execution" or the FANUC "run state" */
-function reportsProgramRunning(data: MachineData): boolean {
-  return data.execution === 'ACTIVE' || data.runState === 'START';
-}
-
-function spindleTurns(data: MachineData): boolean {
-  return (data.spindleSpeed ?? 0) > 0;
-}
-
 export function machineStateOf(machine: Machine): MachineState {
   // Before the first good poll the values are not real yet, even when the network connection is open
   if (machine.connecting) return 'connecting';
   if (!machine.connected) return 'offline';
   if (machine.data.alarm) return 'alarm';
-  if (reportsProgramRunning(machine.data) || spindleTurns(machine.data)) return 'running';
+  if (isMachineRunning(machine.data)) return 'running';
   return 'idle';
 }
 

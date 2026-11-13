@@ -117,7 +117,7 @@ export interface MTConnectMachineUpdate {
 // ============================================
 
 export interface FanucMachineData extends MachineData {
-  runState?: string;         // Running state (RESET, STOP, HOLD, START)
+  runState?: string;         // Running state (RESET, STOP, HOLD, START, MSTR)
   emergency?: boolean;       // Emergency stop status
   alarmMessage?: string;     // Alarm message text
   motion?: number;           // Axis motion status

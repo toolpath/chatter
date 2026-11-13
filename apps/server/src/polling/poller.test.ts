@@ -530,6 +530,15 @@ describe('HardwarePoller', () => {
       expect(poller.getConnector(machine.id)).toBeUndefined();
     });
 
+    it('disposes the connector, so its FOCAS thread stops', async () => {
+      const machine = await addRobodrill();
+      const dispose = vi.spyOn(poller.getConnector(machine.id)!, 'dispose');
+
+      await poller.removeMachine(machine.id);
+
+      expect(dispose).toHaveBeenCalledTimes(1);
+    });
+
     it('deletes from database', async () => {
       const machine = await addRobodrill();
       mockDb.prepare.mockClear();

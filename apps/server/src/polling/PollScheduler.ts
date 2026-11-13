@@ -7,6 +7,15 @@ interface PollSchedulerHooks {
   connectingEnded(connector: BaseMachineConnector): void;
 }
 
+/** A connector in a bad state may throw on disconnect. It counts as disconnected all the same. */
+function disconnectQuietly(connector: BaseMachineConnector): void {
+  try {
+    connector.disconnect();
+  } catch {
+    connector.connected = false;
+  }
+}
+
 const DEFAULT_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS = 10000;
 /**
@@ -96,17 +105,30 @@ export class PollScheduler {
     this.scheduleNext(connector);
   }
 
-  /** Poll one time. False when the poll fails or runs out of time. The machine stays "in progress" until the poll really ends. */
+  /**
+   * Poll one time. False when the poll fails or runs out of time. The machine stays "in progress" until the poll really ends.
+   * A poll that runs out of time disconnects the machine, so its old values do not show as live.
+   * When that poll ends later, the machine is disconnected again, so whatever the late poll did
+   * (for example a connect that ended after all) does not count. The next poll connects again.
+   */
   private async pollWithTimeout(connector: BaseMachineConnector): Promise<boolean> {
     const { id } = connector;
+    let timedOut = false;
     this.idsWithPollInProgress.add(id);
     // Promise.resolve().then also catches an error that poll() throws before it gives a promise
     const poll = Promise.resolve()
       .then(() => connector.poll())
-      .finally(() => this.idsWithPollInProgress.delete(id));
+      .finally(() => {
+        this.idsWithPollInProgress.delete(id);
+        if (timedOut) disconnectQuietly(connector);
+      });
     let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<false>(resolve => {
-      timeoutTimer = setTimeout(() => resolve(false), POLL_TIMEOUT_MS);
+      timeoutTimer = setTimeout(() => {
+        timedOut = true;
+        disconnectQuietly(connector);
+        resolve(false);
+      }, POLL_TIMEOUT_MS);
     });
 
     try {

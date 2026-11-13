@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FanucConnector } from './FanucConnector.js';
+import { EW_HANDLE, EW_SOCKET, FocasError } from './focasError.js';
+import { captureLog } from '../../logging/testSupport.js';
 
 // Type definitions for mock return values
 interface MockStatus {
@@ -38,6 +40,8 @@ const mockFocasInstance = {
   readAlarms: vi.fn<[], MockAlarm[]>(() => []),
   readMacro: vi.fn(() => ({ value: 100 })),
   readOperatorMessages: vi.fn<[], MockOperatorMessage[]>(() => []),
+  readSystemInfo: vi.fn<[], { cncType: string; mtType: string }>(() => ({ cncType: '31', mtType: 'M' })),
+  readPathCount: vi.fn<[], number>(() => 1),
 };
 
 // Track availability for tests
@@ -52,15 +56,17 @@ vi.mock('./focas.js', () => ({
   },
 }));
 
-// The FOCAS thread gives the mock session
-vi.mock('./focasThread.js', () => ({
-  focasThread: {
-    connect: vi.fn(async (host: string, port: number, timeoutSeconds: number) => {
-      mockFocasInstance.connect(host, port, timeoutSeconds);
-      return mockFocasInstance;
-    }),
-  },
-}));
+// The FOCAS thread of each machine gives the mock session
+const mockThread = {
+  connect: vi.fn(async (host: string, port: number, timeoutSeconds: number) => {
+    mockFocasInstance.connect(host, port, timeoutSeconds);
+    return mockFocasInstance;
+  }),
+  stop: vi.fn(async () => undefined),
+};
+const mockThreads = vi.hoisted(() => ({ thread: (): unknown => undefined }));
+mockThreads.thread = vi.fn(() => mockThread);
+vi.mock('./focasThread.js', () => ({ focasThreads: mockThreads }));
 
 describe('FanucConnector', () => {
   let connector: FanucConnector;
@@ -86,6 +92,8 @@ describe('FanucConnector', () => {
     mockFocasInstance.readAlarms.mockReturnValue([]);
     mockFocasInstance.readMacro.mockReturnValue({ value: 100 });
     mockFocasInstance.readOperatorMessages.mockReturnValue([]);
+    mockFocasInstance.readSystemInfo.mockReset().mockReturnValue({ cncType: '31', mtType: 'M' });
+    mockFocasInstance.readPathCount.mockReset().mockReturnValue(1);
 
     connector = new FanucConnector({
       id: 'test_fanuc',
@@ -231,6 +239,47 @@ describe('FanucConnector', () => {
     it('should be safe to call when not connected', () => {
       expect(() => connector.disconnect()).not.toThrow();
       expect(connector.connected).toBe(false);
+    });
+
+    it('keeps the FOCAS thread of the machine, for the next connect', async () => {
+      await connector.connect();
+      connector.disconnect();
+      await connector.connect();
+
+      expect(mockThreads.thread).toHaveBeenCalledTimes(1);
+      expect(mockThread.stop).not.toHaveBeenCalled();
+    });
+
+    it('does not keep a connection that ends after a disconnect', async () => {
+      let finishConnect: () => void = () => undefined;
+      mockThread.connect.mockImplementationOnce(() => new Promise(resolve => {
+        finishConnect = () => resolve(mockFocasInstance);
+      }));
+      const connecting = connector.connect();
+      await vi.waitFor(() => expect(mockThread.connect).toHaveBeenCalled());
+
+      connector.disconnect();
+      finishConnect();
+
+      await expect(connecting).rejects.toThrow('Disconnected while connecting');
+      expect(connector.connected).toBe(false);
+      expect(mockFocasInstance.disconnect).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('dispose', () => {
+    it('ends the session and stops the FOCAS thread of the machine', async () => {
+      await connector.connect();
+      connector.dispose();
+
+      expect(connector.connected).toBe(false);
+      expect(mockFocasInstance.disconnect).toHaveBeenCalledTimes(1);
+      expect(mockThread.stop).toHaveBeenCalledTimes(1);
+    });
+
+    it('does nothing to a thread when the machine never connected', () => {
+      connector.dispose();
+      expect(mockThread.stop).not.toHaveBeenCalled();
     });
   });
 
@@ -494,6 +543,131 @@ describe('FanucConnector', () => {
     });
   });
 
+  describe('a value that the next poll cannot read', () => {
+    const failing = () => { throw new Error('Read error'); };
+
+    it('clears the operator message when the control has no message any more', async () => {
+      mockFocasInstance.readOperatorMessages.mockReturnValue([{ number: 1, type: 0, message: 'Load part' }]);
+      await connector.connect();
+      expect((await connector.poll()).data.operatorMessage).toBe('Load part');
+
+      mockFocasInstance.readOperatorMessages.mockReturnValue([]);
+      expect((await connector.poll()).data.operatorMessage).toBeUndefined();
+    });
+
+    it('clears the operator message when the read fails', async () => {
+      mockFocasInstance.readOperatorMessages.mockReturnValue([{ number: 1, type: 0, message: 'Load part' }]);
+      await connector.connect();
+      await connector.poll();
+
+      mockFocasInstance.readOperatorMessages.mockImplementation(failing);
+      expect((await connector.poll()).data.operatorMessage).toBeUndefined();
+    });
+
+    it('gives a general alarm, not the old one, when the alarm flag is on and the list is empty', async () => {
+      mockFocasInstance.readStatus.mockReturnValue({ mode: 'MEM', runState: 'STOP', emergency: false, alarm: true, motion: 0 });
+      mockFocasInstance.readAlarms.mockReturnValue([{ alarmNo: 1001, message: 'Spindle overheat' }]);
+      await connector.connect();
+      expect((await connector.poll()).data.alarmCode).toBe('1001');
+
+      mockFocasInstance.readAlarms.mockReturnValue([]);
+      const status = await connector.poll();
+
+      expect(status.data.alarm).toBe(true);
+      expect(status.data.alarmCode).toBe('ALARM');
+      expect(status.data.alarmMessage).toBe('Alarm active (the control gave no details)');
+    });
+
+    it('gives a general alarm, not the old one, when the alarm flag is on and the list read fails', async () => {
+      mockFocasInstance.readStatus.mockReturnValue({ mode: 'MEM', runState: 'STOP', emergency: false, alarm: true, motion: 0 });
+      mockFocasInstance.readAlarms.mockReturnValue([{ alarmNo: 1001, message: 'Spindle overheat' }]);
+      await connector.connect();
+      await connector.poll();
+
+      mockFocasInstance.readAlarms.mockImplementation(failing);
+      const status = await connector.poll();
+
+      expect(status.data.alarmCode).toBe('ALARM');
+      expect(status.data.alarmMessage).toBe('Alarm active (the control gave no details)');
+    });
+
+    it('shows the emergency stop, not the general alarm, when the alarm list is empty', async () => {
+      mockFocasInstance.readStatus.mockReturnValue({ mode: 'MEM', runState: 'STOP', emergency: true, alarm: true, motion: 0 });
+      mockFocasInstance.readAlarms.mockReturnValue([]);
+      await connector.connect();
+      const status = await connector.poll();
+
+      expect(status.data.alarmCode).toBe('E-STOP');
+      expect(status.data.alarmMessage).toBe('Emergency Stop Active');
+    });
+
+    it('clears the alarm when the flag goes off and the list is empty', async () => {
+      mockFocasInstance.readStatus.mockReturnValue({ mode: 'MEM', runState: 'STOP', emergency: false, alarm: true, motion: 0 });
+      mockFocasInstance.readAlarms.mockReturnValue([{ alarmNo: 1001, message: 'Spindle overheat' }]);
+      await connector.connect();
+      await connector.poll();
+
+      mockFocasInstance.readStatus.mockReturnValue({ mode: 'MEM', runState: 'STOP', emergency: false, alarm: false, motion: 0 });
+      mockFocasInstance.readAlarms.mockReturnValue([]);
+      const status = await connector.poll();
+
+      expect(status.data.alarm).toBe(false);
+      expect(status.data.alarmCode).toBeUndefined();
+      expect(status.data.alarmMessage).toBeUndefined();
+    });
+
+    it('clears the spindle speed when its read fails', async () => {
+      await connector.connect();
+      expect((await connector.poll()).data.spindleSpeed).toBe(5000);
+
+      mockFocasInstance.readSpindleSpeed.mockImplementation(failing);
+      expect((await connector.poll()).data.spindleSpeed).toBeUndefined();
+    });
+
+    it('clears the program when its read fails', async () => {
+      await connector.connect();
+      expect((await connector.poll()).data.program).toBe('O1234');
+
+      mockFocasInstance.readProgram.mockImplementation(failing);
+      expect((await connector.poll()).data.program).toBeUndefined();
+    });
+
+    it('clears the tool number, the part count and the macros when their reads fail', async () => {
+      const macroConnector = new FanucConnector({
+        name: 'MacroFanuc',
+        host: '192.168.1.100',
+        toolNumberVariable: 500,
+        partCounterVariable: 501,
+        macros: [{ location: 600, name: 'Feed' }],
+      });
+      await macroConnector.connect();
+      const before = await macroConnector.poll();
+      expect(before.data.toolNumber).toBe(100);
+      expect(before.data.partCount).toBe(100);
+      expect(before.data.Feed).toBe(100);
+
+      mockFocasInstance.readMacro.mockImplementation(failing);
+      const after = await macroConnector.poll();
+
+      expect(after.data.toolNumber).toBeUndefined();
+      expect(after.data.partCount).toBeUndefined();
+      expect(after.data.Feed).toBeUndefined();
+      expect(macroConnector.getDataSnapshot().custom?.Feed).toBeUndefined();
+    });
+
+    it('tells the listeners that a value went away', async () => {
+      await connector.connect();
+      await connector.poll();
+      const changes = vi.fn();
+      connector.on('data', changes);
+
+      mockFocasInstance.readProgram.mockImplementation(failing);
+      await connector.poll();
+
+      expect(changes).toHaveBeenCalledWith([{ label: 'program', value: undefined }]);
+    });
+  });
+
   describe('macro reading', () => {
     it('should read toolNumberVariable if configured', async () => {
       const macroConnector = new FanucConnector({
@@ -645,6 +819,130 @@ describe('FanucConnector', () => {
     });
   });
 
+  describe('a lost connection in a read that may fail', () => {
+    for (const [name, code] of [['EW_SOCKET', EW_SOCKET], ['EW_HANDLE', EW_HANDLE]] as const) {
+      it(`fails the poll on ${name}, and the next poll connects again`, async () => {
+        await connector.connect();
+        mockFocasInstance.readProgram.mockImplementationOnce(() => { throw new FocasError('Failed to read program: lost', code); });
+
+        const failed = await connector.poll();
+
+        expect(failed.connected).toBe(false);
+        expect(failed.errors).toEqual(['Poll failed: Failed to read program: lost']);
+        expect(mockFocasInstance.disconnect).toHaveBeenCalledTimes(1);
+
+        const next = await connector.poll();
+        expect(next.connected).toBe(true);
+        expect(mockThread.connect).toHaveBeenCalledTimes(2);
+      });
+    }
+
+    it('keeps the connection when the control does not have the value', async () => {
+      await connector.connect();
+      mockFocasInstance.readProgram.mockImplementationOnce(() => { throw new FocasError('Failed to read program: No option error', 6); });
+
+      const status = await connector.poll();
+
+      expect(status.connected).toBe(true);
+      expect(status.errors).toEqual([]);
+    });
+  });
+
+  describe('a poll whose connection dies', () => {
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('stops the other reads of the poll at once after a lost connection', async () => {
+      await connector.connect();
+      mockFocasInstance.readSpindleSpeed.mockImplementationOnce(() => { throw new FocasError('Failed to read spindle speed: Socket error', EW_SOCKET); });
+
+      const status = await connector.poll();
+
+      expect(status.connected).toBe(false);
+      expect(mockFocasInstance.readProgram).not.toHaveBeenCalled();
+      expect(mockFocasInstance.readAlarms).not.toHaveBeenCalled();
+      expect(mockFocasInstance.readOperatorMessages).not.toHaveBeenCalled();
+    });
+
+    it('fails the poll when its reads run past the deadline, before the poll limit of the scheduler', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      await connector.connect();
+      // Each read waits out a long timeout
+      mockFocasInstance.readSpindleSpeed.mockImplementationOnce(() => {
+        vi.setSystemTime(Date.now() + 9000);
+        return { speed: 5000 };
+      });
+
+      const status = await connector.poll();
+
+      expect(status.connected).toBe(false);
+      expect(status.errors).toEqual(['Poll failed: The reads of this poll took too long']);
+      expect(mockFocasInstance.readSpindleLoad).not.toHaveBeenCalled();
+    });
+
+    it('logs a read that does not work once, until it works again', async () => {
+      const log = captureLog();
+      try {
+        await connector.connect();
+        mockFocasInstance.readProgram.mockImplementation(() => { throw new FocasError('Failed to read program: No option error', 6); });
+        await connector.poll();
+        await connector.poll();
+        expect(log.text().match(/A FANUC read did not work/g)).toHaveLength(1);
+
+        mockFocasInstance.readProgram.mockReturnValue({ name: 'O1', number: 1 });
+        await connector.poll();
+        mockFocasInstance.readProgram.mockImplementation(() => { throw new FocasError('Failed to read program: No option error', 6); });
+        await connector.poll();
+        expect(log.text().match(/A FANUC read did not work/g)).toHaveLength(2);
+      } finally {
+        log.restore();
+      }
+    });
+  });
+
+  describe('the control information', () => {
+    it('gives the series, the type and the paths as read-only snapshot fields', async () => {
+      mockFocasInstance.readSystemInfo.mockReturnValue({ cncType: '0', mtType: 'T' });
+      await connector.connect();
+      await connector.poll();
+
+      expect(connector.getDataSnapshot().custom).toMatchObject({ controlSeries: '0', controlType: 'T', lathe: true, paths: 1 });
+    });
+
+    it('leaves the information out when the control cannot give it', async () => {
+      mockFocasInstance.readSystemInfo.mockImplementation(() => { throw new FocasError('Failed to read system information: Busy', -1); });
+      mockFocasInstance.readPathCount.mockImplementation(() => { throw new FocasError('Failed to read path count: No option error', 6); });
+
+      await connector.connect();
+      await connector.poll();
+
+      expect(connector.connected).toBe(true);
+      expect(connector.getDataSnapshot().custom).not.toHaveProperty('controlSeries');
+      expect(connector.getDataSnapshot().custom).not.toHaveProperty('paths');
+    });
+
+    it('warns once that only path 1 is read, when the control has more paths', async () => {
+      const log = captureLog();
+      try {
+        mockFocasInstance.readPathCount.mockReturnValue(2);
+        await connector.connect();
+        connector.disconnect();
+        await connector.connect();
+
+        expect(log.text('warn').match(/more than one path/g)).toHaveLength(1);
+      } finally {
+        log.restore();
+      }
+    });
+
+    it('refuses a Series 15 control, whose status has another layout', async () => {
+      mockFocasInstance.readSystemInfo.mockReturnValue({ cncType: '15', mtType: 'M' });
+
+      await expect(connector.connect()).rejects.toThrow('Series 15');
+      expect(connector.connected).toBe(false);
+      expect(mockFocasInstance.disconnect).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('poll error recovery', () => {
     it('should continue polling when spindle read fails', async () => {
       mockFocasInstance.readSpindleSpeed.mockImplementation(() => {
@@ -759,9 +1057,9 @@ describe('FanucConnector', () => {
 
       // Should still show alarm from status flag
       expect(status.data.alarm).toBe(true);
-      // But no alarm details since read failed
-      expect(status.data.alarmCode).toBeUndefined();
-      expect(status.data.alarmMessage).toBeUndefined();
+      // With a general code and message, since the read failed
+      expect(status.data.alarmCode).toBe('ALARM');
+      expect(status.data.alarmMessage).toBe('Alarm active (the control gave no details)');
     });
 
     it('should handle readOperatorMessages failure silently', async () => {

@@ -1,6 +1,6 @@
 import koffi from 'koffi';
 import { describe, expect, it } from 'vitest';
-import { LOADELM, ODBSPLOAD, ODBST, toFocasStatus, toSpindleLoadPercent } from './focas.js';
+import { LOADELM, ODBACT, ODBALMMSG_DATA, ODBEXEPRG, ODBM, ODBSPLOAD, ODBST, ODBSYS, toFocasStatus, toSpindleLoadPercent, toSystemInfo } from './focas.js';
 
 describe('ODBST, the reply of cnc_statinfo', () => {
   // The layout of 0i, 16i/18i/21i, 30i/31i/32i and Power Mate i in fwlib32.h: 9 shorts.
@@ -50,6 +50,44 @@ describe('ODBSPLOAD, the reply of cnc_rdspmeter', () => {
     expect(koffi.offsetof(LOADELM, 'name')).toBe(8);
     expect(koffi.sizeof(ODBSPLOAD)).toBe(24);
     expect(koffi.offsetof(ODBSPLOAD, 'spspeed')).toBe(12);
+  });
+});
+
+describe('the FOCAS long, 32 bits on every platform', () => {
+  // The offsets that libfwlib32-linux-x64.so.1.0.5 writes to (see the comment above the structures in focas.ts).
+  // koffi's own "long" would be 8 bytes on 64-bit Linux, and would move every field after it.
+  it('puts ODBACT.data at offset 4, as cnc_acts writes it', () => {
+    expect(koffi.offsetof(ODBACT, 'data')).toBe(4);
+    expect(koffi.sizeof(ODBACT)).toBe(8);
+  });
+
+  it('puts ODBM.mcr_val at offset 4 and dec_val at offset 8, as cnc_rdmacro writes them', () => {
+    expect(koffi.offsetof(ODBM, 'mcr_val')).toBe(4);
+    expect(koffi.offsetof(ODBM, 'dec_val')).toBe(8);
+  });
+
+  it('puts ODBEXEPRG.o_num at offset 36, as cnc_exeprgname writes it', () => {
+    expect(koffi.offsetof(ODBEXEPRG, 'o_num')).toBe(36);
+  });
+
+  it('gives each alarm of cnc_rdalmmsg 44 bytes', () => {
+    expect(koffi.sizeof(ODBALMMSG_DATA)).toBe(44);
+  });
+});
+
+describe('ODBSYS, the reply of cnc_sysinfo', () => {
+  it('has the fields of every control but Series 15 at their places', () => {
+    expect(koffi.sizeof(ODBSYS)).toBe(18);
+    expect(koffi.offsetof(ODBSYS, 'cnc_type')).toBe(4);
+    expect(koffi.offsetof(ODBSYS, 'mt_type')).toBe(6);
+    expect(koffi.offsetof(ODBSYS, 'series')).toBe(8);
+    expect(koffi.offsetof(ODBSYS, 'version')).toBe(12);
+    expect(koffi.offsetof(ODBSYS, 'axes')).toBe(16);
+  });
+
+  it('gives the series and type as text, without the spaces', () => {
+    const info = toSystemInfo({ max_axis: 32, cnc_type: ' 0', mt_type: ' T', series: 'D4F1', version: '0010' });
+    expect(info).toEqual({ cncType: '0', mtType: 'T', series: 'D4F1', version: '0010', maxAxes: 32 });
   });
 });
 

@@ -12,6 +12,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { focasLibraryPath } from './focasLibraryPath.js';
+import { FocasError } from './focasError.js';
 
 /** The FOCAS return code for success. Every other code is in FOCAS_ERROR_MESSAGES. */
 const EW_OK = 0;
@@ -78,6 +79,8 @@ const RUN_STATES: Record<number, string> = {
 };
 
 export interface FocasStatus {
+  /** ODBST.tmmode, the T/M mode as the control gives it. Chatter only shows it; cnc_sysinfo tells a lathe more surely. */
+  tmMode: number;
   mode: string;
   modeCode: number;
   runState: string;
@@ -91,6 +94,7 @@ export interface FocasStatus {
 
 /** The fields of ODBST that Chatter reads */
 export interface OdbstReply {
+  tmmode: number;
   aut: number;
   run: number;
   motion: number;
@@ -103,6 +107,7 @@ export interface OdbstReply {
 /** The machine status from the ODBST reply of cnc_statinfo */
 export function toFocasStatus(reply: OdbstReply): FocasStatus {
   return {
+    tmMode: reply.tmmode,
     mode: CNC_MODES[reply.aut] || `UNKNOWN_${reply.aut}`,
     modeCode: reply.aut,
     runState: RUN_STATES[reply.run] || `UNKNOWN_${reply.run}`,
@@ -112,6 +117,38 @@ export function toFocasStatus(reply: OdbstReply): FocasStatus {
     emergency: reply.emergency !== 0,
     alarm: reply.alarm !== 0,
     edit: reply.edit,
+  };
+}
+
+/** What the control is, from cnc_sysinfo */
+export interface FocasSystemInfo {
+  /** The series: for example "31" for a 31i, "0" for a 0i, "15" for a Series 15 */
+  cncType: string;
+  /** M (mill), T (lathe), or for example TT or MM */
+  mtType: string;
+  /** The series and version of the control software */
+  series: string;
+  version: string;
+  maxAxes: number;
+}
+
+/** The fields of ODBSYS that Chatter reads */
+export interface OdbsysReply {
+  max_axis: number;
+  cnc_type: KoffiChars;
+  mt_type: KoffiChars;
+  series: KoffiChars;
+  version: KoffiChars;
+}
+
+/** The control information from the ODBSYS reply of cnc_sysinfo */
+export function toSystemInfo(reply: OdbsysReply): FocasSystemInfo {
+  return {
+    cncType: charsToString(reply.cnc_type),
+    mtType: charsToString(reply.mt_type),
+    series: charsToString(reply.series),
+    version: charsToString(reply.version),
+    maxAxes: reply.max_axis,
   };
 }
 
@@ -190,6 +227,16 @@ function getLibraryPath(): string {
 // Structures (layouts from fwlib32.h)
 // ============================================
 
+/*
+ * A FOCAS "long" is 32 bits on every platform that Chatter supports, so it is declared as int32, never as
+ * koffi's "long" (which follows the C long: 8 bytes on 64-bit Linux).
+ * - Windows x64 is LLP64 and Linux armv7 is ILP32, so a C long is 32 bits there anyway.
+ * - fwlib32.h says "long" with no typedef for Linux, which would be 64 bits on Linux x64. But the code of
+ *   libfwlib32-linux-x64.so.1.0.5 uses 32 bits: cnc_acts writes a 4-byte value at offset 4 of ODBACT,
+ *   cnc_rdmacro writes mcr_val (4 bytes) at offset 4 and dec_val at offset 8 of ODBM, cnc_exeprgname writes
+ *   o_num (4 bytes) at offset 36, and cnc_rdalmmsg steps 44 bytes for each ODBALMMSG_DATA.
+ */
+
 /**
  * The reply of cnc_statinfo for the 0i, 16i/18i/21i, 30i/31i/32i and Power Mate i controls (fwlib32.h).
  * Series 15 has another layout, which Chatter does not read.
@@ -207,7 +254,8 @@ export const ODBST = koffi.struct('ODBST', {
   edit: 'int16',      // Program editing status
 });
 
-const ODBACT = koffi.struct('ODBACT', {
+/** The cnc_acts reply. Exported for the test of the field places. */
+export const ODBACT = koffi.struct('ODBACT', {
   dummy: koffi.array('int16', 2),
   data: 'int32',      // Actual feed/spindle value
 });
@@ -229,7 +277,8 @@ export const ODBSPLOAD = koffi.struct('ODBSPLOAD', {
   spspeed: LOADELM,   // Spindle speed meter
 });
 
-const ODBM = koffi.struct('ODBM', {
+/** The cnc_rdmacro reply. Exported for the test of the field places. */
+export const ODBM = koffi.struct('ODBM', {
   datano: 'int16',    // Variable number
   dummy: 'int16',
   mcr_val: 'int32',   // Macro variable value, as a whole number
@@ -239,12 +288,25 @@ const ODBM = koffi.struct('ODBM', {
 /** The length that FANUC gives for ODBM in a cnc_rdmacro call (without the padding at the end) */
 const ODBM_LENGTH = 10;
 
-const ODBEXEPRG = koffi.struct('ODBEXEPRG', {
+/** The cnc_exeprgname reply. Exported for the test of the field places. */
+export const ODBEXEPRG = koffi.struct('ODBEXEPRG', {
   name: koffi.array('char', 36),  // Program name
   o_num: 'int32',                  // Program number
 });
 
-const ODBALMMSG_DATA = koffi.struct('ODBALMMSG_DATA', {
+/** The cnc_sysinfo reply of every control but Series 15 (fwlib32.h). Exported for the test of the field places. */
+export const ODBSYS = koffi.struct('ODBSYS', {
+  addinfo: 'int16',               // Additional information
+  max_axis: 'int16',              // Maximum axis number
+  cnc_type: koffi.array('char', 2), // Series, for example "31" or " 0" (ASCII)
+  mt_type: koffi.array('char', 2),  // M, T, TT, MM ... (ASCII)
+  series: koffi.array('char', 4),   // Series number of the software (ASCII)
+  version: koffi.array('char', 4),  // Version of the software (ASCII)
+  axes: koffi.array('char', 2),     // Number of axes (ASCII)
+});
+
+/** One alarm of the cnc_rdalmmsg reply. Exported for the test of the field places. */
+export const ODBALMMSG_DATA = koffi.struct('ODBALMMSG_DATA', {
   alm_no: 'int32',
   type: 'int16',
   axis: 'int16',
@@ -325,6 +387,8 @@ interface FocasFunctions {
   exeprgname: (handle: number, program: object) => number;
   rdalmmsg: (handle: number, type: number, length: number[], alarms: object) => number;
   rdopmsg3: (handle: number, type: number, length: number[], messages: object) => number;
+  sysinfo: (handle: number, info: object) => number;
+  getpath: (handle: number, path: number[], maxPath: number[]) => number;
 }
 
 function declareFunctions(library: koffi.IKoffiLib): FocasFunctions {
@@ -340,21 +404,35 @@ function declareFunctions(library: koffi.IKoffiLib): FocasFunctions {
     exeprgname: library.func('cnc_exeprgname', 'int16', ['uint16', koffi.out(koffi.pointer(ODBEXEPRG))]),
     rdalmmsg: readMessages('cnc_rdalmmsg', ODBALMMSG),
     rdopmsg3: readMessages('cnc_rdopmsg3', OPMSG3),
+    sysinfo: library.func('cnc_sysinfo', 'int16', ['uint16', koffi.out(koffi.pointer(ODBSYS))]),
+    getpath: library.func('cnc_getpath', 'int16', ['uint16', koffi.out(koffi.pointer('int16')), koffi.out(koffi.pointer('int16'))]),
   };
 }
 
 /** Where the Linux library writes its log */
 const LINUX_LOG_FILE = '/tmp/focas2.log';
 
-/** The Linux library must start its process before any other call. Returns the function that ends it. */
-function startLinuxProcess(library: koffi.IKoffiLib): () => number {
-  const startupProcess = library.func('cnc_startupprocess', 'int16', ['int64', 'str']);
-  const exitProcess = library.func('cnc_exitprocess', 'int16', []);
+/**
+ * The Linux library must start its process before any other call.
+ * fwlib32.h declares cnc_startupprocess(long, const char *). That long is 32 bits, as everywhere in FOCAS
+ * (see the structures). It was declared as int64: on x64 that did no harm, because the library reads only
+ * the low 32 bits of the register. On armv7 an int64 takes two registers (r0 and r1), so the log file name
+ * went to r2, while the library reads it from r1. Level 0 writes no log, so the name was never used.
+ */
+function startLinuxProcess(library: koffi.IKoffiLib): void {
+  const startupProcess = library.func('cnc_startupprocess', 'int16', ['int32', 'str']);
   const result = startupProcess(0, LINUX_LOG_FILE);
   if (result !== EW_OK) {
     throw new Error(`FOCAS startup failed: ${errorText(result)}`);
   }
-  return exitProcess;
+}
+
+/**
+ * The function that ends the Linux FOCAS process. Each thread declares it, because the thread
+ * that ends the process at shutdown need not be the one that started it.
+ */
+function declareExitProcess(library: koffi.IKoffiLib): () => number {
+  return library.func('cnc_exitprocess', 'int16', []);
 }
 
 let library: koffi.IKoffiLib | null = null;
@@ -374,7 +452,7 @@ function loadedFunctions(): FocasFunctions {
 
 function throwIfFailed(result: number, action: string): void {
   if (result !== EW_OK) {
-    throw new Error(`Failed to ${action}: ${errorText(result)}`);
+    throw new FocasError(`Failed to ${action}: ${errorText(result)}`, result);
   }
 }
 
@@ -398,14 +476,21 @@ export class Focas {
   private handle = 0;
   private isConnected = false;
 
-  /** Load and start the FOCAS library. A library that is loaded already stays. */
-  static initialize(libraryPath: string = getLibraryPath()): void {
+  /**
+   * Load and start the FOCAS library. A library that is loaded already stays.
+   * On Linux, startProcess also calls cnc_startupprocess. That process is for the whole server,
+   * so when each machine has its own FOCAS thread, only the first thread starts it (see FocasThreads).
+   */
+  static initialize(libraryPath: string = getLibraryPath(), startProcess = true): void {
     if (functions) return;
 
     try {
       library = koffi.load(libraryPath);
       const declared = declareFunctions(library);
-      exitLinuxProcess = process.platform === 'linux' ? startLinuxProcess(library) : null;
+      if (process.platform === 'linux') {
+        if (startProcess) startLinuxProcess(library);
+        exitLinuxProcess = declareExitProcess(library);
+      }
       functions = declared;
     } catch (error) {
       unloadLibrary();
@@ -416,10 +501,13 @@ export class Focas {
     }
   }
 
-  /** Stop and unload the library, when the server shuts down */
-  static cleanup(): void {
+  /**
+   * Unload the library, when the server shuts down. On Linux, exitProcess also calls cnc_exitprocess,
+   * which ends the FOCAS process of the whole server, so only the last thread to clean up asks for it.
+   */
+  static cleanup(exitProcess = true): void {
     if (!functions) return;
-    exitLinuxProcess?.();
+    if (exitProcess) exitLinuxProcess?.();
     exitLinuxProcess = null;
     functions = null;
     unloadLibrary();
@@ -481,7 +569,7 @@ export class Focas {
     const handleOut = [0];
     const result = loadedFunctions().allclibhndl3(host, port, timeoutSeconds, handleOut);
     if (result !== EW_OK) {
-      throw new Error(`Connection failed: ${FOCAS_ERROR_MESSAGES[result] || `Error code ${result}`}`);
+      throw new FocasError(`Connection failed: ${FOCAS_ERROR_MESSAGES[result] || `Error code ${result}`}`, result);
     }
 
     this.handle = handleOut[0];
@@ -556,12 +644,11 @@ export class Focas {
       }));
   }
 
-  /** Read the operator messages. A control that does not support cnc_rdopmsg3 gives none. */
+  /** Read the operator messages. A control that does not support cnc_rdopmsg3 throws, as for the other reads. */
   readOperatorMessages(): FocasOperatorMessage[] {
     const messages = {};
     const length = [MAX_OPERATOR_MESSAGES];
-    const result = this.connectedFunctions().rdopmsg3(this.handle, ALL_TYPES, length, messages);
-    if (result !== EW_OK) return [];
+    throwIfFailed(this.connectedFunctions().rdopmsg3(this.handle, ALL_TYPES, length, messages), 'read operator messages');
 
     return numberedMessages<OperatorMessageReply>(messages, length[0])
       .filter(message => message.char_num > 0)
@@ -571,6 +658,21 @@ export class Focas {
         message: charsToString(message.data, message.char_num),
       }))
       .filter(message => message.message !== '');
+  }
+
+  /** What the control is (cnc_sysinfo) */
+  readSystemInfo(): FocasSystemInfo {
+    const info = {};
+    throwIfFailed(this.connectedFunctions().sysinfo(this.handle, info), 'read system information');
+    return toSystemInfo(info as OdbsysReply);
+  }
+
+  /** How many paths the control has (cnc_getpath). Chatter reads only the first. */
+  readPathCount(): number {
+    const path = [0];
+    const maxPath = [0];
+    throwIfFailed(this.connectedFunctions().getpath(this.handle, path, maxPath), 'read path count');
+    return maxPath[0];
   }
 
   private connectedFunctions(): FocasFunctions {

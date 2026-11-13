@@ -24,6 +24,13 @@ class FakeMachine {
     return new Promise(resolve => { this.endPoll = resolve; });
   }
 
+  disconnects = 0;
+
+  disconnect(): void {
+    this.disconnects++;
+    this.connected = false;
+  }
+
   endRunningPoll(): void {
     this.endPoll?.();
     this.endPoll = null;
@@ -119,6 +126,8 @@ describe('PollScheduler', () => {
 
     // Only the timer for the next poll is left
     expect(vi.getTimerCount()).toBe(1);
+    // A poll that ends in time does not disconnect
+    expect(machine.disconnects).toBe(0);
   });
 
   describe('a poll that runs out of time', () => {
@@ -130,6 +139,21 @@ describe('PollScheduler', () => {
 
     it('counts as a failure at once', () => {
       expect(afterPoll).toHaveBeenCalledTimes(1);
+    });
+
+    it('disconnects the machine, so its old values do not show as live', () => {
+      expect(machine.disconnects).toBe(1);
+      expect(machine.connected).toBe(false);
+    });
+
+    it('disconnects again when the late poll ends, so what it did does not count', async () => {
+      // For example a connect that ended after all
+      machine.connected = true;
+      machine.endRunningPoll();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(machine.disconnects).toBe(2);
+      expect(machine.connected).toBe(false);
     });
 
     it('is not polled over again while it still runs', async () => {

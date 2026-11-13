@@ -25,7 +25,7 @@ import { proxySettingsRoutes } from './routes/proxySettings.js';
 import { loginSettingsRoutes } from './routes/loginSettings.js';
 import type { UserAccounts } from './auth/userAccounts.js';
 import { userSettingsRoutes } from './routes/userSettings.js';
-import { focasThread } from './machines/fanuc/focasThread.js';
+import { focasThreads } from './machines/fanuc/focasThread.js';
 import { FocasLibraryInstaller } from './machines/fanuc/focasLibraryInstaller.js';
 import { focasLibraryRoutes } from './routes/focasLibrary.js';
 import { chatterVersion } from './updates/chatterVersion.js';
@@ -77,7 +77,7 @@ export function createApp({
   alertRules = AlertRuleService.inMemory(),
   proxySettings = ProxySettings.inMemory(),
   loginLog = LoginLog.inMemory(),
-  focasLibrary = new FocasLibraryInstaller(focasThread, () => poller.startFanucMachines()),
+  focasLibrary = new FocasLibraryInstaller(focasThreads, () => poller.startFanucMachines()),
   version = chatterVersion(),
   updates = new UpdateService(UpdateFolder.fromEnvironment(), version, new ReleaseWatcher({ repo: releasesRepo(), store: memoryCheckSettingStore() })),
 }: AppParts) {
