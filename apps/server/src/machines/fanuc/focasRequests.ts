@@ -20,7 +20,9 @@ export type FocasCommand =
   | { kind: 'initialize'; libraryPath: string; startProcess: boolean }
   | { kind: 'connect'; host: string; port: number; timeoutSeconds: number }
   | { kind: 'disconnect'; session: number }
-  | { kind: 'read'; session: number; read: FocasRead; args: number[] };
+  | { kind: 'read'; session: number; read: FocasRead; args: number[] }
+  /** End every connection and unload the library, when the server shuts down */
+  | { kind: 'cleanup'; exitProcess: boolean };
 
 export type FocasRequest = FocasCommand & { id: number };
 
@@ -37,6 +39,8 @@ export interface FocasLibrary {
   /** Load the library. On Linux, startProcess also calls cnc_startupprocess, which only one thread of the server may do. */
   initialize(libraryPath: string, startProcess: boolean): void;
   connect(host: string, port: number, timeoutSeconds: number): FocasConnection;
+  /** Unload the library. On Linux, exitProcess also calls cnc_exitprocess, which only the last thread may do. */
+  cleanup(exitProcess: boolean): void;
 }
 
 const READS: ReadonlySet<string> = new Set<FocasRead>([
@@ -88,7 +92,23 @@ export class FocasRequestHandler {
       }
       case 'read':
         return this.read(command.session, command.read, command.args);
+      case 'cleanup':
+        this.cleanup(command.exitProcess);
+        return undefined;
     }
+  }
+
+  /** Free the handle of each connection (cnc_freelibhndl) before the library goes */
+  private cleanup(exitProcess: boolean): void {
+    for (const connection of this.connections.values()) {
+      try {
+        connection.disconnect();
+      } catch {
+        // The server shuts down, so the other handles and the library still go
+      }
+    }
+    this.connections.clear();
+    this.library.cleanup(exitProcess);
   }
 
   private read(session: number, read: FocasRead, args: number[]): unknown {

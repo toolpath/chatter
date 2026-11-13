@@ -19,6 +19,7 @@ const handler = new FocasRequestHandler({
     focas.connect(host, port, timeoutSeconds);
     return focas;
   },
+  cleanup: exitProcess => Focas.cleanup(exitProcess),
 });
 
 server.on('message', (request: FocasRequest) => {

@@ -18,6 +18,7 @@ function fakeConnection(name: string): FocasConnection {
 function handlerWith(connections: FocasConnection[]) {
   const library: FocasLibrary = {
     initialize: vi.fn(),
+    cleanup: vi.fn(),
     connect: vi.fn(() => {
       const next = connections.shift();
       if (!next) throw new Error('Connection failed: Socket error');
@@ -79,6 +80,22 @@ describe('FocasRequestHandler', () => {
     expect(connection.disconnect).toHaveBeenCalledTimes(1);
     expect(handler.handle({ id: 3, kind: 'read', session: 1, read: 'readStatus', args: [] }))
       .toEqual({ id: 3, ok: false, message: 'Not connected to CNC controller' });
+  });
+
+  it('frees every connection and then unloads the library at cleanup', () => {
+    const first = fakeConnection('A');
+    const second = fakeConnection('B');
+    const { library, handler } = handlerWith([first, second]);
+    handler.handle({ id: 1, kind: 'connect', host: 'a', port: 1, timeoutSeconds: 1 });
+    handler.handle({ id: 2, kind: 'connect', host: 'b', port: 1, timeoutSeconds: 1 });
+    vi.mocked(first.disconnect).mockImplementation(() => { throw new Error('Socket error'); });
+
+    expect(handler.handle({ id: 3, kind: 'cleanup', exitProcess: true }).ok).toBe(true);
+
+    expect(first.disconnect).toHaveBeenCalledTimes(1);
+    expect(second.disconnect).toHaveBeenCalledTimes(1);
+    expect(library.cleanup).toHaveBeenCalledWith(true);
+    expect(handler.handle({ id: 4, kind: 'read', session: 2, read: 'readStatus', args: [] }).ok).toBe(false);
   });
 
   it('refuses a read that is not a FOCAS read', () => {

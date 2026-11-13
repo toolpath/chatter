@@ -347,15 +347,21 @@ function declareFunctions(library: koffi.IKoffiLib): FocasFunctions {
 /** Where the Linux library writes its log */
 const LINUX_LOG_FILE = '/tmp/focas2.log';
 
-/** The Linux library must start its process before any other call. Returns the function that ends it. */
-function startLinuxProcess(library: koffi.IKoffiLib): () => number {
+/** The Linux library must start its process before any other call */
+function startLinuxProcess(library: koffi.IKoffiLib): void {
   const startupProcess = library.func('cnc_startupprocess', 'int16', ['int64', 'str']);
-  const exitProcess = library.func('cnc_exitprocess', 'int16', []);
   const result = startupProcess(0, LINUX_LOG_FILE);
   if (result !== EW_OK) {
     throw new Error(`FOCAS startup failed: ${errorText(result)}`);
   }
-  return exitProcess;
+}
+
+/**
+ * The function that ends the Linux FOCAS process. Each thread declares it, because the thread
+ * that ends the process at shutdown need not be the one that started it.
+ */
+function declareExitProcess(library: koffi.IKoffiLib): () => number {
+  return library.func('cnc_exitprocess', 'int16', []);
 }
 
 let library: koffi.IKoffiLib | null = null;
@@ -410,7 +416,10 @@ export class Focas {
     try {
       library = koffi.load(libraryPath);
       const declared = declareFunctions(library);
-      exitLinuxProcess = process.platform === 'linux' && startProcess ? startLinuxProcess(library) : null;
+      if (process.platform === 'linux') {
+        if (startProcess) startLinuxProcess(library);
+        exitLinuxProcess = declareExitProcess(library);
+      }
       functions = declared;
     } catch (error) {
       unloadLibrary();
@@ -421,10 +430,13 @@ export class Focas {
     }
   }
 
-  /** Stop and unload the library, when the server shuts down */
-  static cleanup(): void {
+  /**
+   * Unload the library, when the server shuts down. On Linux, exitProcess also calls cnc_exitprocess,
+   * which ends the FOCAS process of the whole server, so only the last thread to clean up asks for it.
+   */
+  static cleanup(exitProcess = true): void {
     if (!functions) return;
-    exitLinuxProcess?.();
+    if (exitProcess) exitLinuxProcess?.();
     exitLinuxProcess = null;
     functions = null;
     unloadLibrary();

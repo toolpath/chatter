@@ -13,6 +13,8 @@ const log = createLogger('fanuc');
 /** How many more times a read tries when the control is busy (EW_BUSY), and how long it waits before each try */
 const BUSY_RETRIES = 2;
 const BUSY_RETRY_DELAY_MS = 50;
+/** The longest time the FOCAS threads get to clean up at shutdown. "docker stop" waits 10 seconds in all. */
+const SHUTDOWN_TIMEOUT_MS = 3000;
 
 /** The parts of a Worker that FocasThread uses, so tests can give their own */
 export interface FocasWorkerPort {
@@ -106,6 +108,15 @@ export class FocasThread {
     const generation = this.generation;
     const session = await this.send({ kind: 'connect', host, port, timeoutSeconds }) as number;
     return new FocasSession(this, session, generation);
+  }
+
+  /**
+   * Free every connection of the thread and unload its library, when the server shuts down.
+   * It runs after the calls that wait on the thread, so a disconnect sent just before it ends first.
+   */
+  cleanup(exitProcess: boolean): Promise<void> {
+    if (!this.worker) return Promise.resolve();
+    return this.send({ kind: 'cleanup', exitProcess }).then(() => undefined);
   }
 
   /** Stop the thread, for example when its machine is removed. Its connections end with it. */
@@ -269,9 +280,37 @@ export class FocasThreads implements FocasLoader {
     return thread;
   }
 
-  /** Stop every thread, for example when the server shuts down */
+  /** Stop every thread, with no cleanup */
   async stop(): Promise<void> {
     await Promise.all([...this.threads].map(thread => thread.stop()));
+  }
+
+  /**
+   * When the server shuts down: each thread frees its handles and unloads the library,
+   * then the last one calls cnc_exitprocess (Linux), then every thread stops.
+   * A thread that hangs, for example in a call to a control that does not answer,
+   * must not keep the server from stopping: the other threads, the last thread and the stop each get
+   * a third of timeoutMs, so the whole shutdown takes at most timeoutMs.
+   */
+  async shutDown(timeoutMs = SHUTDOWN_TIMEOUT_MS): Promise<void> {
+    const loaded = [...this.loadedThreads];
+    // The FOCAS process is for the whole server, so it ends after the other threads let go of the library
+    const last = loaded.pop();
+    const othersDone = await within(Promise.all(loaded.map(thread => this.cleanUp(thread, false))), timeoutMs / 3);
+    const lastDone = last ? await within(this.cleanUp(last, true), timeoutMs / 3) : true;
+    if (!othersDone || !lastDone) log.warn('A FOCAS thread did not clean up in time', { timeoutMs });
+
+    // A thread that is in a call stops when the call ends, or with the server, so this does not wait for it
+    const stopped = this.stop().catch((error: unknown) => log.warn('A FOCAS thread did not stop', { error }));
+    await within(stopped, timeoutMs / 3);
+  }
+
+  private async cleanUp(thread: FocasThread, exitProcess: boolean): Promise<void> {
+    try {
+      await thread.cleanup(exitProcess);
+    } catch (error) {
+      log.warn('A FOCAS thread could not clean up', { error });
+    }
   }
 
   private newThread(): FocasThread {
@@ -303,6 +342,19 @@ export class FocasThreads implements FocasLoader {
     } finally {
       if (this.starting === loading) this.starting = null;
     }
+  }
+}
+
+/** True when the promise ends within the time. It never rejects. */
+async function within(promise: Promise<unknown>, ms: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<false>(resolve => {
+    timer = setTimeout(() => resolve(false), ms);
+  });
+  try {
+    return await Promise.race([promise.then(() => true, () => true), timeout]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 

@@ -19,6 +19,7 @@ import { AlertStore } from './alerts/AlertStore.js';
 import { alertReceiverApp } from './alerts/alertReceiverApp.js';
 import { getDb, initDatabase, closeDatabase, dataFolder } from './storage/database.js';
 import { Focas } from './machines/fanuc/focas.js';
+import { focasThreads } from './machines/fanuc/focasThread.js';
 import { useSinumerikCertificateFolder } from './machines/siemens/sinumerikClient.js';
 import { Auth } from './auth/Auth.js';
 import { SessionStore } from './auth/sessionStore.js';
@@ -135,6 +136,8 @@ async function start(): Promise<void> {
     const shutDown = async () => {
       log.info('Shutting down');
       poller.stop();
+      // After poller.stop(), so the disconnects it sent end first. It takes at most a few seconds.
+      const focasStopped = focasThreads.shutDown();
       releases.stop();
       alertServer.close();
       alertServer.closeAllConnections();
@@ -144,6 +147,7 @@ async function start(): Promise<void> {
       } catch (error) {
         log.error('Could not end the open machine states', { error });
       }
+      await focasStopped;
       await closeDatabase();
       server.close(() => process.exit(0));
       // The live event streams stay open until they are closed

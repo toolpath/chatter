@@ -9,6 +9,9 @@ import { EW_BUSY, EW_SOCKET, FocasError } from './focasError.js';
 class FakeWorker extends EventEmitter implements FocasWorkerPort {
   readonly requests: FocasRequest[] = [];
   readonly initialize = vi.fn();
+  /** The library calls of every fake worker, in order, for the tests of the shutdown */
+  static readonly calls: string[] = [];
+  readonly cleanup = vi.fn((exitProcess: boolean) => { FakeWorker.calls.push(`cleanup ${exitProcess}`); });
   /** The status read of each connection, by the host it connected to */
   readonly readStatus = vi.fn((host: string): unknown => ({ mode: host }));
   /** While held, requests wait until release() */
@@ -16,7 +19,11 @@ class FakeWorker extends EventEmitter implements FocasWorkerPort {
   private readonly queue: FocasRequest[] = [];
   private readonly handler = new FocasRequestHandler({
     initialize: this.initialize,
-    connect: host => ({ readStatus: () => this.readStatus(host), disconnect: vi.fn() }) as unknown as FocasConnection,
+    connect: host => ({
+      readStatus: () => this.readStatus(host),
+      disconnect: vi.fn(() => { FakeWorker.calls.push(`disconnect ${host}`); }),
+    }) as unknown as FocasConnection,
+    cleanup: this.cleanup,
   });
 
   postMessage(request: FocasRequest): void {
@@ -324,6 +331,57 @@ describe('FocasThreads', () => {
     expect(processStarts(workers)).toEqual([true, true]);
   });
 
+  describe('at shutdown', () => {
+    beforeEach(() => { FakeWorker.calls.length = 0; });
+
+    it('frees the handles of each thread, ends the FOCAS process last, and stops every thread', async () => {
+      const { threads, workers } = threadsWithFakeWorkers();
+      await threads.thread().connect('a', 8193, 10);
+      await threads.thread().connect('b', 8193, 10);
+
+      await threads.shutDown();
+
+      expect(FakeWorker.calls).toEqual(['disconnect a', 'cleanup false', 'disconnect b', 'cleanup true']);
+      expect(workers.every(worker => worker.terminate.mock.calls.length === 1)).toBe(true);
+      expect(threads.isLoaded()).toBe(false);
+    });
+
+    it('ends a disconnect that was sent just before, first', async () => {
+      const { threads } = threadsWithFakeWorkers();
+      const session = await threads.thread().connect('a', 8193, 10);
+
+      void session.disconnect();
+      await threads.shutDown();
+
+      expect(FakeWorker.calls).toEqual(['disconnect a', 'cleanup true']);
+    });
+
+    it('does not wait longer than the time limit for a thread that hangs', async () => {
+      const { threads, workers } = threadsWithFakeWorkers();
+      await threads.thread().connect('slow', 8193, 10);
+      await threads.thread().connect('fast', 8193, 10);
+      // The first control does not answer
+      workers[0].held = true;
+
+      await threads.shutDown(20);
+
+      expect(FakeWorker.calls).toEqual(['disconnect fast', 'cleanup true']);
+      expect(workers.every(worker => worker.terminate.mock.calls.length === 1)).toBe(true);
+    });
+
+    it('stops a thread that has not loaded the library, with no cleanup', async () => {
+      const { threads, workers } = threadsWithFakeWorkers(worker => {
+        worker.initialize.mockImplementation(() => { throw new Error('Failed to initialize FOCAS library'); });
+      });
+      await expect(threads.thread().connect('a', 8193, 10)).rejects.toThrow('Failed to initialize');
+
+      await threads.shutDown();
+
+      expect(workers[0].cleanup).not.toHaveBeenCalled();
+      expect(workers[0].terminate).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('stops every thread', async () => {
     const { threads, workers } = threadsWithFakeWorkers();
     await threads.thread().connect('a', 8193, 10);
@@ -343,5 +401,10 @@ describe('FocasThread with a real thread', () => {
   it('runs focasWorker.ts and answers with the error of the library', async () => {
     await expect(thread.initialize('/no/such/folder/libfwlib32.so')).rejects.toThrow('Failed to initialize FOCAS library');
     expect(thread.isLoaded()).toBe(false);
+  });
+
+  it('answers the cleanup of the shutdown', async () => {
+    await thread.initialize('/no/such/folder/libfwlib32.so').catch(() => undefined);
+    await expect(thread.cleanup(true)).resolves.toBeUndefined();
   });
 });
