@@ -213,6 +213,16 @@ describe('Outbox', () => {
       expect(listed[0]).toMatchObject({ id: due[0].id, kind: 'more', status: 'waiting', alertId: null, machineId: null });
     });
 
+    it('says "message" when one other message went in the "more" message', () => {
+      sendMessages('phones', SEND_LIMIT - 1, NOW);
+      [1, 2].forEach(alertId => queue('phones', alertId, alertMessage('started'), NOW + MINUTE));
+
+      outbox.takeDue(NOW + MINUTE);
+
+      expect(outbox.list({}).find(message => message.alertId === 1)?.detail)
+        .toBe(`Grouped with 1 more message, because a channel gets at most ${SEND_LIMIT} messages in 10 minutes.`);
+    });
+
     it('keeps sending each message as it is while the channel has room for two or more', () => {
       sendMessages('phones', SEND_LIMIT - 2, NOW);
       [1, 2, 3].forEach(alertId => queue('phones', alertId, alertMessage('started'), NOW + MINUTE));

@@ -234,7 +234,8 @@ export class Outbox implements MachineRemovalListener {
   }
 
   private groupWaiting(channelId: string, { messages, alerts }: GroupableCount, now: number): OutboxEntry {
-    const detail = `Grouped with ${messages - 1} more messages, because a channel gets at most ${SEND_LIMIT} messages in 10 minutes.`;
+    const others = messages - 1;
+    const detail = `Grouped with ${others} more ${others === 1 ? 'message' : 'messages'}, because a channel gets at most ${SEND_LIMIT} messages in 10 minutes.`;
     this.db.prepare(`
       UPDATE notification_messages SET status = 'grouped', detail = ? WHERE channel_id = ? AND status = 'waiting' AND kind != 'test'
     `).run(detail, channelId);
