@@ -85,6 +85,7 @@ describe('twilioChannel', () => {
     [400, 21608, '+15559870001 is not verified. A Twilio trial account sends only to numbers that you verify in Twilio.'],
     [400, 21610, '+15559870001 sent STOP to your Twilio number, so Twilio does not send to it. The phone can send START to get texts again.'],
     [400, 21408, 'Your Twilio account cannot send to the country of +15559870001. Turn on the country in the Twilio Messaging Geo Permissions.'],
+    [400, 572006, 'A Twilio trial account can send only the message templates of Twilio, not the messages of Chatter. Upgrade the Twilio account.'],
     [400, 21999, 'Twilio refused the message to +15559870001 (error 21999).'],
   ])('stops at once when Twilio answers %i with error %i, and tells what to do', async (status, code, error) => {
     const twilio = fakeTwilio(() => twilioError(status, code));

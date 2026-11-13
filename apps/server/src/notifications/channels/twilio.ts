@@ -63,6 +63,7 @@ const REFUSALS: Record<number, (phone: string) => string> = {
   21608: phone => `${phone} is not verified. A Twilio trial account sends only to numbers that you verify in Twilio.`,
   21610: phone => `${phone} sent STOP to your Twilio number, so Twilio does not send to it. The phone can send START to get texts again.`,
   21408: phone => `Your Twilio account cannot send to the country of ${phone}. Turn on the country in the Twilio Messaging Geo Permissions.`,
+  572006: () => 'A Twilio trial account can send only the message templates of Twilio, not the messages of Chatter. Upgrade the Twilio account.',
 };
 
 /**
@@ -86,8 +87,9 @@ export function createTwilioChannel(apiBase: string): ChannelDefinition<TwilioSe
       },
       { key: 'to', label: 'Phone numbers', kind: 'phone-list', required: true, mono: true },
     ],
-    note: 'In the US, Twilio sends from a normal number only after you register it for A2P 10DLC. '
-      + 'Before that, Twilio stops the messages (error 30034). A trial account sends only to the numbers that you verify in Twilio.',
+    note: 'A Twilio trial account cannot send the messages of Chatter. Upgrade the account first. '
+      + 'In the US, Twilio delivers the messages of a normal number only after you register the number for A2P 10DLC. '
+      + 'Before that, Chatter shows Sent, but the phones get nothing. The Twilio message logs then show error 30034.',
     settings: twilioSettings,
     // All the phones at the same time, so a slow answer does not use the time limit of the other phones
     async send(settings, message, context) {
