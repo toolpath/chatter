@@ -1,0 +1,12 @@
+{
+  "name": "toolpath-chatter",
+  "description": "Agent skills for Chatter, the CNC machine monitor by Toolpath",
+  "owner": { "name": "Toolpath" },
+  "plugins": [
+    {
+      "name": "chatter",
+      "source": "./plugins/chatter",
+      "description": "Set up Chatter, fix a machine that does not connect, write alert rules, and report on machine history."
+    }
+  ]
+}
