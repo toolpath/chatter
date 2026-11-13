@@ -69,6 +69,8 @@ export interface ChannelInput extends ChannelRouting {
   name: string;
   values: ChannelValues;
   enabled: boolean;
+  /** The keys of saved secrets to delete on an edit, for example ['secret'] to stop sending a webhook secret */
+  clearSecrets?: string[];
 }
 
 /** Why Chatter made a message. A "combined" message tells that an alert started and ended. */
