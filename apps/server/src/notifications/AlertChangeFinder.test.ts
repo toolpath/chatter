@@ -41,7 +41,7 @@ describe('AlertChangeFinder', () => {
     db = new Database(':memory:');
     alerts = new AlertStore(db);
     found = new ChangeList();
-    finder = new AlertChangeFinder(db, found);
+    finder = new AlertChangeFinder(db, found, NOW);
   });
 
   it('reports a new alert one time as started, also when vmalert sends it again', () => {
@@ -63,6 +63,21 @@ describe('AlertChangeFinder', () => {
 
     expect(found.kinds()).toEqual(['started SpindleLoadHigh', 'ended SpindleLoadHigh']);
     expect(found.changes[1]).toMatchObject({ kind: 'ended', at: NOW + MINUTE_MS, alertId: found.changes[0].alertId });
+  });
+
+  it('reports a start and an end again when vmalert sends an alert after its end time passed', () => {
+    alerts.save([anAlert()], NOW);
+    finder.findChanges(NOW);
+    finder.findChanges(NOW + MINUTE_MS);
+    alerts.save([anAlert({ endsAt: NOW + 3 * MINUTE_MS })], NOW + 2 * MINUTE_MS);
+    finder.findChanges(NOW + 2 * MINUTE_MS);
+    finder.findChanges(NOW + 3 * MINUTE_MS);
+
+    expect(found.kinds()).toEqual([
+      'started SpindleLoadHigh', 'ended SpindleLoadHigh', 'started SpindleLoadHigh', 'ended SpindleLoadHigh',
+    ]);
+    expect(found.changes.map(change => change.at)).toEqual([NOW - MINUTE_MS, NOW + MINUTE_MS, NOW - MINUTE_MS, NOW + 3 * MINUTE_MS]);
+    expect(new Set(found.changes.map(change => change.alertId)).size).toBe(1);
   });
 
   it('does not report a firing alert as ended', () => {
@@ -105,30 +120,30 @@ describe('AlertChangeFinder', () => {
     expect(found.kinds()).toEqual(['ended SpindleLoadHigh']);
   });
 
-  it('reports nothing for the alerts that were saved before the first start of the finder, also when they end later', () => {
+  it('reports only the later end of the alerts that were saved before the first start of the finder', () => {
     const olderDb = new Database(':memory:');
     const olderAlerts = new AlertStore(olderDb);
     olderAlerts.save([anAlert(), anAlert({ name: 'Ended', labels: { alertname: 'Ended' }, endsAt: NOW - MINUTE_MS })], NOW);
     const afterUpdate = new ChangeList();
-    const updatedFinder = new AlertChangeFinder(olderDb, afterUpdate);
+    const updatedFinder = new AlertChangeFinder(olderDb, afterUpdate, NOW);
 
     updatedFinder.findChanges(NOW);
     updatedFinder.findChanges(NOW + 2 * MINUTE_MS);
 
-    expect(afterUpdate.changes).toEqual([]);
+    expect(afterUpdate.kinds()).toEqual(['ended SpindleLoadHigh']);
   });
 
   it('marks the old alerts only at the first start, so a restart reports the new alerts', () => {
     alerts.save([anAlert()], NOW);
     const afterRestart = new ChangeList();
-    new AlertChangeFinder(db, afterRestart).findChanges(NOW);
+    new AlertChangeFinder(db, afterRestart, NOW).findChanges(NOW);
 
     expect(afterRestart.kinds()).toEqual(['started SpindleLoadHigh']);
   });
 
   it('reports the change again at the next look when the listener fails', () => {
     alerts.save([anAlert()], NOW);
-    const failing = new AlertChangeFinder(db, { alertChanged: () => { throw new Error('outbox is full'); } });
+    const failing = new AlertChangeFinder(db, { alertChanged: () => { throw new Error('outbox is full'); } }, NOW);
     expect(() => failing.findChanges(NOW)).toThrow('outbox is full');
 
     finder.findChanges(NOW);
