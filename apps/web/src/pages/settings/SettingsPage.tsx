@@ -8,14 +8,21 @@ import { UnderlineTabs, type TabItem } from '../../components/ui/UnderlineTabs';
 import { AccountTab } from './AccountTab';
 import { FocasLibraryTab } from './FocasLibrary';
 import { LoginsTab } from './LoginsTab';
+import type { MachineName } from './notificationLabels';
+import { NotificationsTab } from './NotificationsTab';
 import { ProxyTab } from './ProxyTab';
 import { UpdatesTab } from './UpdatesTab';
 import { UsersTab } from './UsersTab';
 
-type SettingsTab = 'account' | 'users' | 'proxy' | 'logins' | 'fanuc' | 'updates';
+type SettingsTab = 'account' | 'users' | 'proxy' | 'logins' | 'fanuc' | 'notifications' | 'updates';
+
+interface TabContentProps {
+  /** The machines of the shop, for the tabs that name them */
+  machines: MachineName[];
+}
 
 interface SettingsTabItem extends TabItem<SettingsTab> {
-  content: () => ReactNode;
+  content: (props: TabContentProps) => ReactNode;
   /** Only a user whose role can do this sees the tab */
   needs?: Permission;
 }
@@ -26,6 +33,7 @@ const TABS: SettingsTabItem[] = [
   { id: 'proxy', label: 'HTTPS and proxy', content: ProxyTab, needs: 'manage-chatter' },
   { id: 'logins', label: 'Logins', content: LoginsTab, needs: 'manage-chatter' },
   { id: 'fanuc', label: 'FANUC library', content: FocasLibraryTab, needs: 'manage-machines' },
+  { id: 'notifications', label: 'Notifications', content: NotificationsTab, needs: 'manage-chatter' },
   { id: 'updates', label: 'Updates', content: UpdatesTab, needs: 'manage-updates' },
 ];
 const ID_PREFIX = 'settings';
@@ -39,7 +47,7 @@ function useShownTabs(): SettingsTabItem[] {
 }
 
 /** The settings of your account and, for an admin, of the whole Chatter server, in tabs */
-export function SettingsPage() {
+export function SettingsPage({ machines = [] }: Partial<TabContentProps>) {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabs = useShownTabs();
   // An unknown tab, or a tab that the role cannot open, opens the first tab
@@ -57,7 +65,7 @@ export function SettingsPage() {
         idPrefix={ID_PREFIX}
       />
       <div {...tabPanelProps(ID_PREFIX, openTab.id)} className="flex flex-col gap-5">
-        <OpenTabContent />
+        <OpenTabContent machines={machines} />
       </div>
       <ChatterVersion />
     </>

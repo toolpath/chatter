@@ -63,7 +63,7 @@ function App() {
             path="/machine/:id"
             element={<MachineDetailPage machines={machines} isLoaded={isLoaded} onRemove={removeMachine} onUpdate={updateMachine} />}
           />
-          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/settings" element={<SettingsPage machines={machines} />} />
           {/* The old address of the password page */}
           <Route path="/account" element={<Navigate to="/settings" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />

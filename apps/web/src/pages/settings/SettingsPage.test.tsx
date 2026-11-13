@@ -10,6 +10,7 @@ vi.mock('./ProxyTab', () => ({ ProxyTab: () => <p>proxy tab</p> }));
 vi.mock('./LoginsTab', () => ({ LoginsTab: () => <p>logins tab</p> }));
 vi.mock('./UsersTab', () => ({ UsersTab: () => <p>users tab</p> }));
 vi.mock('./UpdatesTab', () => ({ UpdatesTab: () => <p>updates tab</p> }));
+vi.mock('./NotificationsTab', () => ({ NotificationsTab: () => <p>notifications tab</p> }));
 vi.mock('../../api/updates', () => ({ fetchChatterVersion: vi.fn().mockResolvedValue('1.2.0') }));
 
 function renderAt(address: string, role: Role = 'admin') {
@@ -52,6 +53,11 @@ describe('SettingsPage', () => {
   it('shows the Updates tab to an admin', () => {
     renderAt('/settings?tab=updates');
     expect(screen.getByText('updates tab')).toBeInTheDocument();
+  });
+
+  it('shows the Notifications tab to an admin', () => {
+    renderAt('/settings?tab=notifications');
+    expect(screen.getByText('notifications tab')).toBeInTheDocument();
   });
 
   it('shows the Chatter version to each user', async () => {
