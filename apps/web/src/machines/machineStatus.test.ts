@@ -23,14 +23,22 @@ describe('machineStateOf', () => {
     expect(machineStateOf(testMachine({}, { alarm: true, spindleSpeed: 8000 }))).toBe('alarm');
   });
 
-  it('says running when a program runs or the spindle turns', () => {
+  it('says running when a program runs', () => {
     expect(machineStateOf(testMachine({}, { execution: 'ACTIVE' }))).toBe('running');
     expect(machineStateOf(testMachine({}, { runState: 'START' }))).toBe('running');
-    expect(machineStateOf(testMachine({}, { spindleSpeed: 1 }))).toBe('running');
+    expect(machineStateOf(testMachine({}, { runState: 'MSTR' }))).toBe('running');
+  });
+
+  it('says idle when the program stops or is held, also while the spindle turns', () => {
+    expect(machineStateOf(testMachine({}, { runState: 'STOP' }))).toBe('idle');
+    expect(machineStateOf(testMachine({}, { runState: 'HOLD', spindleSpeed: 8000 }))).toBe('idle');
+    expect(machineStateOf(testMachine({}, { execution: 'FEED_HOLD', spindleSpeed: 8000 }))).toBe('idle');
+    expect(machineStateOf(testMachine({}, { execution: 'READY', spindleSpeed: 1 }))).toBe('idle');
   });
 
   it('says idle when nothing runs', () => {
     expect(machineStateOf(testMachine({}, { spindleSpeed: 0 }))).toBe('idle');
+    expect(machineStateOf(testMachine({}, { spindleSpeed: 1 }))).toBe('idle');
   });
 });
 
