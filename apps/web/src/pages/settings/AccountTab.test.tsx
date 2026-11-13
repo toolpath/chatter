@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { changePassword, fetchSessions, logOutOtherBrowsers, type SessionsReport } from '../../api/auth';
 import { ThemeProvider } from '../../theme/ThemeProvider';
@@ -68,7 +68,8 @@ describe('AccountTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Change password' }));
 
     expect(await screen.findByText('The password is changed')).toBeInTheDocument();
-    expect(fetchSessions).toHaveBeenCalledTimes(2);
+    // The list loads again in an effect after the notice shows, so a slow computer needs the wait
+    await waitFor(() => expect(fetchSessions).toHaveBeenCalledTimes(2));
     expect(await screen.findByText('Chrome on Mac')).toBeInTheDocument();
     expect(screen.queryByText('Safari on iPad')).not.toBeInTheDocument();
   });
