@@ -133,7 +133,7 @@ interface DeleteConfirmationProps {
 function DeleteConfirmation({ name, onKeep, onDelete }: DeleteConfirmationProps) {
   return (
     <div role="group" aria-label="Delete the channel" className="flex flex-wrap items-center gap-2">
-      <span className="flex-1 text-sm">Delete {name}? Chatter stops sending to it, and removes its messages from the list.</span>
+      <span className="flex-1 text-sm">Delete {name}? Chatter stops sending to it. Its old messages stay in the list.</span>
       <Button onClick={onKeep}>Keep the channel</Button>
       <Button variant="danger" onClick={onDelete}>Delete the channel</Button>
     </div>
