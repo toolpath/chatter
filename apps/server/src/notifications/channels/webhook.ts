@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { ChannelDefinition, OutgoingMessage, SendResult } from './ChannelType.js';
+import { networkFailure } from './networkFailure.js';
 
 const BAD_URL = 'Web address must start with http:// or https://';
 const LOGIN_IN_URL = 'Remove the user name and password from the web address. Put a password in Secret.';
@@ -51,7 +52,7 @@ export const webhookChannel: ChannelDefinition<WebhookSettings> = {
       response.body?.cancel().catch(() => {});
       return resultOf(response.status);
     } catch (error) {
-      return failureToReach(error);
+      return networkFailure(error, 'the address');
     }
   },
 };
@@ -81,23 +82,6 @@ function resultOf(status: number): SendResult {
   }
   if (status === 401 || status === 403) return { ok: false, retry: false, error: `${answered}. Check the secret.` };
   return { ok: false, retry: false, error: `${answered}. Check the web address.` };
-}
-
-function failureToReach(error: unknown): SendResult {
-  if (error instanceof DOMException && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
-    return { ok: false, retry: true, error: 'The address did not answer in time.' };
-  }
-  const code = networkCode(error);
-  return { ok: false, retry: true, error: code ? `Chatter could not reach the address (${code}).` : 'Chatter could not reach the address.' };
-}
-
-/**
- * Node puts the network code, for example ECONNREFUSED, in the cause of "fetch failed".
- * Chatter does not show other error text, because it can have the web address in it.
- */
-function networkCode(error: unknown): string | null {
-  const cause = error instanceof Error ? (error.cause as { code?: unknown } | undefined) : undefined;
-  return typeof cause?.code === 'string' ? cause.code : null;
 }
 
 /** True also for text that is not a web address, because isHttpAddress refuses that text */

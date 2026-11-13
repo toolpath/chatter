@@ -1,9 +1,11 @@
 import type { ChannelTypeInfo } from '@local-chatter/shared';
 import { type ChannelType, defineChannelType } from './ChannelType.js';
+import { createTwilioChannel, TWILIO_API } from './twilio.js';
 import { webhookChannel } from './webhook.js';
 
 /** The channel types of Chatter. To add a service, write one file like webhook.ts and add one line here. */
 const CHANNEL_TYPES: readonly ChannelType[] = [
+  defineChannelType(createTwilioChannel(TWILIO_API)),
   defineChannelType(webhookChannel),
 ];
 

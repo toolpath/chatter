@@ -44,6 +44,10 @@ describe('defineChannelType', () => {
 });
 
 describe('channel types', () => {
+  it('has the Twilio text message type first, and then the webhook type', () => {
+    expect(channelTypeInfos().map(type => type.id)).toEqual(['twilio-sms', 'webhook']);
+  });
+
   it('lists each type with its fields, for the form of the web app', () => {
     const webhook = channelTypeInfos().find(type => type.id === 'webhook');
 
