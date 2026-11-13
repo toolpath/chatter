@@ -1,4 +1,4 @@
-import { ALERT_SEVERITIES } from '@local-chatter/shared';
+import { ALERT_SEVERITIES, type AlertSeverity } from '@local-chatter/shared';
 import type { Alert } from '../alerts/AlertStore.js';
 
 // The text of each message. Each channel type sends this same text, so a text message and Slack say the same.
@@ -9,8 +9,8 @@ import type { Alert } from '../alerts/AlertStore.js';
 export const SMS_LENGTH = 160;
 
 export interface TextOptions {
-  /** The time zone of the shop, for example 'America/Chicago' */
-  timeZone: string;
+  /** The time zone of the shop, for example 'America/Chicago'. null gives the times in UTC, with "UTC" after them. */
+  timeZone: string | null;
   /** The address that people use to open Chatter. null or blank sends no links. */
   linkBaseUrl: string | null;
 }
@@ -74,23 +74,31 @@ function valueDetail(alert: Alert): string | null {
   return summary.replace(/\d+\.\d{3,}/g, number => String(Number(Number(number).toFixed(1))));
 }
 
-function severityLabel(alert: Alert): string {
+/** The level of the alert, from its severity label. null when the label is not a level of Chatter. */
+export function severityOf(alert: Alert): AlertSeverity | null {
   const severity = alert.labels.severity;
-  return (ALERT_SEVERITIES as readonly string[]).includes(severity) ? severity.toUpperCase() : 'ALERT';
+  return (ALERT_SEVERITIES as readonly string[]).includes(severity) ? severity as AlertSeverity : null;
+}
+
+function severityLabel(alert: Alert): string {
+  return severityOf(alert)?.toUpperCase() ?? 'ALERT';
 }
 
 /**
  * For example "9:02 AM". Node puts a narrow space (U+202F) before AM, so it becomes a plain space.
- * A time zone that is not a known name gives the time in UTC, with "UTC" after it, so the message still goes.
+ * No time zone, or one that is not a known name, gives the time in UTC, with "UTC" after it, so the message still goes.
  */
-function clockTime(milliseconds: number, timeZone: string): string {
+function clockTime(milliseconds: number, timeZone: string | null): string {
   const format = (zone: string) =>
     new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: 'numeric', minute: '2-digit' }).format(milliseconds).replace(/\s/g, ' ');
-  try {
-    return format(timeZone);
-  } catch {
-    return `${format('UTC')} UTC`;
+  if (timeZone !== null) {
+    try {
+      return format(timeZone);
+    } catch {
+      // Not a known time zone name, so the time is in UTC
+    }
   }
+  return `${format('UTC')} UTC`;
 }
 
 function shortened(text: string, room: number): string {
@@ -99,12 +107,14 @@ function shortened(text: string, room: number): string {
   return `${text.slice(0, room - ending.length).trimEnd()}${ending}`;
 }
 
-function chatterLink(linkBaseUrl: string | null): string | null {
+/** The address of Chatter without a / at the end, or null when the shop gave no address */
+export function chatterLink(linkBaseUrl: string | null): string | null {
   const base = linkBaseUrl?.trim().replace(/\/+$/, '');
   return base || null;
 }
 
-function machineLink(machineId: string | undefined, linkBaseUrl: string | null): string | null {
+/** The machine page, or Chatter itself for an alert that is not about one machine */
+export function machineLink(machineId: string | undefined, linkBaseUrl: string | null): string | null {
   const base = chatterLink(linkBaseUrl);
   if (base === null || machineId === undefined) return base;
   return `${base}/machine/${encodeURIComponent(machineId)}`;

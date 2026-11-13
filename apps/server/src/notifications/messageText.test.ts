@@ -79,6 +79,12 @@ describe('alertMessageText', () => {
     expect(text).toBe('OK - Haas VF-2: Spindle load above 80% ended at 3:40 PM UTC.');
   });
 
+  it('uses UTC, and says so, when the shop has no time zone', () => {
+    const text = alertMessageText({ kind: 'ended', alert: anAlert(), machineName: 'Haas VF-2' }, { ...CHICAGO, timeZone: null });
+
+    expect(text).toBe('OK - Haas VF-2: Spindle load above 80% ended at 3:40 PM UTC.');
+  });
+
   it('sends no link when the Chatter address is blank', () => {
     expect(alertMessageText({ kind: 'ended', alert: anAlert(), machineName: 'Haas VF-2' }, { ...CHICAGO, linkBaseUrl: ' ' }))
       .toBe('OK - Haas VF-2: Spindle load above 80% ended at 9:40 AM.');

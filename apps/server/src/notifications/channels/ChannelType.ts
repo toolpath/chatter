@@ -9,6 +9,7 @@ export interface OutgoingMessage {
   kind: NotificationKind;
   /** The same text for each channel type, from messageText.ts */
   text: string;
+  /** null for an alert with no level of Chatter (it goes to the channels at the warning level), and for a test or "more" message */
   severity: AlertSeverity | null;
   machine: { id: string; name: string } | null;
   alertName: string | null;
