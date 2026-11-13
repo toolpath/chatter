@@ -33,6 +33,8 @@ import { UpdateFolder } from './updates/UpdateFolder.js';
 import { UpdateService } from './updates/UpdateService.js';
 import { memoryCheckSettingStore, ReleaseWatcher, releasesRepo } from './updates/ReleaseWatcher.js';
 import { updateRoutes } from './routes/updates.js';
+import { Notifications } from './notifications/Notifications.js';
+import { notificationRoutes } from './routes/notifications.js';
 
 /** Every API address starts with this */
 export const API_PREFIX = '/api';
@@ -60,6 +62,8 @@ export interface AppParts {
   version?: string;
   /** Updates on the Pi card. Without it, the update folder comes from CHATTER_UPDATE_FOLDER, and nothing asks GitHub until the Admin does. */
   updates?: UpdateService;
+  /** The messages that go out when an alert starts or ends. Without it, the channels are kept in memory only. */
+  notifications?: Notifications;
 }
 
 /**
@@ -80,6 +84,7 @@ export function createApp({
   focasLibrary = new FocasLibraryInstaller(focasThread, () => poller.startFanucMachines()),
   version = chatterVersion(),
   updates = new UpdateService(UpdateFolder.fromEnvironment(), version, new ReleaseWatcher({ repo: releasesRepo(), store: memoryCheckSettingStore() })),
+  notifications = Notifications.inMemory(),
 }: AppParts) {
   const loginGuard = { auth, limiter: new LoginLimiter(), loginLog, proxySettings };
   const api = new Hono()
@@ -103,7 +108,8 @@ export function createApp({
     .route('/', loginSettingsRoutes(loginGuard))
     .route('/', userSettingsRoutes(accounts))
     .route('/', focasLibraryRoutes(focasLibrary))
-    .route('/', updateRoutes(updates));
+    .route('/', updateRoutes(updates))
+    .route('/', notificationRoutes(notifications));
 
   // No CORS headers: only pages from this server can call the API from a browser
   return new Hono()

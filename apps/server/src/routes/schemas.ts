@@ -275,3 +275,61 @@ export const copyAlertRulesSchema = z.object({
 
 /** A custom query to run once on one machine */
 export const testAlertQuerySchema = z.object({ machineId, query: alertQueryText }, NOT_AN_OBJECT);
+
+const MAX_CHANNEL_VALUE_LENGTH = 2000;
+const MAX_CHANNEL_LIST_LENGTH = 50;
+const MAX_CHANNEL_FIELDS = 30;
+const MAX_LINK_LENGTH = 500;
+
+const channelValue = z.union([
+  z.string().max(MAX_CHANNEL_VALUE_LENGTH, 'A value is too long'),
+  z.array(z.string().max(MAX_CHANNEL_VALUE_LENGTH, 'A value is too long'))
+    .max(MAX_CHANNEL_LIST_LENGTH, `A list can have at most ${MAX_CHANNEL_LIST_LENGTH} values`),
+], { error: 'Each value must be text or a list of text' });
+
+/**
+ * A channel form, to save it or to send a test. The channel type checks its own values.
+ * An empty secret on an edit keeps the saved secret.
+ */
+export const channelInputSchema = z.object({
+  type: text('type').max(MAX_RULE_ID_LENGTH),
+  name: text('Name'),
+  values: z.record(z.string(), channelValue, { error: 'values must be an object' })
+    .refine(values => Object.keys(values).length <= MAX_CHANNEL_FIELDS, 'Too many values'),
+  minSeverity: z.enum(ALERT_SEVERITIES, { error: 'The level must be "warning" or "critical"' }),
+  machineIds: z.array(machineId, { error: 'machineIds must be a list or null' }).nullable(),
+  enabled: z.boolean({ error: 'enabled must be true or false' }),
+  clearSecrets: z.array(z.string().max(MAX_RULE_ID_LENGTH)).max(MAX_CHANNEL_FIELDS).optional(),
+}, NOT_AN_OBJECT);
+
+/** The channel in the address, as in /notification-channels/<id> */
+export const channelIdParam = z.object({ id: z.string().min(1).max(MAX_RULE_ID_LENGTH) });
+
+/** The filter of the message list */
+export const notificationMessagesQuery = z.object({
+  channel: z.string().min(1).max(MAX_RULE_ID_LENGTH).optional(),
+});
+
+/** Blank text means "not set" */
+const blankIsNull = (value: unknown) => (typeof value === 'string' && value.trim() === '' ? null : value);
+
+function isTimeZoneName(name: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: name });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Settings > Notifications: the address of Chatter for the links, and the time zone of the shop */
+export const notificationSettingsSchema = z.object({
+  linkBaseUrl: z.preprocess(blankIsNull, z.url({
+    protocol: /^https?$/, error: 'The Chatter address must start with http:// or https://, for example http://chatter.local:3001',
+  }).max(MAX_LINK_LENGTH, 'The Chatter address is too long')
+    // The address goes in each message, so a password in it would go to each phone
+    .refine(address => !URL.canParse(address) || !new URL(address).username, 'The Chatter address must not have a user name or password in it')
+    .nullable()),
+  timeZone: z.preprocess(blankIsNull, z.string({ error: 'The time zone must be text' }).trim()
+    .refine(isTimeZoneName, 'Chatter does not know this time zone. Use a name like America/Chicago.').nullable()),
+}, NOT_AN_OBJECT);
