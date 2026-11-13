@@ -18,6 +18,7 @@ import { VictoriaQueryChecker } from './alert-rules/QueryChecker.js';
 import { AlertStore } from './alerts/AlertStore.js';
 import { alertReceiverApp } from './alerts/alertReceiverApp.js';
 import { Notifications } from './notifications/Notifications.js';
+import { TWILIO_ADDRESS } from './notifications/channels/index.js';
 import { getDb, initDatabase, closeDatabase, dataFolder } from './storage/database.js';
 import { Focas } from './machines/fanuc/focas.js';
 import { useSinumerikCertificateFolder } from './machines/siemens/sinumerikClient.js';
@@ -116,6 +117,7 @@ async function start(): Promise<void> {
     await updateFolder.removeLeftovers();
     const version = chatterVersion();
     log.info('Chatter started', { version, logLevel: process.env.LOG_LEVEL || 'info' });
+    if (TWILIO_ADDRESS.warning) log.warn(TWILIO_ADDRESS.warning);
     // Asks GitHub once a day for the newest release, while the Admin has the check on (the default)
     const releases = new ReleaseWatcher({ repo: releasesRepo(), store: sqliteCheckSettingStore(settings) });
     releases.start();

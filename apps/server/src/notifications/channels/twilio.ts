@@ -4,6 +4,32 @@ import type { ChannelDefinition, OutgoingMessage, SendContext, SendResult } from
 import { networkFailure } from './networkFailure.js';
 
 export const TWILIO_API = 'https://api.twilio.com';
+const THIS_COMPUTER = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+/** The Twilio address that Chatter uses, and a line for the log when it is not the real Twilio */
+export interface TwilioAddress {
+  url: string;
+  warning: string | null;
+}
+
+/**
+ * The address of the Twilio API from TWILIO_API_URL, for a fake Twilio in development.
+ * Chatter sends the auth token to this address. So it takes only https, or plain http on this computer.
+ */
+export function twilioAddressOf(value: string | undefined): TwilioAddress {
+  const url = value?.trim() ?? '';
+  if (!url) return { url: TWILIO_API, warning: null };
+  if (!isSafeForTheToken(url)) {
+    return { url: TWILIO_API, warning: 'Chatter does not use TWILIO_API_URL: it must start with https://, or be http:// on this computer. Text messages go to Twilio.' };
+  }
+  return { url, warning: `Text messages go to ${url} (TWILIO_API_URL), not to Twilio` };
+}
+
+function isSafeForTheToken(url: string): boolean {
+  if (!URL.canParse(url)) return false;
+  const { protocol, hostname } = new URL(url);
+  return protocol === 'https:' || (protocol === 'http:' && THIS_COMPUTER.has(hostname));
+}
 export const MAX_PHONES = 20;
 
 const twilioSettings = z.object({

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { OutgoingMessage, SendContext } from './ChannelType.js';
-import { createTwilioChannel, TWILIO_API } from './twilio.js';
+import { createTwilioChannel, TWILIO_API, twilioAddressOf } from './twilio.js';
 
 const MESSAGE: OutgoingMessage = {
   kind: 'started', text: 'CRITICAL - Haas VF-2: In alarm. Started 9:02 AM.', severity: 'critical',
@@ -189,4 +189,22 @@ describe('twilioChannel', () => {
       expect(firstProblem({ ...settings, ...change })).toBe(problem);
     });
   });
+});
+
+describe('twilioAddressOf', () => {
+  it('is the real Twilio, with nothing to log, when TWILIO_API_URL is not set', () => {
+    expect(twilioAddressOf(undefined)).toEqual({ url: TWILIO_API, warning: null });
+    expect(twilioAddressOf(' ')).toEqual({ url: TWILIO_API, warning: null });
+  });
+
+  it.each(['http://127.0.0.1:4010', 'http://localhost:4010', 'https://twilio-proxy.example.com'])('uses %s, and says so in the log', url => {
+    expect(twilioAddressOf(` ${url} `)).toEqual({ url, warning: expect.stringContaining(url) });
+  });
+
+  it.each(['http://192.168.1.20:4010', 'ftp://127.0.0.1', 'not an address'])(
+    'does not send the auth token to %s, because the token would go over the network as plain text',
+    url => {
+      expect(twilioAddressOf(url)).toEqual({ url: TWILIO_API, warning: expect.stringContaining('does not use TWILIO_API_URL') });
+    },
+  );
 });

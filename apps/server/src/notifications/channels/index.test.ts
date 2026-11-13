@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { defineChannelType, type OutgoingMessage, type SendContext } from './ChannelType.js';
 import { channelTypeInfos, findChannelType } from './index.js';
@@ -64,5 +64,19 @@ describe('channel types', () => {
   it('finds a type by its id, and gives nothing for an id that it does not know', () => {
     expect(findChannelType('webhook')?.name).toBe('Webhook');
     expect(findChannelType('carrier-pigeon')).toBeUndefined();
+  });
+});
+
+describe('TWILIO_ADDRESS', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it('gives the Twilio channel the address from TWILIO_API_URL', async () => {
+    vi.stubEnv('TWILIO_API_URL', 'http://127.0.0.1:4010');
+    vi.resetModules();
+
+    expect((await import('./index.js')).TWILIO_ADDRESS.url).toBe('http://127.0.0.1:4010');
   });
 });
