@@ -14,6 +14,7 @@
 | `apps/web` | The web app (React, Vite) |
 | `packages/shared` | The types and rules that the server and the web app share |
 | `tools/fake-machines` | Fake CNC machines for tests (see [Fake machines](./fake-machines.md)) |
+| `tools/fake-notify` | A fake Twilio and webhook receiver for the notifications (see [Fake notifications](./fake-machines.md#fake-notifications)) |
 | `tools/pi-image` | The Raspberry Pi card image (see [Pi card image](./pi-image.md)) |
 | `tools/release` | The scripts that make the release files |
 | `docs` | These docs |
@@ -64,6 +65,7 @@ To keep them, copy `apps/server/.env.example` to `apps/server/.env`.
 | `ALERT_RULES_DIR` | `data/alert-rules` (next to the database) | The folder where the server writes the vmalert rules file. vmalert must read the same folder. |
 | `VMALERT_URL` | `http://localhost:8880` | Where the server tells vmalert to read the rules again |
 | `TRUST_PROXY` | not set | The reverse proxy addresses to trust (see [HTTPS and proxy](../guide/https.md)) |
+| `TWILIO_API_URL` | `https://api.twilio.com` | For development only: the address of a fake Twilio (see [Fake notifications](./fake-machines.md#fake-notifications)). Chatter sends the auth token there, so it takes only `https://`, or `http://` on this computer (`127.0.0.1`, `localhost`) |
 
 The Docker image sets `CHATTER_VERSION`, the version that the app shows.
 Two more variables are for the updates, and you do not usually set them:

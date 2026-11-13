@@ -15,7 +15,7 @@ npm test
 
 - The web app and the server import `packages/shared` from its `dist` folder. A stale `dist` gives "missing export" errors in the typecheck and the tests, and `npm run build:shared` fixes them.
 - In a workspace, run the tests once with `npm run test:run -w apps/server` (or `apps/web`). The `test` script of a workspace starts vitest in watch mode, which does not stop.
-- `npm test` also runs `test:tools`, the fake machine tests. `tools/fake-machines` is not a workspace, so the workspace commands skip it.
+- `npm test` also runs `test:tools`, the tests of `tools/fake-machines` and `tools/fake-notify`. These folders are not workspaces, so the workspace commands skip them.
 - `docs/` is its own npm package. Run `npm --prefix docs ci` once, then `npm run docs:build`. The build fails on a dead link.
 
 ## How we work
