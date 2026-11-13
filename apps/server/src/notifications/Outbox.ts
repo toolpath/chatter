@@ -1,5 +1,5 @@
 import {
-  type MessageStatus, NOTIFICATION_MESSAGE_DAYS, type NotificationKind, type NotificationMessage,
+  type ChannelTestResult, type MessageStatus, NOTIFICATION_MESSAGE_DAYS, type NotificationKind, type NotificationMessage,
 } from '@local-chatter/shared';
 import type Database from 'better-sqlite3';
 import type { MachineRemovalListener } from '../polling/poller.js';
@@ -108,6 +108,13 @@ export class Outbox implements MachineRemovalListener {
       UPDATE notification_messages SET kind = ?, payload = ?
       WHERE channel_id = ? AND alert_id = ? AND kind = 'started' AND status = 'waiting' AND sending = 0
     `).run(combined.kind, JSON.stringify(combined), channelId, alertId).changes > 0;
+  }
+
+  /** A test goes at once, not through the outbox. Its result goes in the message list, so the admin sees it there too. */
+  keepTestResult(channelId: string, message: OutgoingMessage, result: ChannelTestResult, now: number): void {
+    const id = this.insert({ channelId, alertId: null, message }, null, now);
+    if (result.ok) this.markSent(id, result.detail, now);
+    else this.markFailed(id, result.error);
   }
 
   /** The first waiting message of each channel, when its time came and the channel is not at its limit */

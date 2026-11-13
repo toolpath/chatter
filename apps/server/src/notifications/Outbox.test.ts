@@ -48,6 +48,19 @@ describe('Outbox', () => {
     return entries.map(entry => entry.message.text);
   }
 
+  it('keeps the result of a test in the list, and never gives the test to the sender', () => {
+    const test = { ...moreAlerts(0), kind: 'test' as const, text: 'Test from Chatter.' };
+
+    outbox.keepTestResult('phones', test, { ok: true, detail: 'Sent to 1 phone' }, NOW);
+    outbox.keepTestResult('slack', test, { ok: false, error: 'Slack says the address is wrong.' }, NOW);
+
+    expect(outbox.takeDue(NOW)).toEqual([]);
+    expect(outbox.list({}).map(({ channelId, kind, status, detail, lastError }) => ({ channelId, kind, status, detail, lastError }))).toEqual([
+      { channelId: 'slack', kind: 'test', status: 'failed', detail: null, lastError: 'Slack says the address is wrong.' },
+      { channelId: 'phones', kind: 'test', status: 'sent', detail: 'Sent to 1 phone', lastError: null },
+    ]);
+  });
+
   it('gives a queued message to the sender, and shows it as waiting', () => {
     const id = queue('phones', 7);
 

@@ -57,6 +57,27 @@ describe('Notifications', () => {
     expect(notifications.outbox.list({})[0]).toMatchObject({ status: 'sent' });
   });
 
+  describe('sendTest', () => {
+    it('sends a test with the values of a form that is not saved', async () => {
+      expect(await notifications.sendTest(slack)).toEqual({ ok: true, detail: expect.any(String) });
+      expect(requests[0].body.text).toBe('Test from Chatter. Messages to this channel work.');
+      expect(notifications.outbox.list({})).toEqual([]);
+    });
+
+    it('keeps the result of a test of a saved channel in its message list', async () => {
+      const id = addChannel(slack);
+
+      await notifications.sendTest(slack, id);
+
+      expect(notifications.outbox.list({ channelId: id })).toEqual([expect.objectContaining({ kind: 'test', status: 'sent' })]);
+    });
+
+    it('gives the first problem of the form and sends nothing', async () => {
+      expect(await notifications.sendTest({ ...slack, values: { url: 'not an address' } })).toEqual({ ok: false, error: expect.any(String) });
+      expect(requests).toEqual([]);
+    });
+  });
+
   it('deletes the waiting messages of a removed channel', () => {
     const id = addChannel(slack);
     alerts.save([alert], NOW);

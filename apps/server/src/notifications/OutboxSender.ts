@@ -1,6 +1,6 @@
 import { createLogger } from '../logging/logger.js';
 import type { ChannelForSending } from './ChannelStore.js';
-import type { ChannelType, OutgoingMessage, SendResult } from './channels/ChannelType.js';
+import type { ChannelType, OutgoingMessage, SendContext, SendResult } from './channels/ChannelType.js';
 import type { Outbox, OutboxEntry } from './Outbox.js';
 
 const log = createLogger('notifications');
@@ -18,6 +18,28 @@ const RETRY_WAITS_MS = [30_000, 60_000, 2 * 60_000, 5 * 60_000, 10 * 60_000];
 /** The wait before the next try, after `attempts` earlier tries failed */
 export function retryWait(attempts: number): number {
   return RETRY_WAITS_MS[Math.min(attempts, RETRY_WAITS_MS.length - 1)];
+}
+
+/**
+ * One try, which always ends: after `timeoutMs`, the signal stops the request, and the result is a failure to try again.
+ * A channel type can forget the signal, so a race with the timer makes sure.
+ */
+export function sendWithTimeLimit(
+  { type, values }: Pick<ChannelForSending, 'type' | 'values'>,
+  message: OutgoingMessage,
+  { fetch, timeoutMs }: { fetch: SendContext['fetch']; timeoutMs: number },
+): Promise<SendResult> {
+  const controller = new AbortController();
+  let timer: NodeJS.Timeout | undefined;
+  const timeUp = new Promise<SendResult>(resolve => {
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve(timeoutFailure(type));
+    }, timeoutMs);
+  });
+  // The async function turns an error that send throws into a failed promise, so the timer always stops
+  const sent = (async () => type.send(values, message, { fetch, signal: controller.signal }))();
+  return Promise.race([sent, timeUp]).finally(() => clearTimeout(timer));
 }
 
 export interface ChannelSource {
@@ -81,7 +103,7 @@ export class OutboxSender {
       const target = this.channels.forSending(entry.channelId);
       if (!target) return this.fail(entry, null, 'The channel is not there, or this version of Chatter does not know its type.');
       if (!target.channel.enabled) return this.fail(entry, target, 'The channel is off, so Chatter did not send the message.');
-      const result = await this.sendWithTimeLimit(target, entry.message);
+      const result = await sendWithTimeLimit(target, entry.message, { fetch: this.fetch, timeoutMs: this.timeoutMs });
       this.saveResult(entry, target, result);
     } catch (error) {
       this.recoverFrom(entry, error);
@@ -96,21 +118,6 @@ export class OutboxSender {
     } catch (saveError) {
       log.error('Could not save the result of a notification', { message: entry.id, error: saveError });
     }
-  }
-
-  private sendWithTimeLimit({ type, values }: ChannelForSending, message: OutgoingMessage): Promise<SendResult> {
-    const controller = new AbortController();
-    let timer: NodeJS.Timeout | undefined;
-    // A channel type can forget the signal. The race makes sure that a try always ends.
-    const timeUp = new Promise<SendResult>(resolve => {
-      timer = setTimeout(() => {
-        controller.abort();
-        resolve(timeoutFailure(type));
-      }, this.timeoutMs);
-    });
-    // The async function turns an error that send throws into a failed promise, so the timer always stops
-    const sent = (async () => type.send(values, message, { fetch: this.fetch, signal: controller.signal }))();
-    return Promise.race([sent, timeUp]).finally(() => clearTimeout(timer));
   }
 
   /** A retry that would come after the 24 hours is a failure now */

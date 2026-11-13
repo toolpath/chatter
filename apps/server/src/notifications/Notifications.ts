@@ -1,14 +1,16 @@
-import type Database from 'better-sqlite3';
+import type { ChannelInput, ChannelTestResult } from '@local-chatter/shared';
+import Database from 'better-sqlite3';
+import { AlertStore } from '../alerts/AlertStore.js';
 import { createLogger } from '../logging/logger.js';
 import type { MachineRemovalListener } from '../polling/poller.js';
-import type { SettingsTable } from '../storage/settingsTable.js';
+import { SettingsTable } from '../storage/settingsTable.js';
 import { AlertChangeFinder } from './AlertChangeFinder.js';
 import { AlertNotifier } from './AlertNotifier.js';
 import { ChannelStore } from './ChannelStore.js';
 import type { TextOptions } from './messageText.js';
 import { Outbox } from './Outbox.js';
-import { OutboxSender } from './OutboxSender.js';
-import { moreAlertsMessage } from './outgoingMessages.js';
+import { OutboxSender, SEND_TIMEOUT_MS, sendWithTimeLimit } from './OutboxSender.js';
+import { moreAlertsMessage, testMessage } from './outgoingMessages.js';
 import { NotificationSettingsStore } from './NotificationSettingsStore.js';
 
 const log = createLogger('notifications');
@@ -39,10 +41,12 @@ export class Notifications implements MachineRemovalListener {
   private readonly finder: AlertChangeFinder;
   private readonly sender: OutboxSender;
   private readonly now: () => number;
+  private readonly fetch: typeof globalThis.fetch;
   private timers: NodeJS.Timeout[] = [];
 
-  constructor({ db, settingsTable, machineName, now = Date.now, fetch }: NotificationsOptions) {
+  constructor({ db, settingsTable, machineName, now = Date.now, fetch = globalThis.fetch }: NotificationsOptions) {
     this.now = now;
+    this.fetch = fetch;
     this.settings = new NotificationSettingsStore(settingsTable);
     this.channels = new ChannelStore(db);
     this.outbox = new Outbox(db, count => moreAlertsMessage(count, this.textOptions()));
@@ -51,6 +55,13 @@ export class Notifications implements MachineRemovalListener {
     });
     this.finder = new AlertChangeFinder(db, notifier, now());
     this.sender = new OutboxSender(this.outbox, this.channels, { now, fetch });
+  }
+
+  /** With no database file: for tests, and for an app that is made without notifications */
+  static inMemory(machineName: (machineId: string) => string | null = () => null): Notifications {
+    const db = new Database(':memory:');
+    new AlertStore(db);
+    return new Notifications({ db, settingsTable: new SettingsTable(db), machineName });
   }
 
   start(): void {
@@ -83,6 +94,21 @@ export class Notifications implements MachineRemovalListener {
   /** Sends the due messages now. The timer does this every 5 seconds. */
   sendDue(): Promise<void> {
     return this.sender.sendDue();
+  }
+
+  /**
+   * "Send test": sends a test message at once with the values of the form, also when the form is not saved.
+   * With `savedId`, an empty secret uses the saved secret, and the result goes in the message list of that channel.
+   */
+  async sendTest(input: ChannelInput, savedId?: string): Promise<ChannelTestResult> {
+    const check = this.channels.checkInput(input, savedId);
+    if (!check.ok) return check;
+    const message = testMessage(this.textOptions());
+    const sent = await sendWithTimeLimit(check, message, { fetch: this.fetch, timeoutMs: SEND_TIMEOUT_MS });
+    // The browser needs no retry flag: a test is tried one time only
+    const result: ChannelTestResult = sent.ok ? sent : { ok: false, error: sent.error };
+    if (savedId !== undefined) this.outbox.keepTestResult(savedId, message, result, this.now());
+    return result;
   }
 
   /** Also deletes the messages of the channel that still wait */
