@@ -14,6 +14,7 @@ interface MockStatus {
 
 interface MockAlarm {
   alarmNo: number;
+  type?: number;
   message: string;
 }
 
@@ -562,6 +563,24 @@ describe('FanucConnector', () => {
 
       mockFocasInstance.readOperatorMessages.mockImplementation(failing);
       expect((await connector.poll()).data.operatorMessage).toBeUndefined();
+    });
+
+    it('gives the alarm code of the screen, with the letters of the alarm type', async () => {
+      mockFocasInstance.readSystemInfo.mockReturnValue({ cncType: '0', mtType: 'M' });
+      mockFocasInstance.readStatus.mockReturnValue({ mode: 'MEM', runState: 'STOP', emergency: false, alarm: true, motion: 0 });
+      mockFocasInstance.readAlarms.mockReturnValue([{ alarmNo: 401, type: 6, message: 'SERVO V-READY OFF' }]);
+      await connector.connect();
+      expect((await connector.poll()).data.alarmCode).toBe('SV0401');
+
+      mockFocasInstance.readAlarms.mockReturnValue([{ alarmNo: 3086, type: 8, message: 'PATH OBSTRUCTED' }]);
+      expect((await connector.poll()).data).toMatchObject({ alarmCode: 'MC3086', alarmMessage: 'PATH OBSTRUCTED' });
+    });
+
+    it('gives the number alone when the series of the control is not known', async () => {
+      mockFocasInstance.readSystemInfo.mockImplementation(() => { throw new Error('No option error'); });
+      mockFocasInstance.readAlarms.mockReturnValue([{ alarmNo: 401, type: 6, message: 'SERVO V-READY OFF' }]);
+      await connector.connect();
+      expect((await connector.poll()).data.alarmCode).toBe('401');
     });
 
     it('gives a general alarm, not the old one, when the alarm flag is on and the list is empty', async () => {

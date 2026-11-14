@@ -1,6 +1,7 @@
 import { BaseMachineConnector, errorMessage } from '../BaseMachineConnector.js';
 import { Focas } from './focas.js';
 import { isConnectionLost } from './focasError.js';
+import { fanucAlarmCode } from './fanucAlarmCodes.js';
 import { focasThreads, type FocasSession, type FocasThread } from './focasThread.js';
 import { createLogger } from '../../logging/logger.js';
 import type {
@@ -295,6 +296,7 @@ export class FanucConnector extends BaseMachineConnector {
   }
 
   /**
+   * The code of the first alarm is the one on the alarm screen, such as SV0401 (see fanucAlarmCode).
    * When the alarm list is empty or cannot be read, the alarm flag of the status decides.
    * An alarm with no list gets a general code and message, never the text of an older alarm.
    */
@@ -302,7 +304,7 @@ export class FanucConnector extends BaseMachineConnector {
     const alarms = await this.readIfSupported('alarms', () => focas.readAlarms());
     if (alarms && alarms.length > 0) {
       this.data.alarm = true;
-      this.data.alarmCode = String(alarms[0].alarmNo);
+      this.data.alarmCode = fanucAlarmCode(alarms[0].alarmNo, alarms[0].type, this.controlInfo.series);
       this.data.alarmMessage = alarms[0].message;
     } else if (statusAlarm) {
       this.data.alarm = true;
