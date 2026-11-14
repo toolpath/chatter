@@ -1,6 +1,6 @@
 import koffi from 'koffi';
 import { describe, expect, it } from 'vitest';
-import { LOADELM, ODBACT, ODBALMMSG_DATA, ODBEXEPRG, ODBM, ODBSPLOAD, ODBST, ODBSYS, toFocasStatus, toSpindleLoadPercent, toSystemInfo } from './focas.js';
+import { LOADELM, ODBACT, ODBALMMSG_DATA, ODBEXEPRG, ODBM, ODBSPLOAD, ODBST, ODBSYS, toFocasMacro, toFocasStatus, toSpindleLoadPercent, toSystemInfo } from './focas.js';
 
 describe('ODBST, the reply of cnc_statinfo', () => {
   // The layout of 0i, 16i/18i/21i, 30i/31i/32i and Power Mate i in fwlib32.h: 9 shorts.
@@ -108,5 +108,22 @@ describe('toSpindleLoadPercent', () => {
 
   it('gives no load when the unit is not percent', () => {
     expect(toSpindleLoadPercent(1, meter(375, 1, 1))).toBeUndefined();
+  });
+});
+
+describe('toFocasMacro', () => {
+  // Values read from a 0i-M: #4120 (the tool), #3901 and #3902 (the part counts)
+  it('gives mcr_val with dec_val decimal places', () => {
+    expect(toFocasMacro({ datano: 4120, mcr_val: 200000000, dec_val: 8 }).value).toBe(2);
+    expect(toFocasMacro({ datano: 3901, mcr_val: 460000000, dec_val: 7 }).value).toBe(46);
+    expect(toFocasMacro({ datano: 500, mcr_val: 12345, dec_val: 2 }).value).toBe(123.45);
+  });
+
+  it('keeps a real 0 as 0', () => {
+    expect(toFocasMacro({ datano: 3902, mcr_val: 0, dec_val: 0 }).value).toBe(0);
+  });
+
+  it('gives no value for a vacant variable (mcr_val 0, dec_val -1), not 0', () => {
+    expect(toFocasMacro({ datano: 500, mcr_val: 0, dec_val: -1 })).toEqual({ number: 500, value: undefined, decimalPlaces: -1 });
   });
 });
