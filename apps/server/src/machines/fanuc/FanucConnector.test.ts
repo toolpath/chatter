@@ -274,7 +274,53 @@ describe('FanucConnector', () => {
 
       expect(connector.connected).toBe(false);
       expect(mockFocasInstance.disconnect).toHaveBeenCalledTimes(1);
-      expect(mockThread.stop).toHaveBeenCalledTimes(1);
+      await vi.waitFor(() => expect(mockThread.stop).toHaveBeenCalledTimes(1));
+    });
+
+    it('stops the thread only after the disconnect has ended, so cnc_freelibhndl runs', async () => {
+      let endDisconnect = () => {};
+      mockFocasInstance.disconnect.mockImplementationOnce(() => new Promise<undefined>(resolve => { endDisconnect = () => resolve(undefined); }));
+      await connector.connect();
+      connector.dispose();
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+      expect(mockThread.stop).not.toHaveBeenCalled();
+
+      endDisconnect();
+      await vi.waitFor(() => expect(mockThread.stop).toHaveBeenCalledTimes(1));
+    });
+
+    it('stops the thread after a failed disconnect too', async () => {
+      mockFocasInstance.disconnect.mockImplementationOnce(async () => { throw new Error('Socket error'); });
+      await connector.connect();
+      connector.dispose();
+
+      await vi.waitFor(() => expect(mockThread.stop).toHaveBeenCalledTimes(1));
+    });
+
+    it('stops the thread after the time limit when the disconnect does not end', async () => {
+      mockFocasInstance.disconnect.mockImplementationOnce(() => new Promise<undefined>(() => {}));
+      await connector.connect();
+      vi.useFakeTimers();
+      try {
+        connector.dispose();
+        await vi.advanceTimersByTimeAsync(2999);
+        expect(mockThread.stop).not.toHaveBeenCalled();
+
+        await vi.advanceTimersByTimeAsync(1);
+        expect(mockThread.stop).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('stops the thread at once when the machine has no session', async () => {
+      await connector.connect();
+      connector.disconnect();
+      connector.dispose();
+
+      await vi.waitFor(() => expect(mockThread.stop).toHaveBeenCalledTimes(1));
+      expect(mockFocasInstance.disconnect).toHaveBeenCalledTimes(1);
     });
 
     it('does nothing to a thread when the machine never connected', () => {
