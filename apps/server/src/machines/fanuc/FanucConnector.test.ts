@@ -38,7 +38,7 @@ const mockFocasInstance = {
   readSpindleLoad: vi.fn<[], number | undefined>(() => 42),
   readProgram: vi.fn(() => ({ name: 'O1234', number: 1234 })),
   readAlarms: vi.fn<[], MockAlarm[]>(() => []),
-  readMacro: vi.fn(() => ({ value: 100 })),
+  readMacro: vi.fn<[], { value: number | undefined }>(() => ({ value: 100 })),
   readOperatorMessages: vi.fn<[], MockOperatorMessage[]>(() => []),
   readSystemInfo: vi.fn<[], { cncType: string; mtType: string }>(() => ({ cncType: '31', mtType: 'M' })),
   readPathCount: vi.fn<[], number>(() => 1),
@@ -676,7 +676,7 @@ describe('FanucConnector', () => {
         toolNumberVariable: 500,
       });
 
-      mockFocasInstance.readMacro = vi.fn(() => ({ value: 7 }));
+      mockFocasInstance.readMacro.mockReturnValue({ value: 7 });
 
       await macroConnector.connect();
       const status = await macroConnector.poll();
@@ -691,7 +691,7 @@ describe('FanucConnector', () => {
         partCounterVariable: 501,
       });
 
-      mockFocasInstance.readMacro = vi.fn(() => ({ value: 42 }));
+      mockFocasInstance.readMacro.mockReturnValue({ value: 42 });
 
       await macroConnector.connect();
       const status = await macroConnector.poll();
@@ -708,12 +708,37 @@ describe('FanucConnector', () => {
         ],
       });
 
-      mockFocasInstance.readMacro = vi.fn(() => ({ value: 123.45 }));
+      mockFocasInstance.readMacro.mockReturnValue({ value: 123.45 });
 
       await macroConnector.connect();
       const status = await macroConnector.poll();
 
       expect(status.data.customVar).toBe(123.45);
+    });
+
+    it('shows no tool, part count or macro value for a vacant variable, and keeps a real 0', async () => {
+      const macroConnector = new FanucConnector({
+        name: 'MacroFanuc',
+        host: '192.168.1.100',
+        toolNumberVariable: 4120,
+        partCounterVariable: 3901,
+        macros: [{ location: 500, name: 'Offset' }],
+      });
+      mockFocasInstance.readMacro.mockReturnValue({ value: undefined });
+
+      await macroConnector.connect();
+      const vacant = await macroConnector.poll();
+
+      expect(vacant.data.toolNumber).toBeUndefined();
+      expect(vacant.data.partCount).toBeUndefined();
+      expect(vacant.data.Offset).toBeUndefined();
+      expect(macroConnector.getDataSnapshot()).toMatchObject({ toolNumber: undefined, partCount: undefined });
+
+      mockFocasInstance.readMacro.mockReturnValue({ value: 0 });
+      const zero = await macroConnector.poll();
+      expect(zero.data.toolNumber).toBe(0);
+      expect(zero.data.partCount).toBe(0);
+      expect(zero.data.Offset).toBe(0);
     });
 
     it('should floor tool number to integer', async () => {
@@ -723,7 +748,7 @@ describe('FanucConnector', () => {
         toolNumberVariable: 500,
       });
 
-      mockFocasInstance.readMacro = vi.fn(() => ({ value: 7.99 }));
+      mockFocasInstance.readMacro.mockReturnValue({ value: 7.99 });
 
       await macroConnector.connect();
       const status = await macroConnector.poll();

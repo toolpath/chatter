@@ -154,8 +154,29 @@ export function toSystemInfo(reply: OdbsysReply): FocasSystemInfo {
 
 export interface FocasMacro {
   number: number;
-  value: number;
+  /** undefined when the variable is vacant (empty, #0 on the control screen) */
+  value: number | undefined;
   decimalPlaces: number;
+}
+
+/** The fields of ODBM that Chatter reads */
+export interface OdbmReply {
+  datano: number;
+  mcr_val: number;
+  dec_val: number;
+}
+
+/** cnc_rdmacro gives a vacant variable as mcr_val 0 and dec_val -1. A real 0 has dec_val 0 or more. */
+const VACANT_DECIMAL_PLACES = -1;
+
+/** The macro variable from the ODBM reply of cnc_rdmacro: the value is mcr_val / 10^dec_val, or no value when vacant */
+export function toFocasMacro(reply: OdbmReply): FocasMacro {
+  const vacant = reply.mcr_val === 0 && reply.dec_val === VACANT_DECIMAL_PLACES;
+  return {
+    number: reply.datano,
+    value: vacant ? undefined : reply.mcr_val / Math.pow(10, reply.dec_val),
+    decimalPlaces: reply.dec_val,
+  };
 }
 
 export interface FocasAlarm {
@@ -607,17 +628,12 @@ export class Focas {
     return toSpindleLoadPercent(spindlesRead[0], meters as SpindleMeterReply);
   }
 
-  /** Read a custom macro variable */
+  /** Read a custom macro variable. A vacant variable gives no value. */
   readMacro(macroNumber: number): FocasMacro {
     const macro = {};
     throwIfFailed(this.connectedFunctions().rdmacro(this.handle, macroNumber, ODBM_LENGTH, macro), `read macro ${macroNumber}`);
 
-    const reply = macro as { datano: number; mcr_val: number; dec_val: number };
-    return {
-      number: reply.datano,
-      value: reply.mcr_val / Math.pow(10, reply.dec_val),
-      decimalPlaces: reply.dec_val,
-    };
+    return toFocasMacro(macro as OdbmReply);
   }
 
   /** Read the program that runs now */
