@@ -27,6 +27,9 @@ const UNKNOWN_ALARM_MESSAGE = 'Alarm active (the control gave no details)';
  */
 const POLL_READS_DEADLINE_MS = 8000;
 
+/** dispose() stops the FOCAS thread after the disconnect, or after this time when the control does not answer */
+const DISPOSE_DISCONNECT_TIMEOUT_MS = 3000;
+
 /** The Series 15 controls give cnc_statinfo another layout (ODBST), which Chatter does not read */
 const SERIES_15 = '15';
 
@@ -40,6 +43,18 @@ interface ControlInfo {
   type?: string;
   /** The number of paths. Chatter reads only path 1. */
   paths?: number;
+}
+
+/** Ends when the promise ends or after ms, whichever comes first. The timer does not keep the server running. */
+function settledWithin(promise: Promise<void>, ms: number): Promise<void> {
+  return new Promise(resolve => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.();
+    void promise.finally(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
 }
 
 /**
@@ -132,22 +147,33 @@ export class FanucConnector extends BaseMachineConnector {
   }
 
   disconnect(): void {
-    this.disconnects++;
-    if (this.focas) {
-      this.focas.disconnect().catch(() => {
-        // The connection may be gone already; the connector is disconnected either way
-      });
-      this.focas = null;
-    }
-    this.connected = false;
+    void this.endSession();
   }
 
-  /** Stop the FOCAS thread of the machine too. A connect that still waits on it fails. */
+  /**
+   * Stop the FOCAS thread of the machine too, after its disconnect. A connect that still waits on it fails.
+   * The disconnect (cnc_freelibhndl) runs on the thread, so a stop right away could cut it off, and the control
+   * would keep the connection until the server exits. A control that does not answer must not keep the
+   * thread forever, so the stop waits at most DISPOSE_DISCONNECT_TIMEOUT_MS for the disconnect.
+   */
   dispose(): void {
-    this.disconnect();
+    const disconnected = this.endSession();
     const thread = this.thread;
     this.thread = null;
-    thread?.stop().catch(() => undefined);
+    if (!thread) return;
+    void settledWithin(disconnected, DISPOSE_DISCONNECT_TIMEOUT_MS)
+      .then(() => thread.stop())
+      .catch(() => undefined);
+  }
+
+  /** Forget the session, and give the end of its disconnect. It never rejects. */
+  private endSession(): Promise<void> {
+    this.disconnects++;
+    const session = this.focas;
+    this.focas = null;
+    this.connected = false;
+    // The connection may be gone already; the connector is disconnected either way
+    return session ? session.disconnect().catch(() => undefined) : Promise.resolve();
   }
 
   async poll(): Promise<FanucMachineStatus> {
