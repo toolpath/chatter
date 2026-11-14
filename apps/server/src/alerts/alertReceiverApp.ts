@@ -29,6 +29,8 @@ const sentAlerts = z.array(sentAlert, { error: 'The body must be a list of alert
 export interface ReceiverOptions {
   /** vmalert can send the alerts of a removed machine for a short time. They are left out. */
   isKnownMachine: (machineId: string) => boolean;
+  /** Runs after each save, for example to send the notifications of the new alerts */
+  afterSave?: () => void;
   now?: () => number;
 }
 
@@ -36,7 +38,7 @@ export interface ReceiverOptions {
  * The receiver for the alerts of vmalert. It has no login, so it must listen on a separate port that only vmalert can reach.
  * vmalert thinks that it talks to an Alertmanager: it sends POST /api/v2/alerts.
  */
-export function alertReceiverApp(store: AlertStore, { isKnownMachine, now = Date.now }: ReceiverOptions) {
+export function alertReceiverApp(store: AlertStore, { isKnownMachine, afterSave = () => {}, now = Date.now }: ReceiverOptions) {
   return new Hono().post(
     '/api/v2/alerts',
     bodyLimit({ maxSize: MAX_BODY_BYTES, onError: c => c.json({ error: 'The body is too large' }, 413) }),
@@ -48,6 +50,7 @@ export function alertReceiverApp(store: AlertStore, { isKnownMachine, now = Date
         .map(sent => toAlert(sent, receivedAt))
         .filter(isAboutKnownMachineOrNone);
       store.save(alerts, receivedAt);
+      afterSave();
       return c.json({});
     },
   );

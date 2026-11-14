@@ -25,7 +25,11 @@ export interface AlertQuery {
   limit: number;
 }
 
-interface AlertRow {
+/** The columns that make an AlertRow */
+export const ALERT_COLUMNS = 'name, machine_id, labels, annotations, starts_at, ends_at';
+
+/** One row of the "alerts" table */
+export interface AlertRow {
   name: string;
   machine_id: string | null;
   labels: string;
@@ -78,7 +82,7 @@ export class AlertStore {
   /** Newest first */
   read({ now, machineId, firingOnly, endedAfter, limit }: AlertQuery): Alert[] {
     const rows = this.db.prepare(`
-      SELECT name, machine_id, labels, annotations, starts_at, ends_at FROM alerts
+      SELECT ${ALERT_COLUMNS} FROM alerts
       WHERE ends_at > @endsAfter AND (@machineId IS NULL OR machine_id = @machineId)
       ORDER BY starts_at DESC, id DESC
       LIMIT @limit
@@ -107,7 +111,7 @@ function toSqlParameters(alert: Alert) {
   };
 }
 
-function toAlert(row: AlertRow): Alert {
+export function toAlert(row: AlertRow): Alert {
   return {
     name: row.name,
     machineId: row.machine_id ?? undefined,

@@ -49,6 +49,17 @@ describe('alertReceiverApp', () => {
     }]);
   });
 
+  it('tells the listener after it saved the alerts, so the notifications can find the changes', async () => {
+    let savedCount = -1;
+    app = alertReceiverApp(store, {
+      isKnownMachine: () => true, now: () => NOW, afterSave: () => { savedCount = store.read(allAlertsQuery).length; },
+    });
+
+    await send(vmalertBody);
+
+    expect(savedCount).toBe(1);
+  });
+
   it('accepts an alert with no annotations and no machine', async () => {
     await send([{ startsAt: '2026-11-09T17:50:20Z', endsAt: '2026-11-09T17:51:00Z', labels: { alertname: 'NoMachine' } }]);
 

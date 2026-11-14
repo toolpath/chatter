@@ -90,3 +90,37 @@ Every machine runs the same cycle, copied from the old chatter-pyMachine emulato
 - `index.ts` — starts everything
 
 The tests are next to the files (`*.test.ts`). Run them with `npm run test:tools`.
+
+## Fake notifications
+
+A fake Twilio and a fake webhook receiver, so you can try **Settings > Notifications** without a Twilio account.
+The files are in `tools/fake-notify/`. The fake sends nothing out. It prints each message that Chatter sends.
+
+```bash
+npm run fake-notify
+```
+
+Then start the Chatter server with the address of the fake Twilio:
+
+```bash
+TWILIO_API_URL=http://127.0.0.1:4010 npm run dev
+```
+
+- **Text messages:** add a **Text message (Twilio)** channel. Use `AC` and then 32 zeros as the Account SID, and any auth token.
+- **Webhooks:** add a **Webhook** channel with the web address `http://127.0.0.1:4010/any-path`.
+
+Use these values to see how Chatter shows a refusal:
+
+| Value | The fake answers like Twilio |
+| --- | --- |
+| Phone number `+15005550001` | Error 21211: not a valid phone number |
+| Phone number `+15005550004` | Error 21610: the phone sent STOP |
+| Phone number `+15005550008` | Error 21608: a trial account sends only to verified numbers |
+| Auth token `wrong` | 401: the login is wrong |
+
+Options:
+
+- `--port 4010` sets the port (default 4010). Then use the same port in `TWILIO_API_URL`.
+- `--webhook-status 500` makes each webhook answer 500, so you can see how Chatter tries again.
+
+The fake listens only on this computer (`127.0.0.1`). Press Ctrl+C to stop.

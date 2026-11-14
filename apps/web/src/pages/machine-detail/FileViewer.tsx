@@ -1,8 +1,8 @@
-import { cn } from '@toolpath/ui';
-import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { fetchFileBytes, fileDownloadUrl } from '../../api/machineFiles';
 import { Button } from '../../components/ui/Button';
 import { CloseIcon, DownloadIcon } from '../../components/ui/icons';
+import { SidePanel } from '../../components/ui/SidePanel';
 import { useSlideOut } from '../../components/ui/useSlideOut';
 import type { FTPTreeNode } from '../../types';
 import { formatSize } from '../../utils/formatters';
@@ -33,39 +33,10 @@ interface FileViewerProps {
  */
 function FileViewer({ machineId, file, onClose }: FileViewerProps) {
   const state = useFileText(machineId, file);
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const { isClosing, close } = useSlideOut(onClose);
 
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    dialog?.showModal();
-    return () => dialog?.close();
-  }, []);
-
-  // A click on the dark layer outside the panel lands on the dialog itself. The press must start there too:
-  // a text selection that ends outside the panel must not close it.
-  const pressedOutside = useRef(false);
-  const isOnDarkLayer = (event: PointerEvent<HTMLDialogElement> | MouseEvent<HTMLDialogElement>) => event.target === event.currentTarget;
-  const closeOnOutsideClick = (event: MouseEvent<HTMLDialogElement>) => {
-    if (pressedOutside.current && isOnDarkLayer(event)) close();
-  };
-
   return (
-    <dialog
-      ref={dialogRef}
-      aria-label={`The text of ${file.name}`}
-      onCancel={event => {
-        event.preventDefault();
-        close();
-      }}
-      onPointerDown={event => { pressedOutside.current = isOnDarkLayer(event); }}
-      onClick={closeOnOutsideClick}
-      className={cn(
-        'fixed inset-y-0 right-0 left-auto m-0 h-full max-h-none w-[min(56rem,100vw)] max-w-none flex-col border-0 border-l border-zinc-800 bg-zinc-900 p-0 text-zinc-50 backdrop:bg-black/60 open:flex',
-        isClosing ? 'animate-slide-out-right backdrop:animate-fade-out' : 'animate-slide-in-right backdrop:animate-fade-in',
-        'motion-reduce:animate-none motion-reduce:backdrop:animate-none',
-      )}
-    >
+    <SidePanel label={`The text of ${file.name}`} isClosing={isClosing} onClose={close} widthClassName="w-[min(56rem,100vw)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 px-5 py-3">
         <div className="flex min-w-0 flex-col">
           <strong className="truncate font-mono">{file.name}</strong>
@@ -88,7 +59,7 @@ function FileViewer({ machineId, file, onClose }: FileViewerProps) {
         </div>
       </div>
       <FileBody name={file.name} state={state} />
-    </dialog>
+    </SidePanel>
   );
 }
 

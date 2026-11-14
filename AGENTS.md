@@ -15,12 +15,13 @@ npm test
 
 - The web app and the server import `packages/shared` from its `dist` folder. A stale `dist` gives "missing export" errors in the typecheck and the tests, and `npm run build:shared` fixes them.
 - In a workspace, run the tests once with `npm run test:run -w apps/server` (or `apps/web`). The `test` script of a workspace starts vitest in watch mode, which does not stop.
-- `npm test` also runs `test:tools`, the fake machine tests. `tools/fake-machines` is not a workspace, so the workspace commands skip it.
+- `npm test` also runs `test:tools`, the tests of `tools/fake-machines` and `tools/fake-notify`. These folders are not workspaces, so the workspace commands skip them.
 - `docs/` is its own npm package. Run `npm --prefix docs ci` once, then `npm run docs:build`. The build fails on a dead link.
 
 ## How we work
 
 - To add a machine type (a new control or protocol), first read [.agents/skills/add-machine-type/SKILL.md](.agents/skills/add-machine-type/SKILL.md).
+- To add a notification service (a new channel type), first read [.agents/skills/add-notification-channel/SKILL.md](.agents/skills/add-notification-channel/SKILL.md).
 - Follow [CONTRIBUTING.md](CONTRIBUTING.md): test first, and one kind of change in each commit. Start each commit message with a prefix such as `feat(web):`, `fix(server):`, `docs:` or `ci:`.
 - Write docs and screen text in ASD-STE100 Simplified Technical English: short sentences, active voice, one idea in each sentence.
 - Server logging: use `createLogger('component')` from `apps/server/src/logging/logger.ts`. In tests, read the log with `captureLog()` from `logging/testSupport.ts`.

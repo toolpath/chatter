@@ -10,3 +10,4 @@ export * from './roles.js';
 export * from './history.js';
 export * from './updates.js';
 export * from './alertRules.js';
+export * from './notifications.js';

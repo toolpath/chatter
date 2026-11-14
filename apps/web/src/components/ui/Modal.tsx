@@ -1,4 +1,5 @@
-import { useEffect, useRef, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { useOutsideClick } from './useOutsideClick';
 
 /**
  * The browser puts the focus on the first button, which is often the X. The first box to type in is more useful.
@@ -45,22 +46,4 @@ export function Modal({ label, onClose, children }: ModalProps) {
       <div className="m-auto w-full max-w-3xl">{children}</div>
     </dialog>
   );
-}
-
-/**
- * A click on the dark layer lands on the dialog itself. The press must start there too:
- * a text selection that ends outside the box must not close it.
- */
-function useOutsideClick(onClose: () => void) {
-  const pressedOutside = useRef(false);
-  const isOnDarkLayer = (event: PointerEvent<HTMLDialogElement> | MouseEvent<HTMLDialogElement>) =>
-    event.target === event.currentTarget;
-  return {
-    onPointerDown: (event: PointerEvent<HTMLDialogElement>) => {
-      pressedOutside.current = isOnDarkLayer(event);
-    },
-    onClick: (event: MouseEvent<HTMLDialogElement>) => {
-      if (pressedOutside.current && isOnDarkLayer(event)) onClose();
-    },
-  };
 }
