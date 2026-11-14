@@ -44,6 +44,12 @@ describe('jobValuesOf', () => {
     expect(labelsOf(testMachine({ type: 'fanuc' } as never, { operatorMessage: 'Check coolant' }))).toContain('Operator message');
   });
 
+  it('adds the warning of a FANUC control, such as a low battery', () => {
+    const machine = testMachine({ type: 'fanuc' } as never, { warning: 'Battery low' });
+    expect(jobValuesOf(machine)).toContainEqual({ label: 'Warning', value: 'Battery low' });
+    expect(labelsOf(testMachine({ type: 'fanuc' } as never))).not.toContain('Warning');
+  });
+
   it('adds each macro variable by name, or by location', () => {
     const machine = testMachine({ macros: [{ location: 500, name: 'Offset' }, { location: 501 }] }, { Offset: 1.5 });
     expect(jobValuesOf(machine).slice(-2)).toEqual([

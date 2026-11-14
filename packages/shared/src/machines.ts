@@ -122,6 +122,7 @@ export interface FanucMachineData extends MachineData {
   alarmMessage?: string;     // Alarm message text
   motion?: number;           // Axis motion status
   operatorMessage?: string;  // Last operator message from control
+  warning?: string;          // A warning of the status, such as "Battery low" (not an alarm)
 }
 
 export interface FanucMachine extends BaseMachine {

@@ -247,11 +247,13 @@ export class FanucConnector extends BaseMachineConnector {
     this.data.runState = status.runState;
     this.data.emergency = status.emergency;
     this.data.alarm = status.alarm;
+    this.data.warning = status.warning;
     this.data.motion = status.motion;
 
     await this.readSpindleAndProgram(focas);
     await this.readCounterMacros(focas);
-    // The status alarm flag may not show every alarm type, so read the alarm list too
+    // The status alarm flag may not show every alarm type, so read the alarm list too.
+    // A warning (battery low, fan ...) is not an alarm, so it never gives the general alarm.
     await this.readAlarmData(focas, status.alarm);
     this.markEmergencyStopAsAlarm();
     await this.readOperatorMessageData(focas);
@@ -393,6 +395,9 @@ export class FanucConnector extends BaseMachineConnector {
     }
     if (this.data.operatorMessage) {
       custom.operatorMessage = this.data.operatorMessage;
+    }
+    if (this.data.warning) {
+      custom.warning = this.data.warning;
     }
     Object.assign(custom, this.controlInfoFields());
 

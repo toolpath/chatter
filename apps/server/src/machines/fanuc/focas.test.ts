@@ -36,7 +36,21 @@ describe('toFocasStatus', () => {
   it('gives the emergency stop and the alarm from their own fields', () => {
     expect(toFocasStatus({ ...reply, emergency: 1 }).emergency).toBe(true);
     expect(toFocasStatus({ ...reply, alarm: 1 }).alarm).toBe(true);
-    expect(toFocasStatus(reply)).toMatchObject({ emergency: false, alarm: false });
+    expect(toFocasStatus(reply)).toMatchObject({ emergency: false, alarm: false, emergencyStatus: 0, alarmStatus: 0 });
+    expect(toFocasStatus(reply).warning).toBeUndefined();
+    expect(toFocasStatus({ ...reply, alarm: 1 }).warning).toBeUndefined();
+  });
+
+  it('does not take RESET (2) or WAIT (3) of ODBST.emergency for an emergency stop, and keeps the code', () => {
+    expect(toFocasStatus({ ...reply, emergency: 2 })).toMatchObject({ emergency: false, emergencyStatus: 2 });
+    expect(toFocasStatus({ ...reply, emergency: 3 })).toMatchObject({ emergency: false, emergencyStatus: 3 });
+  });
+
+  it('gives a warning, not an alarm, for the ODBST.alarm codes above ALM', () => {
+    expect(toFocasStatus({ ...reply, alarm: 2 })).toMatchObject({ alarm: false, alarmStatus: 2, warning: 'Battery low' });
+    expect(toFocasStatus({ ...reply, alarm: 3 })).toMatchObject({ alarm: false, alarmStatus: 3, warning: 'Fan' });
+    expect(toFocasStatus({ ...reply, alarm: 8 })).toMatchObject({ alarm: false, warning: 'PMC alarm' });
+    expect(toFocasStatus({ ...reply, alarm: 12 })).toMatchObject({ alarm: false, warning: 'Warning (status 12)' });
   });
 });
 

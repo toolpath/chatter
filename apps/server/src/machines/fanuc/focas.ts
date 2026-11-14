@@ -78,6 +78,22 @@ const RUN_STATES: Record<number, string> = {
   4: 'MSTR',  // Tape reading
 };
 
+/** ODBST.emergency: only 1 is an emergency stop. 2 (RESET) and 3 (WAIT, Series 35i) are not. */
+const EMERGENCY_STOP = 1;
+/** ODBST.alarm: only 1 (ALM) is an alarm. 2 and more are warnings, in STATUS_WARNINGS. */
+const ALARM = 1;
+
+/** The ODBST.alarm codes above ALM of the 0i, 16i/18i/21i and 30i/31i/32i controls, which the screen shows as warnings */
+const STATUS_WARNINGS: Record<number, string> = {
+  2: 'Battery low',
+  3: 'Fan',
+  4: 'PS warning',
+  5: 'FSSB warning',
+  6: 'Insulation warning',
+  7: 'Encoder warning',
+  8: 'PMC alarm',
+};
+
 export interface FocasStatus {
   /** ODBST.tmmode, the T/M mode as the control gives it. Chatter only shows it; cnc_sysinfo tells a lathe more surely. */
   tmMode: number;
@@ -87,8 +103,16 @@ export interface FocasStatus {
   runStateCode: number;
   motion: number;
   mstb: number;
+  /** True only for an emergency stop (ODBST.emergency 1) */
   emergency: boolean;
+  /** ODBST.emergency as the control gives it: 0 normal, 1 EMG, 2 RESET, 3 WAIT */
+  emergencyStatus: number;
+  /** True only for an alarm (ODBST.alarm 1, ALM) */
   alarm: boolean;
+  /** ODBST.alarm as the control gives it: 0 none, 1 ALM, 2 BAT, 3 FAN, 4 and more other warnings */
+  alarmStatus: number;
+  /** What a warning code of ODBST.alarm (2 and more) means, for example "Battery low" */
+  warning?: string;
   edit: number;
 }
 
@@ -114,10 +138,19 @@ export function toFocasStatus(reply: OdbstReply): FocasStatus {
     runStateCode: reply.run,
     motion: reply.motion,
     mstb: reply.mstb,
-    emergency: reply.emergency !== 0,
-    alarm: reply.alarm !== 0,
+    emergency: reply.emergency === EMERGENCY_STOP,
+    emergencyStatus: reply.emergency,
+    alarm: reply.alarm === ALARM,
+    alarmStatus: reply.alarm,
+    warning: statusWarning(reply.alarm),
     edit: reply.edit,
   };
+}
+
+/** The warning of an ODBST.alarm code, or undefined for 0 (none) and 1 (an alarm, read from the alarm list) */
+function statusWarning(alarmStatus: number): string | undefined {
+  if (alarmStatus <= ALARM) return undefined;
+  return STATUS_WARNINGS[alarmStatus] ?? `Warning (status ${alarmStatus})`;
 }
 
 /** What the control is, from cnc_sysinfo */
