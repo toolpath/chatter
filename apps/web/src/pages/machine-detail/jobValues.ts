@@ -82,6 +82,9 @@ function allJobValuesOf(machine: Machine): JobValue[] {
   if (machine.type === 'fanuc' && machine.data.operatorMessage) {
     values.push({ label: 'Operator message', value: machine.data.operatorMessage });
   }
+  if (machine.type === 'fanuc' && machine.data.warning) {
+    values.push({ label: 'Warning', value: machine.data.warning });
+  }
   if (machine.type === 'siemens') values.push(...siemensValues(machine.data));
   return [...values, ...macroValues(machine, data)];
 }

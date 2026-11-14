@@ -10,6 +10,7 @@ interface MockStatus {
   emergency: boolean;
   alarm: boolean;
   motion: number;
+  warning?: string;
 }
 
 interface MockAlarm {
@@ -599,6 +600,24 @@ describe('FanucConnector', () => {
 
       expect(status.data.alarmCode).toBe('E-STOP');
       expect(status.data.alarmMessage).toBe('Emergency Stop Active');
+    });
+
+    it('shows a battery or fan warning as a warning, not as an alarm with no details', async () => {
+      // toFocasStatus gives alarm false and a warning for ODBST.alarm 2 (BAT) or 3 (FAN)
+      mockFocasInstance.readStatus.mockReturnValue({ mode: 'MEM', runState: 'STOP', emergency: false, alarm: false, motion: 0, warning: 'Battery low' });
+      mockFocasInstance.readAlarms.mockReturnValue([]);
+      await connector.connect();
+      const status = await connector.poll();
+
+      expect(status.data.alarm).toBe(false);
+      expect(status.data.alarmCode).toBeUndefined();
+      expect(status.data.alarmMessage).toBeUndefined();
+      expect(status.data.warning).toBe('Battery low');
+      expect(connector.getDataSnapshot()).toMatchObject({ alarm: false, custom: { warning: 'Battery low' } });
+
+      mockFocasInstance.readStatus.mockReturnValue({ mode: 'MEM', runState: 'STOP', emergency: false, alarm: false, motion: 0 });
+      expect((await connector.poll()).data.warning).toBeUndefined();
+      expect(connector.getDataSnapshot().custom?.warning).toBeUndefined();
     });
 
     it('clears the alarm when the flag goes off and the list is empty', async () => {
