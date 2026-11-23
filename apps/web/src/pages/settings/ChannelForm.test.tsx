@@ -433,7 +433,9 @@ describe('ChannelForm', () => {
 
   // The server refuses a save or a test that moves a saved secret (problemWithMovedSecrets), so the form tells it first
   describe('a saved secret and a new address', () => {
-    const SECRET_AGAIN = 'Type the Secret again. You changed the Web address. Chatter does not send a saved secret to a new address.';
+    // The same sentences as the refusal of the server (problemWithMovedSecrets)
+    const SECRET_AGAIN = 'Type the Secret again. You changed the Web address. Chatter does not send a saved secret to a new address. '
+      + 'To use no secret, select Delete the saved secret.';
     const secretBox = () => screen.getByLabelText('Secret (optional)');
     const ntfy: NotificationChannel = {
       ...slack, id: 'phones', type: 'ntfy', name: 'Phones', settings: { topic: 'shop', url: 'https://ntfy.example.com' }, hasSecret: { token: true },
@@ -449,13 +451,40 @@ describe('ChannelForm', () => {
       expect(secretBox()).not.toHaveAttribute('placeholder');
     });
 
+    it('tells a screen reader the hint when it comes, in a polite live region that is there before', () => {
+      renderForm({ channel: slack });
+      const before = Array.from(document.querySelectorAll('[aria-live="polite"]'));
+
+      type('Web address', 'https://hooks.slack.com/y');
+
+      const region = screen.getByText(SECRET_AGAIN).closest('[aria-live="polite"]');
+      expect(region).not.toBeNull();
+      expect(before).toContain(region);
+    });
+
+    it('opens the closed Advanced heading, so the admin sees the hint of an advanced secret', () => {
+      const advancedSecret: ChannelTypeInfo = {
+        ...TYPES[1], fields: [TYPES[1].fields[0], { ...TYPES[1].fields[1], advanced: true }],
+      };
+      renderForm({ types: [advancedSecret], channel: slack });
+      const advancedGroup = () => screen.getByText('Advanced').closest('details')!;
+      fireEvent.click(screen.getByText('Advanced'));
+      expect(advancedGroup()).not.toHaveAttribute('open');
+
+      type('Web address', 'https://hooks.slack.com/y');
+
+      expect(advancedGroup()).toHaveAttribute('open');
+      expect(advancedGroup()).toContainElement(screen.getByText(SECRET_AGAIN));
+    });
+
     it('asks for the secret again when the admin empties the address', () => {
       renderForm({ channel: ntfy });
 
       type('Server (optional)', '');
 
       expect(screen.getByLabelText('Access token (optional)'))
-        .toHaveAccessibleDescription('Type the Access token again. You changed the Server. Chatter does not send a saved secret to a new address.');
+        .toHaveAccessibleDescription('Type the Access token again. You changed the Server. Chatter does not send a saved secret to a new address. '
+          + 'To use no secret, select Delete the saved secret.');
     });
 
     it('keeps the hint of the type in the description', () => {

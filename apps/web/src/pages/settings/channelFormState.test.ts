@@ -116,8 +116,22 @@ describe('secretsToTypeAgain', () => {
 
     expect(secretsToTypeAgain(moved({ url: 'https://c.example.com', backup: '' }), relay, twoAddresses)).toEqual({
       token: `Type the Token again. ${reason}`,
-      secret: `Type the Secret again. ${reason}`,
+      // Only a secret that is not necessary can be deleted
+      secret: `Type the Secret again. ${reason} To use no secret, select Delete the saved secret.`,
     });
+  });
+
+  it('names only the changed address, and asks only for the secret that the form keeps', () => {
+    expect(secretsToTypeAgain(moved({ backup: '', token: 'new' }), relay, twoAddresses)).toEqual({
+      secret: 'Type the Secret again. You changed the Backup address. Chatter does not send a saved secret to a new address. '
+        + 'To use no secret, select Delete the saved secret.',
+    });
+  });
+
+  it('does not ask for a secret that the admin deletes and then types again, because the form sends the new secret', () => {
+    const form = { ...moved({ url: 'https://c.example.com', token: 'new', secret: 'typed' }), clearSecrets: ['secret'] };
+
+    expect(secretsToTypeAgain(form, relay, twoAddresses)).toEqual({});
   });
 
   it('asks only for the secrets that the form keeps', () => {
