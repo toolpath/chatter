@@ -64,6 +64,7 @@ async function bundleEntries(sources: BundleSources, now: Date): Promise<TarEntr
     ...(helperLog === null ? [] : [{ name: 'update/helper.log', text: helperLog }]),
     { name: 'log/recent.log', text: serverLog.buffer.text() },
     ...serverLog.filePaths.map(filePath => ({ name: `log/${path.basename(filePath)}`, filePath })),
+    ...(serverLog.audit?.filePaths ?? []).map(filePath => ({ name: `log/${path.basename(filePath)}`, filePath })),
   ];
 }
 
@@ -75,6 +76,7 @@ notifications.json    the channels (no addresses, tokens or topics) and the stat
 history-health.json   the answers of VictoriaMetrics and vmalert
 update/               the files of the update helper of the Pi card (if there is one)
 log/                  the server log: the last lines in memory, and the log files (secrets are hidden)
+log/audit.log         the audit log: each change, with the user, the route and the address, and each login try
 `;
 
 /** The value, or the reason why it could not be read */

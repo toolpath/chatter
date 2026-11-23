@@ -1,3 +1,4 @@
+import { writeAudit } from '../logging/audit.js';
 import { createLogger } from '../logging/logger.js';
 import type { LoginLog } from './loginLog.js';
 import type { SessionStore } from './sessionStore.js';
@@ -39,7 +40,7 @@ export class PromoteNotConfirmedError extends Error {
  * It is one transaction: when a step fails, nothing changes. An Admin exists before and after it,
  * so the first-run setup does not open.
  * Only a person with access to the server can do this, but it changes who controls Chatter. So the reset also adds
- * a row to the login log (Settings > Logins), and writes a warn line in the log.
+ * a row to the login log (Settings > Logins), and writes a warn line in the log and a line in the audit log.
  * Returns the stored username: the username has no case, so a promoted user keeps the case of its name.
  */
 export function resetAdmins(
@@ -65,6 +66,8 @@ export function resetAdmins(
     loginLog.record({ username: stored, address: RESET_ADDRESS, result: 'reset-password' });
     return { reset, username: stored };
   });
-  log.warn('reset-password made a new Admin', { username: result.username, promoted: result.reset === 'promoted' });
+  const details = { username: result.username, promoted: result.reset === 'promoted' };
+  log.warn('reset-password made a new Admin', details);
+  writeAudit('reset-password made a new Admin', details);
   return result;
 }

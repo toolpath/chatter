@@ -38,6 +38,7 @@ import { memoryCheckSettingStore, ReleaseWatcher, releasesRepo } from './updates
 import { updateRoutes } from './routes/updates.js';
 import { Notifications } from './notifications/Notifications.js';
 import { notificationRoutes } from './routes/notifications.js';
+import { auditLog } from './logging/audit.js';
 import { ServerLog } from './logging/ServerLog.js';
 import { logRoutes } from './routes/logs.js';
 import { ConnectionLog } from './logging/ConnectionLog.js';
@@ -123,6 +124,8 @@ export function createApp({
     .route('/', sessionRoutes(loginGuard))
     // Every route below needs a login
     .use(requireLogin(loginGuard))
+    // Each request below that can change something goes in the audit log, with its user and its final status
+    .use(auditLog(proxySettings))
     .get('/status', c => c.json(poller.getStatus()))
     .route('/', machineRoutes(poller))
     .route('/', discoveryRoutes(poller))
