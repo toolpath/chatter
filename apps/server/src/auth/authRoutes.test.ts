@@ -696,6 +696,22 @@ describe('auth routes behind a reverse proxy', () => {
       expect(audit.lines[0]).not.toMatch(/\p{Cc}/u);
     });
 
+    it('writes a log-out of the other browsers and a logout, with the user and the address', async () => {
+      const login = await postFor('192.168.1.30', '/api/auth/login', BOB);
+      const cookie = (login.headers.get('Set-Cookie') ?? '').split(';')[0];
+      audit = captureAudit();
+
+      expect((await postFor('192.168.1.30', '/api/auth/sessions/log-out-others', {}, 'http', cookie)).status).toBe(200);
+      expect((await postFor('192.168.1.30', '/api/auth/logout', {}, 'http', cookie)).status).toBe(200);
+      // A logout with no login changes nothing
+      expect((await postFor('192.168.1.30', '/api/auth/logout', {})).status).toBe(200);
+
+      expect(audit.lines).toEqual([
+        expect.stringMatching(/\[audit\] Logged out the other browsers user=bob address=192\.168\.1\.30$/),
+        expect.stringMatching(/\[audit\] Logged out user=bob address=192\.168\.1\.30$/),
+      ]);
+    });
+
     it('writes the first try of a locked computer', async () => {
       for (let i = 0; i < 10; i++) await wrongAdminPassword('192.168.1.66');
       audit = captureAudit();
