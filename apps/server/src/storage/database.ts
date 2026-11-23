@@ -90,7 +90,10 @@ function saveUploadFile(machineId: string, fileName: string): number {
   return file.id;
 }
 
-/** The uploaded files of a machine, most recently updated first, with their upload count and last path. */
+/**
+ * The uploaded files of a machine, most recently updated first, with their upload count and last path.
+ * The last path comes from the same upload that getUploadEvents gives first.
+ */
 export async function getUploadFiles(machineId: string, limit = DEFAULT_UPLOAD_FILE_LIMIT): Promise<UploadFileRow[]> {
   return getDb().prepare(`
     SELECT
@@ -99,7 +102,7 @@ export async function getUploadFiles(machineId: string, limit = DEFAULT_UPLOAD_F
       uf.created_at,
       uf.updated_at,
       COUNT(ue.id) as event_count,
-      (SELECT remote_path FROM upload_events WHERE file_id = uf.id ORDER BY uploaded_at DESC LIMIT 1) as last_path
+      (SELECT remote_path FROM upload_events WHERE file_id = uf.id ORDER BY uploaded_at DESC, id DESC LIMIT 1) as last_path
     FROM upload_files uf
     LEFT JOIN upload_events ue ON ue.file_id = uf.id
     WHERE uf.machine_id = ?
