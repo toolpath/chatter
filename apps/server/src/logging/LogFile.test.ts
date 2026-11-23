@@ -36,6 +36,18 @@ describe('LogFile', () => {
     expect(readFileSync(filePath, 'utf8')).toBe('before\nafter\n');
   });
 
+  it('adds a line after close() at once, so a request that ends while Chatter stops keeps its line', async () => {
+    const file = new LogFile(filePath);
+    file.write('before the stop');
+    await file.close();
+
+    file.write('after the stop');
+
+    // No wait: the line is in the file before Chatter can exit
+    expect(readFileSync(filePath, 'utf8')).toBe('before the stop\nafter the stop\n');
+    await file.close();
+  });
+
   it('keeps one old file when the file is full, so the log never takes more than 2 files', async () => {
     const file = new LogFile(filePath, 9);
     for (const text of ['aaaa', 'bbbb', 'cccc', 'dddd']) file.write(text);
