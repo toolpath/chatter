@@ -36,6 +36,7 @@
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.20.5",
     "@types/xml2js": "^0.4.14",
+    "node-opcua-server": "^2.187.32",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^5.1.1"
