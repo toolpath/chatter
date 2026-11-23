@@ -31,8 +31,9 @@ export const MAX_USER_FAILURES = 30;
 /** After this many wrong passwords from one known device, that device must wait. A stolen cookie gives no more guesses than this. */
 export const MAX_DEVICE_FAILURES = 10;
 /**
- * The server log writes at most this many tries with an unknown username from one address in LOCK_MINUTES.
- * The limiter does not stop tries with new usernames, so without this limit one computer could push all older lines out of the log file.
+ * The server log and the audit log write at most this many tries with an unknown username from one address in LOCK_MINUTES.
+ * The limiter does not stop tries with new usernames, so without this limit one computer could push all older lines out of the log files.
+ * When that time ends, the logs write the count of the other tries (takeEndedUnknownUserFloods).
  */
 export const MAX_LOGGED_UNKNOWN_USERS = 20;
 /** How long the lock lasts, from the first wrong password */
@@ -81,19 +82,38 @@ export interface LockedUser {
   until: Date;
 }
 
-/** The counts for one kind of key. It forgets old entries, and it never gets longer than MAX_TRACKED. */
+/** The tries with unknown usernames from one address group that the logs did not write one by one */
+export interface UnknownUserFlood {
+  /** The address group, as addressGroup gives it */
+  address: string;
+  notLogged: number;
+}
+
+/**
+ * The counts for one kind of key. It forgets old entries, and it never gets longer than MAX_TRACKED.
+ * `onEnd` gets each entry that it forgets because its time ended or because the list is full.
+ */
 class FailureCounts<Entry extends Failures> {
   private readonly entries = new Map<string, Entry>();
 
-  constructor(private readonly now: () => number, private readonly limit: number) {}
+  constructor(
+    private readonly now: () => number,
+    private readonly limit: number,
+    private readonly onEnd: (entry: Entry) => void = () => {},
+  ) {}
 
   current(key: string): Entry | undefined {
     const entry = this.entries.get(key);
     if (entry && this.isExpired(entry)) {
-      this.entries.delete(key);
+      this.end(key, entry);
       return undefined;
     }
     return entry;
+  }
+
+  /** Forget each entry whose time ended */
+  endExpired(): void {
+    for (const [key, entry] of this.entries) if (this.isExpired(entry)) this.end(key, entry);
   }
 
   isLocked(key: string): boolean {
@@ -146,18 +166,23 @@ class FailureCounts<Entry extends Failures> {
     return this.now() - entry.firstAt > WINDOW_MS;
   }
 
+  private end(key: string, entry: Entry): void {
+    this.entries.delete(key);
+    this.onEnd(entry);
+  }
+
   /**
    * Remove the old entries. When the list is still full, remove the oldest entry with the fewest tries.
    * So many new usernames cannot push out the count of a user that someone guesses at.
    */
   private makeRoom(): void {
     if (this.entries.size < MAX_TRACKED) return;
-    this.deleteWhere(entry => this.isExpired(entry));
+    this.endExpired();
     if (this.entries.size < MAX_TRACKED) return;
     let fewest: [string, Entry] | undefined;
     // A Map keeps the order of insertion, so the first entry with the fewest tries is the oldest of them
     for (const item of this.entries) if (!fewest || item[1].count < fewest[1].count) fewest = item;
-    if (fewest) this.entries.delete(fewest[0]);
+    if (fewest) this.end(...fewest);
   }
 }
 
@@ -173,12 +198,15 @@ export class LoginLimiter {
   private readonly byUser: FailureCounts<UserFailures>;
   private readonly byDevice: FailureCounts<UserFailures>;
   private readonly unknownUsers: FailureCounts<UnknownUserTries>;
+  private endedFloods: UnknownUserFlood[] = [];
 
   constructor(now: () => number = Date.now) {
     this.byAddress = new FailureCounts(now, MAX_FAILURES);
     this.byUser = new FailureCounts(now, MAX_USER_FAILURES);
     this.byDevice = new FailureCounts(now, MAX_DEVICE_FAILURES);
-    this.unknownUsers = new FailureCounts(now, MAX_LOGGED_UNKNOWN_USERS);
+    this.unknownUsers = new FailureCounts(now, MAX_LOGGED_UNKNOWN_USERS, ({ address, count }) => {
+      if (count > MAX_LOGGED_UNKNOWN_USERS) this.endedFloods.push({ address, notLogged: count - MAX_LOGGED_UNKNOWN_USERS });
+    });
   }
 
   /**
@@ -188,6 +216,17 @@ export class LoginLimiter {
   countUnknownUser(address: string): number {
     const group = addressGroup(address);
     return this.unknownUsers.add(group, { address: group });
+  }
+
+  /**
+   * The address groups whose LOCK_MINUTES ended with more than MAX_LOGGED_UNKNOWN_USERS tries with an unknown username,
+   * each one time, with the count of the tries that had no line. So the logs count each try.
+   */
+  takeEndedUnknownUserFloods(): UnknownUserFlood[] {
+    this.unknownUsers.endExpired();
+    const ended = this.endedFloods;
+    this.endedFloods = [];
+    return ended;
   }
 
   isBlocked(address: string, username: string, device?: string): boolean {

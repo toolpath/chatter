@@ -12,7 +12,7 @@ import type { RequestOrigin } from './proxyTrust.js';
 import { originOf } from './requestOrigin.js';
 import { SESSION_LIFETIME_SECONDS, type SessionClient } from './sessionStore.js';
 import { UsernameTakenError } from './userStore.js';
-import { writeAudit } from '../logging/audit.js';
+import { cutValue, writeAudit } from '../logging/audit.js';
 import { createLogger } from '../logging/logger.js';
 
 const log = createLogger('auth');
@@ -191,26 +191,36 @@ async function withPasswordCheck<Value>(
 /** Results of a password try that are not a problem. The other results can show an attack, so they are warnings. */
 const GOOD_RESULTS: readonly LoginResult[] = ['logged-in', 'password-changed'];
 
+/** A line in the audit log and in the server log */
+function warnAndAudit(message: string, details: Record<string, unknown>): void {
+  log.warn(message, details);
+  writeAudit(message, details);
+}
+
 /**
  * Write each password try in the audit log and in the server log, also when the login log cannot save it.
- * The login log keeps only the last 50 tries. The audit log keeps each try. The server log is only 2 files of 1 MB,
- * so it keeps only the first MAX_LOGGED_UNKNOWN_USERS tries with an unknown username from one address in LOCK_MINUTES.
+ * The login log keeps only the last 50 tries. The audit log and the server log have a limit of size,
+ * so they write only the first MAX_LOGGED_UNKNOWN_USERS tries with an unknown username from one address in LOCK_MINUTES.
+ * When that time ends, the next password try writes the count of the other tries. A long username is cut.
  * Never log the password or the cookie.
  */
 function logTry(
   limiter: LoginLimiter,
   { username, address, result, device }: { username: string; address: string; result: LoginResult; device?: string },
 ) {
-  // The login log on the Logins tab does not show the device, so the audit log and the server log tell it
-  const details = { username, address, result, ...(device ? { knownDevice: true } : {}) };
-  writeAudit('Password try', details);
+  for (const { address: group, notLogged } of limiter.takeEndedUnknownUserFloods()) {
+    warnAndAudit('Password tries with unknown usernames that had no line', { address: group, count: notLogged });
+  }
   if (result === 'no-such-user') {
     const count = limiter.countUnknownUser(address);
     if (count === MAX_LOGGED_UNKNOWN_USERS + 1) {
-      log.warn('More password tries with unknown usernames from this address are not logged', { address, minutes: LOCK_MINUTES });
+      warnAndAudit('More password tries with unknown usernames from this address are not logged one by one', { address, minutes: LOCK_MINUTES });
     }
     if (count > MAX_LOGGED_UNKNOWN_USERS) return;
   }
+  // The login log on the Logins tab does not show the device, so the audit log and the server log tell it
+  const details = { username: cutValue(username), address, result, ...(device ? { knownDevice: true } : {}) };
+  writeAudit('Password try', details);
   if (GOOD_RESULTS.includes(result)) log.info('Password try', details);
   else log.warn('Password try failed', details);
 }

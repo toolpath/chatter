@@ -3,8 +3,8 @@
  * because the server log is small (2 files of 1 MB) and a busy machine can fill it in some days.
  *
  * Each line has the time, the user, the role, the method, the route pattern (for example /api/machine/:id), the values
- * of the path parameters (IDs only), the status and the address. A line never has a value of the body or of the query,
- * a cookie or a password. The secrets are hidden as in the server log (redact.ts).
+ * of the path parameters (IDs, cut to MAX_AUDIT_VALUE characters), the status and the address. A line never has a value
+ * of the body or of the query, a cookie or a password. The secrets are hidden as in the server log (redact.ts).
  *
  * The level of the server log (LOG_LEVEL) does not stop an audit line. LOG_FILE=off also turns off the audit file.
  * Only an Admin can read the audit log: it is in the support bundle (Settings > Diagnostics).
@@ -23,6 +23,18 @@ import { redactContext, redactText } from './redact.js';
  * One line has about 150 to 250 bytes, so the two files keep about 50,000 lines.
  */
 export const AUDIT_FILE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * The longest path parameter or username in an audit line. A person sends these values, so a longer value is cut,
+ * and one request cannot fill the log. A cut value ends with "…".
+ */
+export const MAX_AUDIT_VALUE = 64;
+
+/** The value, cut to MAX_AUDIT_VALUE characters */
+export function cutValue(value: string): string {
+  const characters = [...value];
+  return characters.length > MAX_AUDIT_VALUE ? `${characters.slice(0, MAX_AUDIT_VALUE).join('')}…` : value;
+}
 
 /** Where the audit lines go */
 export type AuditSink = (text: string) => void;
@@ -73,7 +85,7 @@ function recordChange(c: Context<LoggedInEnv>, proxySettings: ProxySettings, sta
   // After next(), the route pattern and the parameters are those of the last handler that ran
   const fixed = { user: username, role, method: c.req.method, route: routePath(c), status, address: originOf(c, proxySettings).address };
   // The parameters come after the fixed details. A parameter with the name of a fixed detail does not replace it.
-  const params = Object.entries(c.req.param()).filter(([key]) => !(key in fixed));
+  const params = Object.entries(c.req.param()).filter(([key]) => !(key in fixed)).map(([key, value]) => [key, cutValue(value)]);
   const details = { ...fixed, ...Object.fromEntries(params) };
   writeAudit('Change', details);
   log.info('Change', details);
