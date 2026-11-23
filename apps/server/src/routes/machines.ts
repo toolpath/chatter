@@ -4,10 +4,13 @@ import { MTConnectConnector } from '../machines/mtconnect/MTConnectConnector.js'
 import { findMachineWithSameAddress, getRequestedDataPort } from '../polling/machinePorts.js';
 import { PasswordNeededError } from '../polling/machineSettings.js';
 import { requirePermission } from '../auth/authRoutes.js';
+import { addAuditDetail } from '../logging/audit.js';
 import { checkedJson } from './checks.js';
 import { notFound } from './responses.js';
-import { addMachineSchema, scanPortSchema, updateMachineSchema } from './schemas.js';
+import { addMachineSchema, scanPortSchema, trustCertificateSchema, updateMachineSchema } from './schemas.js';
 import type { ToolSyncErrorBody } from '../types/index.js';
+
+const NOT_SIEMENS = 'Only a Siemens machine has an OPC UA certificate.';
 
 /** The route has a reply for each outcome of a Sync. A new outcome fails the typecheck here until it has one. */
 function unknownOutcome(result: never): never {
@@ -79,6 +82,39 @@ export function machineRoutes(poller: HardwarePoller) {
           return c.json({ error: 'This machine type has no tool table to read.', ...result } satisfies ToolSyncErrorBody, 400);
         case 'not-found': return notFound(c);
         default: return unknownOutcome(result);
+      }
+    })
+
+    // An Admin trusts the new OPC UA certificate of a Siemens control (F-11). The body has the thumbprint that the status
+    // showed, so the Admin trusts only the certificate that they checked. Chatter does not ask the control again here.
+    .post('/machine/:id/opcua/trust-certificate', canManageMachines, checkedJson(trustCertificateSchema), c => {
+      const { thumbprint } = c.req.valid('json');
+      addAuditDetail(c, 'thumbprint', thumbprint);
+      const id = c.req.param('id');
+      switch (poller.trustSiemensCertificate(id, thumbprint)) {
+        case 'trusted': return c.json(poller.getMachine(id));
+        case 'not-found': return notFound(c);
+        case 'not-siemens': return c.json({ error: NOT_SIEMENS }, 400);
+        case 'stale':
+          return c.json({
+            error: 'The certificate of the control changed again. Chatter trusted nothing. Check the new thumbprint, then trust it.',
+          }, 409);
+        case 'nothing-to-trust':
+          return c.json({
+            error: 'The control shows no new certificate now, so there is nothing to trust. If the control shows no certificate, '
+              + 'an Admin can forget the trusted certificate with POST /api/machine/:id/opcua/forget-certificate.',
+          }, 409);
+      }
+    })
+
+    // An Admin forgets the trusted OPC UA certificate of a Siemens control (F-11). Chatter connects again at once, and that
+    // connect trusts the certificate that it gets, as the first connect does.
+    .post('/machine/:id/opcua/forget-certificate', canManageMachines, c => {
+      const id = c.req.param('id');
+      switch (poller.forgetSiemensCertificate(id)) {
+        case 'forgotten': return c.json(poller.getMachine(id));
+        case 'not-found': return notFound(c);
+        case 'not-siemens': return c.json({ error: NOT_SIEMENS }, 400);
       }
     })
 

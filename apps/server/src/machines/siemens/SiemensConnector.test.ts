@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { captureLog, type CapturedLog } from '../../logging/testSupport.js';
+import { CertificateChangedError } from './certificatePin.js';
 import { SiemensConnector } from './SiemensConnector.js';
 import type { AlarmEvent } from './sinumerikAlarms.js';
 import type { SinumerikConnectOptions, SinumerikSession, SinumerikValue } from './sinumerikClient.js';
@@ -21,6 +23,10 @@ const RUNNING: Record<string, unknown> = {
   '/Channel/Parameter/R[u1,6]': 12.5,
 };
 
+const CONTROL_THUMBPRINT = 'c'.repeat(64);
+const NEW_THUMBPRINT = 'd'.repeat(64);
+const NEW_SHA1_THUMBPRINT = 'e'.repeat(40);
+
 class FakeSession implements SinumerikSession {
   values: Record<string, unknown> = { ...RUNNING };
   readError: Error | null = null;
@@ -28,6 +34,7 @@ class FakeSession implements SinumerikSession {
   alarmWarning: string | null = null;
   closed = false;
   readPaths: string[] = [];
+  serverThumbprint: string | null = CONTROL_THUMBPRINT;
   private onAlarm: ((event: AlarmEvent) => void) | null = null;
 
   async read(paths: string[]): Promise<SinumerikValue[]> {
@@ -68,7 +75,7 @@ describe('SiemensConnector', () => {
     it('uses the OPC UA defaults: port 4840, anonymous, no security', async () => {
       await connector.poll();
       expect(openSession).toHaveBeenCalledWith({
-        host: '10.0.0.5', port: 4840, user: undefined, password: undefined, security: 'none', timeoutMs: 5000,
+        host: '10.0.0.5', port: 4840, user: undefined, password: undefined, security: 'none', timeoutMs: 5000, trustedThumbprint: null,
       });
     });
 
@@ -101,7 +108,180 @@ describe('SiemensConnector', () => {
     });
   });
 
+  describe('the certificate of the control (trust on first use)', () => {
+    let saved: (string | null)[];
+
+    beforeEach(() => {
+      saved = [];
+      connector.onTrustedThumbprintChange = thumbprint => saved.push(thumbprint);
+    });
+
+    /** The control shows a new certificate: the session opener refuses it before the login */
+    function controlShowsNewCertificate(presented: string | null = NEW_THUMBPRINT) {
+      openSession.mockImplementation(async options => {
+        if (options.trustedThumbprint && options.trustedThumbprint !== presented) {
+          throw new CertificateChangedError(presented, options.trustedThumbprint, presented && NEW_SHA1_THUMBPRINT);
+        }
+        return session;
+      });
+    }
+
+    it('trusts the certificate of the first connect, and saves it', async () => {
+      await connector.poll();
+      expect(saved).toEqual([CONTROL_THUMBPRINT]);
+      expect(connector.getStatus().opcuaServerThumbprint).toBe(CONTROL_THUMBPRINT);
+    });
+
+    it('gives the trusted certificate to each later connect', async () => {
+      await connector.poll();
+      connector.disconnect();
+      await connector.poll();
+      expect(openSession).toHaveBeenLastCalledWith(expect.objectContaining({ trustedThumbprint: CONTROL_THUMBPRINT }));
+      expect(saved).toEqual([CONTROL_THUMBPRINT]);
+    });
+
+    it('starts with the certificate that was saved', async () => {
+      connector = new SiemensConnector({ name: 'M', host: '10.0.0.5', opcuaServerThumbprint: CONTROL_THUMBPRINT }, openSession);
+      await connector.poll();
+      expect(openSession).toHaveBeenCalledWith(expect.objectContaining({ trustedThumbprint: CONTROL_THUMBPRINT }));
+    });
+
+    it('saves nothing when the control shows no certificate', async () => {
+      session.serverThumbprint = null;
+      await connector.poll();
+      expect(saved).toEqual([]);
+      expect(connector.getStatus().opcuaServerThumbprint).toBeNull();
+    });
+
+    it('stays offline when the certificate changed, keeps the trusted one, and tells what changed', async () => {
+      await connector.poll();
+      connector.disconnect();
+      controlShowsNewCertificate();
+
+      const status = await connector.poll();
+
+      expect(status.connected).toBe(false);
+      expect(status.opcuaServerThumbprint).toBe(CONTROL_THUMBPRINT);
+      expect(status.opcuaCertificateChanged).toEqual({ presentedThumbprint: NEW_THUMBPRINT, presentedSha1Thumbprint: NEW_SHA1_THUMBPRINT });
+      expect(status.errors.join(' ')).toContain('certificate of the control changed');
+      expect(saved).toEqual([CONTROL_THUMBPRINT]);
+    });
+
+    it('tells nothing about a changed certificate while the certificate is the trusted one', async () => {
+      const status = await connector.poll();
+      expect(status.opcuaCertificateChanged).toBeUndefined();
+    });
+
+    it('trusts the new certificate only with the thumbprint that the Admin saw, and connects with it', async () => {
+      connector = new SiemensConnector({ name: 'M', host: '10.0.0.5', opcuaServerThumbprint: CONTROL_THUMBPRINT }, openSession);
+      connector.onTrustedThumbprintChange = thumbprint => saved.push(thumbprint);
+      controlShowsNewCertificate();
+      await connector.poll();
+
+      expect(connector.trustCertificate(CONTROL_THUMBPRINT)).toBe('stale');
+      expect(connector.trustCertificate(NEW_THUMBPRINT)).toBe('trusted');
+
+      expect(saved).toEqual([NEW_THUMBPRINT]);
+      expect(connector.getStatus().opcuaCertificateChanged).toBeUndefined();
+      const status = await connector.poll();
+      expect(status.connected).toBe(true);
+      expect(openSession).toHaveBeenLastCalledWith(expect.objectContaining({ trustedThumbprint: NEW_THUMBPRINT }));
+    });
+
+    it('has nothing to trust while no new certificate was refused', async () => {
+      await connector.poll();
+      expect(connector.trustCertificate(NEW_THUMBPRINT)).toBe('nothing-to-trust');
+      expect(saved).toEqual([CONTROL_THUMBPRINT]);
+    });
+
+    it('cannot trust a control that shows no certificate', async () => {
+      connector = new SiemensConnector({ name: 'M', host: '10.0.0.5', opcuaServerThumbprint: CONTROL_THUMBPRINT }, openSession);
+      controlShowsNewCertificate(null);
+      const status = await connector.poll();
+      expect(status.opcuaCertificateChanged).toEqual({ presentedThumbprint: null, presentedSha1Thumbprint: null });
+      expect(connector.trustCertificate(NEW_THUMBPRINT)).toBe('nothing-to-trust');
+    });
+
+    it('forgets the trusted certificate, so the next connect trusts the certificate that it gets', async () => {
+      await connector.poll();
+      connector.forgetServerCertificate();
+
+      expect(saved).toEqual([CONTROL_THUMBPRINT, null]);
+      expect(connector.connected).toBe(false);
+      await connector.poll();
+      expect(openSession).toHaveBeenLastCalledWith(expect.objectContaining({ trustedThumbprint: null }));
+    });
+
+    it('does not save the certificate of a connect that ends after a disconnect', async () => {
+      let openNow: (session: SinumerikSession) => void = () => {};
+      openSession.mockImplementationOnce(() => new Promise(resolve => { openNow = resolve; }));
+      const connecting = connector.connect();
+      // For example, the user changed the IP address while the session opened
+      connector.forgetServerCertificate();
+      openNow(session);
+
+      await expect(connecting).rejects.toThrow('Disconnected while connecting');
+      expect(saved).toEqual([null]);
+      expect(connector.getStatus().opcuaServerThumbprint).toBeNull();
+    });
+  });
+
+  describe('the log of the certificate', () => {
+    let log: CapturedLog;
+    beforeEach(() => {
+      log = captureLog();
+    });
+    afterEach(() => log.restore());
+
+    const refuse = (presented: string) => openSession.mockImplementation(async options => {
+      throw new CertificateChangedError(presented, options.trustedThumbprint ?? '', null);
+    });
+    const warnings = () => log.lines.filter(line => line.level === 'warn' && line.text.includes('certificate of the control changed'));
+
+    it('writes one warning for each new refused certificate, not one at each poll', async () => {
+      connector = new SiemensConnector({ id: 'm1', name: 'M', host: '10.0.0.5', opcuaServerThumbprint: CONTROL_THUMBPRINT }, openSession);
+      refuse(NEW_THUMBPRINT);
+      for (let poll = 0; poll < 3; poll++) await connector.poll();
+      expect(warnings()).toHaveLength(1);
+      expect(warnings()[0].text).toContain(NEW_THUMBPRINT);
+      expect(warnings()[0].text).toContain(CONTROL_THUMBPRINT);
+
+      refuse('f'.repeat(64));
+      await connector.poll();
+      expect(warnings()).toHaveLength(2);
+    });
+
+    it('tells when it trusts the certificate of the first connect, and when an Admin trusts or forgets one', async () => {
+      await connector.poll();
+      expect(log.text('info')).toContain('Trusted the OPC UA certificate of the control on the first connect');
+      expect(log.text('info')).toContain(CONTROL_THUMBPRINT);
+
+      connector.disconnect();
+      refuse(NEW_THUMBPRINT);
+      await connector.poll();
+      connector.trustCertificate(NEW_THUMBPRINT);
+      expect(log.text('info')).toContain('An Admin trusted the new OPC UA certificate of the control');
+
+      connector.forgetServerCertificate();
+      expect(log.text('info')).toContain('Forgot the trusted OPC UA certificate of the control');
+    });
+  });
+
   describe('a connect that ends after a disconnect', () => {
+    it('does not show a refused certificate of a connect that ends after a disconnect, for example to the old IP address', async () => {
+      connector = new SiemensConnector({ id: 'm1', name: 'M', host: '10.0.0.5', opcuaServerThumbprint: CONTROL_THUMBPRINT }, openSession);
+      let failNow: (error: Error) => void = () => {};
+      openSession.mockImplementationOnce(() => new Promise((_resolve, reject) => { failNow = reject; }));
+      const connecting = connector.connect();
+      // The user changes the IP address while the connect to the old address is open
+      connector.forgetServerCertificate();
+      failNow(new CertificateChangedError(NEW_THUMBPRINT, CONTROL_THUMBPRINT, NEW_SHA1_THUMBPRINT));
+
+      await expect(connecting).rejects.toBeInstanceOf(CertificateChangedError);
+      expect(connector.getStatus().opcuaCertificateChanged).toBeUndefined();
+      expect(connector.trustCertificate(NEW_THUMBPRINT)).toBe('nothing-to-trust');
+    });
+
     it('closes the late session, stays disconnected and keeps the reason of the poll timeout', async () => {
       let openNow: (session: SinumerikSession) => void = () => {};
       openSession.mockImplementationOnce(() => new Promise(resolve => { openNow = resolve; }));

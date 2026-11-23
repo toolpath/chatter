@@ -41,7 +41,7 @@ export type NewBrotherMachine = Complete<BrotherMachineConfig>;
 export type NewHaasMachine = Complete<HaasMachineConfig>;
 export type NewMTConnectMachine = Complete<MTConnectMachineConfig, 'mtConnectDeviceId'>;
 export type NewFanucMachine = Complete<FanucMachineConfig, 'toolNumberVariable' | 'partCounterVariable'>;
-export type NewSiemensMachine = Complete<SiemensMachineConfig>;
+export type NewSiemensMachine = Complete<SiemensMachineConfig, 'opcuaServerThumbprint'>;
 
 type FtpSettings = Pick<BaseMachineConfig, 'ftpPort' | 'ftpUser' | 'ftpPassword'>;
 
@@ -267,6 +267,11 @@ export function applyFanucUpdate(connector: FanucConnector, updates: FanucMachin
 }
 
 export function applySiemensUpdate(connector: SiemensConnector, updates: SiemensMachineUpdate): void {
+  // A different device can answer at a new address, so its certificate is not the trusted one (F-11).
+  // The next connect trusts the certificate that it gets there, as at the first connect.
+  const addressChanged = (updates.host !== undefined && updates.host !== connector.host)
+    || (updates.opcuaPort !== undefined && updates.opcuaPort !== connector.opcuaPort);
+  if (addressChanged) connector.forgetServerCertificate();
   applyCommonUpdate(connector, updates);
   const opcua = {
     port: updates.opcuaPort,

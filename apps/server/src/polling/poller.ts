@@ -4,7 +4,7 @@ import { BrotherConnector } from '../machines/brother/BrotherConnector.js';
 import { HaasConnector } from '../machines/haas/HaasConnector.js';
 import { MTConnectConnector } from '../machines/mtconnect/MTConnectConnector.js';
 import { FanucConnector } from '../machines/fanuc/FanucConnector.js';
-import { SiemensConnector } from '../machines/siemens/SiemensConnector.js';
+import { SiemensConnector, type TrustCertificateResult } from '../machines/siemens/SiemensConnector.js';
 import type { BaseMachineConnector } from '../machines/BaseMachineConnector.js';
 import { MachineRegistry, type ConnectorClass } from './MachineRegistry.js';
 import { PollScheduler, type ReconnectResult } from './PollScheduler.js';
@@ -352,7 +352,19 @@ export class HardwarePoller extends EventEmitter {
     connector.on('data', (dataItems: MachineDataItem[]) => {
       this.emit('machineData', { machineId: connector.id, machineType: connector.type, data: dataItems });
     });
+    if (connector instanceof SiemensConnector) {
+      connector.onTrustedThumbprintChange = thumbprint => this.saveServerThumbprint(connector.id, thumbprint);
+    }
     this.registry.add(connector);
+  }
+
+  /** A database that fails must not stop the connect. Then the next start trusts the certificate of its first connect again. */
+  private saveServerThumbprint(id: string, thumbprint: string | null): void {
+    try {
+      this.repository.setSiemensServerThumbprint(id, thumbprint);
+    } catch (error) {
+      log.error('Could not save the trusted OPC UA certificate', { machine: id, error });
+    }
   }
 
   /** Older databases may not have the table yet. Then skip that machine type. */
@@ -436,6 +448,36 @@ export class HardwarePoller extends EventEmitter {
   /** The status of the machine, and whether Chatter still tries to reach it for the first time */
   private statusOf<Status extends BaseMachineStatus>(connector: { id: string; getStatus(): Status }): Status {
     return { ...connector.getStatus(), connecting: this.scheduler.isConnecting(connector.id) };
+  }
+
+  /**
+   * An Admin trusts the new OPC UA certificate of a Siemens control: the thumbprint that the status showed.
+   * When it is trusted, Chatter connects to the machine now.
+   */
+  trustSiemensCertificate(id: string, thumbprint: string): TrustCertificateResult | 'not-found' | 'not-siemens' {
+    const connector = this.registry.get(id);
+    if (!connector) return 'not-found';
+    if (!(connector instanceof SiemensConnector)) return 'not-siemens';
+    const result = connector.trustCertificate(thumbprint);
+    if (result === 'trusted') {
+      this.scheduler.reconnect(connector);
+      this.emitStatusUpdate();
+    }
+    return result;
+  }
+
+  /**
+   * An Admin forgets the trusted OPC UA certificate of a Siemens control, for example when the control shows no
+   * certificate now. Chatter connects to the machine now, and that connect trusts the certificate that it gets.
+   */
+  forgetSiemensCertificate(id: string): 'forgotten' | 'not-found' | 'not-siemens' {
+    const connector = this.registry.get(id);
+    if (!connector) return 'not-found';
+    if (!(connector instanceof SiemensConnector)) return 'not-siemens';
+    connector.forgetServerCertificate();
+    this.scheduler.reconnect(connector);
+    this.emitStatusUpdate();
+    return 'forgotten';
   }
 
   /** Disconnect the machine and poll it now. Null for an unknown machine. */

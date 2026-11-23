@@ -206,6 +206,7 @@ export class MachineRepository {
       opcuaUser: row.opcua_user || undefined,
       opcuaPassword: row.opcua_password || undefined,
       opcuaSecurity: row.opcua_security === 'signAndEncrypt' ? 'signAndEncrypt' : 'none',
+      opcuaServerThumbprint: row.opcua_server_thumbprint || undefined,
       ...ftpSettingsWithDefaults(row),
       macros: parseMacros(row.macros),
     }));
@@ -245,6 +246,14 @@ export class MachineRepository {
       'INSERT INTO siemens_machines (id, name, host, opcua_port, opcua_user, opcua_password, opcua_security, ftp_port, ftp_user, ftp_password, macros) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(machine.id, machine.name, machine.host, machine.opcuaPort, machine.opcuaUser, machine.opcuaPassword,
       machine.opcuaSecurity, machine.ftpPort, machine.ftpUser, machine.ftpPassword, JSON.stringify(machine.macros));
+  }
+
+  /**
+   * Save the thumbprint of the OPC UA certificate that Chatter trusts for a Siemens machine, or null to forget it.
+   * Only the connector sets it (see SiemensConnector.onTrustedThumbprintChange). An update request cannot.
+   */
+  setSiemensServerThumbprint(id: string, thumbprint: string | null): void {
+    this.db.prepare('UPDATE siemens_machines SET opcua_server_thumbprint = ? WHERE id = ?').run(thumbprint, id);
   }
 
   /**
