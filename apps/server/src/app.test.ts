@@ -1235,7 +1235,7 @@ describe('API Routes', () => {
 
       expect(res.status).toBe(200);
       expect(uploadFile).toHaveBeenCalledWith('/PRG/O1000.NC', Buffer.from('test'), true, expect.any(AbortSignal));
-      expect(recordUpload).toHaveBeenCalledWith(machine.id, 'test.nc', 'test.nc', '/PRG/O1000.NC', 'test');
+      expect(recordUpload).toHaveBeenCalledWith(machine.id, 'test.nc', 'test.nc', '/PRG/O1000.NC', 'test', { username: 'admin', address: 'unknown' });
     });
 
     it('replies with success when the file is on the machine but the upload history cannot be saved, and logs the error', async () => {

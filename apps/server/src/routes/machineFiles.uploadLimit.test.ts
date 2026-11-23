@@ -4,6 +4,7 @@ import type { LoggedInEnv } from '../auth/authRoutes.js';
 import type { BaseMachineConnector } from '../machines/BaseMachineConnector.js';
 import type { HardwarePoller } from '../polling/poller.js';
 import { PROGRAM_UPLOAD_LIMIT_BYTES } from '@local-chatter/shared';
+import { ProxySettings } from '../auth/proxySettings.js';
 import { machineFileRoutes } from './machineFiles.js';
 
 // The server holds the files of an upload in memory, and a Pi can have only 512 MB. Each machine has its own FTP queue,
@@ -46,7 +47,7 @@ function appWith(held: ReturnType<typeof heldUploads>) {
       c.set('user', { id: 1, username: 'operator', role: 'operator' });
       await next();
     })
-    .route('/', machineFileRoutes(poller));
+    .route('/', machineFileRoutes(poller, ProxySettings.inMemory()));
   return { app, connector };
 }
 
