@@ -17,6 +17,8 @@ interface MachineSettingsSectionProps {
  */
 export function MachineSettingsSection({ machine, onUpdate }: MachineSettingsSectionProps) {
   const [form, setForm] = useState(() => editFormFromMachine(machine));
+  // The settings that the server has. After a save, they are the saved form, also before the new machine status comes.
+  const [saved, setSaved] = useState(() => editFormFromMachine(machine));
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
 
@@ -25,15 +27,17 @@ export function MachineSettingsSection({ machine, onUpdate }: MachineSettingsSec
     setIsSaving(true);
     setIsSaved(false);
     // On an error the form keeps the typed values, and the page shows the error
-    const saved = await onUpdate(machine.id, editFormToUpdate(form));
+    const isAccepted = await onUpdate(machine.id, editFormToUpdate(form));
     setIsSaving(false);
-    if (!saved) return;
+    if (!isAccepted) return;
+    setSaved(withoutPasswordChange(form));
     setForm(withoutPasswordChange);
     setIsSaved(true);
   };
 
   const undo = () => {
     setForm(editFormFromMachine(machine));
+    setSaved(editFormFromMachine(machine));
     setIsSaved(false);
   };
 
@@ -43,6 +47,7 @@ export function MachineSettingsSection({ machine, onUpdate }: MachineSettingsSec
         machineType={machine.type}
         hasFtpPassword={machine.hasFtpPassword ?? false}
         hasOpcuaPassword={machine.type === 'siemens' ? machine.hasOpcuaPassword ?? false : false}
+        saved={saved}
         form={form}
         setForm={setForm}
       />

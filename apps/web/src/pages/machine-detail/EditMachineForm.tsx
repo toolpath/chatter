@@ -5,7 +5,7 @@ import { CloseIcon, PlusIcon } from '../../components/ui/icons';
 import { AGENT_MAKERS } from '../../machines/machineStatus';
 import type { MacroConfig, MachineType, OpcUaSecurity } from '../../types';
 import { DEFAULT_MTCONNECT_PORT } from '../../types';
-import { DEFAULT_PORTS, ftpPasswordHint, opcuaPasswordHint, type EditFormState } from './editForm';
+import { DEFAULT_PORTS, ftpPasswordHint, opcuaPasswordHint, type EditFormState, type PasswordHint } from './editForm';
 
 interface EditMachineFormProps {
   machineType: MachineType;
@@ -13,6 +13,8 @@ interface EditMachineFormProps {
   hasFtpPassword: boolean;
   /** The same for the OPC UA password of a Siemens machine */
   hasOpcuaPassword?: boolean;
+  /** The settings as the server has them. A new address there needs each saved password again. */
+  saved: EditFormState;
   form: EditFormState;
   setForm: Dispatch<SetStateAction<EditFormState>>;
 }
@@ -37,7 +39,7 @@ function removeAt<T>(list: T[], index: number): T[] {
 }
 
 /** The settings of a machine. Each machine type shows its own fields. */
-function EditMachineForm({ machineType, hasFtpPassword, hasOpcuaPassword = false, form, setForm }: EditMachineFormProps) {
+function EditMachineForm({ machineType, hasFtpPassword, hasOpcuaPassword = false, saved, form, setForm }: EditMachineFormProps) {
   const setField: FieldSetter = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
   };
@@ -76,7 +78,7 @@ function EditMachineForm({ machineType, hasFtpPassword, hasOpcuaPassword = false
             label="OPC UA password"
             value={form.opcuaPassword}
             onChange={value => setField('opcuaPassword', value)}
-            hint={opcuaPasswordHint(form, hasOpcuaPassword)}
+            hint={opcuaPasswordHint(form, hasOpcuaPassword, saved)}
             hasSavedPassword={hasOpcuaPassword}
             isRemoving={form.removeOpcuaPassword}
             onToggleRemove={() => setField('removeOpcuaPassword', !form.removeOpcuaPassword)}
@@ -90,7 +92,7 @@ function EditMachineForm({ machineType, hasFtpPassword, hasOpcuaPassword = false
           value={form.ftpPort}
           onChange={text => setField('ftpPort', portOrDefault(text, DEFAULT_PORTS.ftp))}
         />
-        <FtpLoginFields form={form} setField={setField} hasFtpPassword={hasFtpPassword} />
+        <FtpLoginFields form={form} setField={setField} hasFtpPassword={hasFtpPassword} saved={saved} />
       </FieldGroup>
       {machineType === 'fanuc' && <FanucFields form={form} setForm={setForm} setField={setField} />}
       <MacroList
@@ -293,7 +295,7 @@ function emptyMacroRow(): MacroConfig {
   return { location: '' as unknown as number, name: '' };
 }
 
-function FtpLoginFields({ form, setField, hasFtpPassword }: FieldsProps & { hasFtpPassword: boolean }) {
+function FtpLoginFields({ form, setField, hasFtpPassword, saved }: FieldsProps & { hasFtpPassword: boolean; saved: EditFormState }) {
   return (
     <>
       <TextField
@@ -309,7 +311,7 @@ function FtpLoginFields({ form, setField, hasFtpPassword }: FieldsProps & { hasF
         label="FTP password"
         value={form.ftpPassword}
         onChange={value => setField('ftpPassword', value)}
-        hint={ftpPasswordHint(form, hasFtpPassword)}
+        hint={ftpPasswordHint(form, hasFtpPassword, saved)}
         hasSavedPassword={hasFtpPassword}
         isRemoving={form.removeFtpPassword}
         onToggleRemove={() => setField('removeFtpPassword', !form.removeFtpPassword)}
@@ -323,7 +325,7 @@ interface PasswordFieldProps {
   label: string;
   value: string;
   onChange: (value: string) => void;
-  hint: string;
+  hint: PasswordHint;
   /** The server says only whether a password is saved, never the password */
   hasSavedPassword: boolean;
   isRemoving: boolean;
@@ -338,7 +340,8 @@ function PasswordField({ id, label, value, onChange, hint, hasSavedPassword, isR
       label={label}
       hint={
         <>
-          {hint}{' '}
+          {/* The box is described by the hint, so a screen reader also tells to type the password again */}
+          {hint.mustTypeAgain ? <span className="font-semibold text-primary-text">{hint.text}</span> : hint.text}{' '}
           {hasSavedPassword && (
             <button
               type="button"

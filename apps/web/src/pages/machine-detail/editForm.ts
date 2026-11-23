@@ -152,17 +152,37 @@ export function withoutPasswordChange(form: EditFormState): EditFormState {
 }
 
 /** The text under a password box. It tells what happens to the password on save. */
-function passwordHint(newPassword: string, remove: boolean, hasSavedPassword: boolean): string {
-  if (newPassword !== '') return 'This new password is saved when you click Save changes.';
-  if (remove) return 'The saved password is removed when you click Save changes.';
-  if (hasSavedPassword) return 'A password is saved. Leave this empty to keep it.';
-  return 'No password is saved.';
+export interface PasswordHint {
+  text: string;
+  /** The server refuses the save until the user types the password again or removes it */
+  mustTypeAgain: boolean;
 }
 
-export function ftpPasswordHint(form: EditFormState, hasSavedPassword: boolean): string {
-  return passwordHint(form.ftpPassword, form.removeFtpPassword, hasSavedPassword);
+/**
+ * The server sends a saved password only to the address where the user saved it (checkSavedPasswordsStay).
+ * A new IP address, or a new port of the password, moves it. The server removes the spaces around the IP address.
+ */
+function movesPassword(form: EditFormState, saved: EditFormState, port: 'ftpPort' | 'opcuaPort'): boolean {
+  return form.host.trim() !== saved.host.trim() || form[port] !== saved[port];
 }
 
-export function opcuaPasswordHint(form: EditFormState, hasSavedPassword: boolean): string {
-  return passwordHint(form.opcuaPassword, form.removeOpcuaPassword, hasSavedPassword);
+function passwordHint(newPassword: string, remove: boolean, hasSavedPassword: boolean, isMoved: boolean, portName: string): PasswordHint {
+  const hint = (text: string, mustTypeAgain = false) => ({ text, mustTypeAgain });
+  if (newPassword !== '') return hint('This new password is saved when you click Save changes.');
+  if (remove) return hint('The saved password is removed when you click Save changes.');
+  if (hasSavedPassword && isMoved) {
+    return hint(`Type the password again. You changed the IP address or the ${portName}. `
+      + 'Chatter does not send a saved password to a new address.', true);
+  }
+  if (hasSavedPassword) return hint('A password is saved. Leave this empty to keep it.');
+  return hint('No password is saved.');
+}
+
+/** `saved`: the form as the server has it, to find a new address */
+export function ftpPasswordHint(form: EditFormState, hasSavedPassword: boolean, saved: EditFormState): PasswordHint {
+  return passwordHint(form.ftpPassword, form.removeFtpPassword, hasSavedPassword, movesPassword(form, saved, 'ftpPort'), 'FTP port');
+}
+
+export function opcuaPasswordHint(form: EditFormState, hasSavedPassword: boolean, saved: EditFormState): PasswordHint {
+  return passwordHint(form.opcuaPassword, form.removeOpcuaPassword, hasSavedPassword, movesPassword(form, saved, 'opcuaPort'), 'OPC UA port');
 }
