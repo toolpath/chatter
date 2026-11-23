@@ -4,9 +4,11 @@ import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { OPCUACertificateManager } from 'node-opcua-certificate-manager';
 import { MessageSecurityMode, SecurityPolicy } from 'node-opcua-client';
-import { OPCUAServer } from 'node-opcua-server';
+import { OPCUAServer, type OPCUAServerOptions } from 'node-opcua-server';
 import { certificateThumbprint, CertificateChangedError } from './certificatePin.js';
-import { openSinumerikSession, useSinumerikCertificateFolder, type SinumerikConnectOptions } from './sinumerikClient.js';
+import {
+  ClearTextPasswordError, openSinumerikSession, useSinumerikCertificateFolder, type SinumerikConnectOptions,
+} from './sinumerikClient.js';
 
 /**
  * F-11 with a real OPC UA server (node-opcua-server) on a free port of this computer:
@@ -45,7 +47,7 @@ describe('the certificate pin with a real OPC UA server', () => {
     rmSync(folder, { recursive: true, force: true });
   });
 
-  async function startControl(name: string): Promise<FakeControl> {
+  async function startControl(name: string, settings: Partial<OPCUAServerOptions> = {}): Promise<FakeControl> {
     const logins: string[] = [];
     const server = new OPCUAServer({
       port: 0,
@@ -60,6 +62,7 @@ describe('the certificate pin with a real OPC UA server', () => {
           return userName === USER && password === PASSWORD;
         },
       },
+      ...settings,
     });
     running.push(server);
     const control: FakeControl = { server, port: 0, thumbprint: '', logins, sessions: 0 };
@@ -110,5 +113,18 @@ describe('the certificate pin with a real OPC UA server', () => {
 
     expect(first.serverThumbprint).toBe(control.thumbprint);
     expect(control.logins).toEqual([USER, USER]);
+  }, 4 * STEP_TIMEOUT_MS);
+
+  it('with no security, sends no password to a control that asks for it with no encryption', async () => {
+    // Only a None endpoint, and its only password policy is "no encryption", as a device in the middle can ask
+    const control = await startControl('clear-text', {
+      securityModes: [MessageSecurityMode.None], securityPolicies: [SecurityPolicy.None], allowUnsecurePassword: true,
+    });
+
+    const opening = openSinumerikSession(options(control, { security: 'none' }));
+
+    await expect(opening).rejects.toBeInstanceOf(ClearTextPasswordError);
+    expect(control.logins).toEqual([]);
+    expect(control.sessions).toBe(0);
   }, 4 * STEP_TIMEOUT_MS);
 });
