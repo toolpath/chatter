@@ -214,6 +214,16 @@ describe('database', () => {
       expect(result!.file_content).toBe(originalContent);
     });
 
+    it('gives the listed columns only, so a new column does not go to each reply by itself', async () => {
+      await recordUpload('machine1', 'test.nc', 'O0100.NC', '/O0100.NC', 'content', ANN);
+
+      const result = await getUploadEventById('machine1', 1);
+
+      expect(Object.keys(result!).sort()).toEqual([
+        'action', 'address', 'file_content', 'file_id', 'file_name', 'id', 'machine_id', 'remote_path', 'target_name', 'uploaded_at', 'uploaded_by',
+      ]);
+    });
+
     it('returns null when there is no upload with that ID', async () => {
       expect(await getUploadEventById('machine1', 999)).toBeNull();
     });
