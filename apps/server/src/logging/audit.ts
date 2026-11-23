@@ -28,7 +28,7 @@ export const AUDIT_FILE_BYTES = 5 * 1024 * 1024;
  * The longest path parameter or username in an audit line. A person sends these values, so a longer value is cut,
  * and one request cannot fill the log. A cut value ends with "…".
  */
-export const MAX_AUDIT_VALUE = 64;
+const MAX_AUDIT_VALUE = 64;
 
 /** The value, cut to MAX_AUDIT_VALUE characters */
 export function cutValue(value: string): string {
