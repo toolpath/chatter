@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Hono } from 'hono';
@@ -10,7 +10,7 @@ import { ProxySettings } from '../auth/proxySettings.js';
 import { loggedInAuth } from '../auth/testSupport.js';
 import type { UserAccounts } from '../auth/userAccounts.js';
 import { testApp } from '../routes/testSupport.js';
-import { auditLog, configureAudit, writeAudit } from './audit.js';
+import { AUDIT_FILE_BYTES, auditLog, configureAudit, writeAudit } from './audit.js';
 import { configureLogging } from './logger.js';
 import { ServerLog } from './ServerLog.js';
 import { captureAudit, captureLog, type CapturedAudit, type CapturedLog } from './testSupport.js';
@@ -34,6 +34,14 @@ describe('writeAudit', () => {
     writeAudit('Password try', { username: 'ann', password: 'secret-pw-1', note: 'https://user:secret-pw-2@example.test/' });
 
     expect(audit.lines.join('\n')).not.toMatch(/secret-pw/);
+  });
+
+  it('keeps a value with a new line, an equals sign or a control character in one line, so a value cannot add a false line', () => {
+    writeAudit('Password try', { username: 'eve\n2026-11-23T00:00:00.000Z INFO  [audit] Change user=admin\u001b[2J' });
+
+    expect(audit.lines).toHaveLength(1);
+    expect(audit.lines[0]).not.toMatch(/\p{Cc}/u);
+    expect(audit.lines[0]).toContain('username="eve\\n2026-11-23T00:00:00.000Z INFO  [audit] Change user=admin\\u001b[2J"');
   });
 
   it('writes nothing to the server log', () => {
@@ -68,6 +76,24 @@ describe('the audit file', () => {
     const serverLog = ServerLog.forDataFolder(folder, {});
 
     expect(serverLog.audit?.filePaths).toEqual([path.join(folder, 'logs', 'audit.log.1'), path.join(folder, 'logs', 'audit.log')]);
+  });
+
+  it('starts a new file only after 5 MB, not after the 1 MB of the server log', async () => {
+    const auditPath = path.join(folder, 'logs', 'audit.log');
+    mkdirSync(path.dirname(auditPath));
+    // 2 MB is more than the server log keeps in one file, but less than the audit file keeps
+    writeFileSync(auditPath, 'x'.repeat(2 * 1024 * 1024));
+    const first = ServerLog.forDataFolder(folder, {});
+    first.audit?.write('after 2 MB');
+    await first.close();
+    expect(existsSync(`${auditPath}.1`)).toBe(false);
+
+    writeFileSync(auditPath, 'x'.repeat(AUDIT_FILE_BYTES - 5));
+    const second = ServerLog.forDataFolder(folder, {});
+    second.audit?.write('after 5 MB');
+    await second.close();
+    expect(readFileSync(auditPath, 'utf8')).toBe('after 5 MB\n');
+    expect(existsSync(`${auditPath}.1`)).toBe(true);
   });
 
   it('is off when LOG_FILE=off, as the server log file is', () => {
@@ -193,6 +219,35 @@ describe('auditLog middleware', () => {
     expect(audit.lines).toEqual([]);
   });
 
+  it.each(['HEAD', 'OPTIONS'])('writes nothing for a %s, which changes nothing', async method => {
+    await send(method, '/api/logs/debug', adminCookie);
+
+    expect(audit.lines).toEqual([]);
+  });
+
+  it('escapes a control character in a path parameter, so the line stays one line', async () => {
+    const res = await send('DELETE', '/api/machine/%0Aevil%1B', viewerCookie);
+
+    expect(res.status).toBe(403);
+    expect(changeLines()).toEqual([expect.stringMatching(/ id="\\nevil\\u001b"$/)]);
+    expect(audit.lines.join('')).not.toMatch(/\p{Cc}/u);
+  });
+
+  it('does not stop the request when the audit sink throws, and the server log still gets the line', async () => {
+    const old = configureAudit(() => {
+      throw new Error('disk full');
+    });
+    try {
+      expect((await send('PUT', '/api/logs/debug', adminCookie, { on: false })).status).toBe(200);
+    } finally {
+      configureAudit(old);
+    }
+
+    expect(log.lines.filter(line => line.text.includes('[audit] Change'))).toEqual([
+      { level: 'info', text: expect.stringContaining('method=PUT route=/api/logs/debug status=200') },
+    ]);
+  });
+
   it('writes nothing for a request with no login, because requireLogin stops it first', async () => {
     expect((await send('PUT', '/api/logs/debug', 'no-cookie=1', { on: true })).status).toBe(401);
 
@@ -218,6 +273,17 @@ describe('auditLog middleware', () => {
       expect((await app.request('/machine/m1/fail', { method: 'POST' })).status).toBe(500);
 
       expect(changeLines()).toEqual([expect.stringContaining('user=ann role=operator method=POST route=/machine/:id/fail status=500')]);
+    });
+
+    it('keeps the user and the status when a path parameter has the name of a fixed detail', async () => {
+      const app = new Hono<LoggedInEnv>()
+        .use(asAnn)
+        .use(auditLog(ProxySettings.inMemory()))
+        .post('/x/:user/:status', c => c.json({ error: 'No' }, 403));
+
+      expect((await app.request('/x/admin/200', { method: 'POST' })).status).toBe(403);
+
+      expect(changeLines()).toEqual([expect.stringMatching(/ Change user=ann role=operator method=POST route=\/x\/:user\/:status status=403 address=unknown$/)]);
     });
 
     it('writes a 500 also when the error goes on past the audit', async () => {

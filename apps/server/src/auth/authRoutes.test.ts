@@ -640,6 +640,18 @@ describe('auth routes behind a reverse proxy', () => {
       expect(auditLines(`username=random-${MAX_LOGGED_UNKNOWN_USERS + 4} address=192.168.1.66`)).toHaveLength(1);
     });
 
+    it('keeps a Basic username with a new line and control characters in one escaped line', async () => {
+      audit = captureAudit();
+      // Basic ends the username at the first colon, so the false line has no time
+      const username = 'eve\r\nINFO  [audit] Change user=admin\u001b[2J';
+
+      const res = await app.request('/api/status', { headers: { ...basic(username, 'x').headers, 'X-Forwarded-For': '192.168.1.66' } }, fromProxy);
+
+      expect(res.status).toBe(401);
+      expect(audit.lines).toEqual([expect.stringContaining('Password try username="eve\\r\\nINFO  [audit] Change user=admin\\u001b[2J" address=192.168.1.66 result=no-such-user')]);
+      expect(audit.lines[0]).not.toMatch(/\p{Cc}/u);
+    });
+
     it('writes the first try of a locked computer', async () => {
       for (let i = 0; i < 10; i++) await wrongAdminPassword('192.168.1.66');
       audit = captureAudit();
