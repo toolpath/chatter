@@ -1,4 +1,4 @@
-import type { AlertSeverity, ChannelField, ChannelValues } from '@local-chatter/shared';
+import { movedChannelSecrets, movedChannelSecretsText, type AlertSeverity, type ChannelField, type ChannelValues } from '@local-chatter/shared';
 import type { ChannelInput, ChannelTypeInfo, NotificationChannel } from '../../api/notifications';
 
 /** What the channel form holds while the admin types. A phone list has one empty box, so the admin can type the first number. */
@@ -50,6 +50,22 @@ export function channelInputOf(form: ChannelFormState): ChannelInput {
   // A new secret in the box takes the place of the saved one, so there is nothing to delete
   const clearSecrets = form.clearSecrets.filter(key => input.values[key] === '');
   return clearSecrets.length > 0 ? { ...input, clearSecrets } : input;
+}
+
+/**
+ * The text for each saved secret that the admin must type again, by the key of its field.
+ * The server sends a saved secret only to the address where the admin saved it, so it refuses a save or a test
+ * that changes a `url` field and keeps a saved secret. The rule is in the shared package (movedChannelSecrets),
+ * and the server uses it too. The server gets the values of channelInputOf.
+ */
+export function secretsToTypeAgain(form: ChannelFormState, channel: NotificationChannel | undefined, type: ChannelTypeInfo): Record<string, string> {
+  if (!channel || channel.type !== type.id) return {};
+  const { values, clearSecrets = [] } = channelInputOf(form);
+  const moved = movedChannelSecrets(type.fields, values, channel.settings,
+    key => channel.hasSecret[key] === true && !clearSecrets.includes(key));
+  if (!moved) return {};
+  // The same text as the refusal of the server, for one secret at a time
+  return Object.fromEntries(moved.kept.map(field => [field.key, movedChannelSecretsText({ changed: moved.changed, kept: [field] })]));
 }
 
 function emptyValuesOf(fields: ChannelField[]): ChannelValues {

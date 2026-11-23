@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import type {
-  AlertSeverity, ChannelField, ChannelFieldValue, ChannelInput, ChannelValues, NotificationChannel,
+import {
+  isEmptySecret, movedChannelSecrets, movedChannelSecretsText,
+  type AlertSeverity, type ChannelInput, type ChannelValues, type NotificationChannel,
 } from '@local-chatter/shared';
 import type Database from 'better-sqlite3';
 import type { MachineRemovalListener } from '../polling/poller.js';
@@ -211,34 +212,16 @@ function valuesOfType(type: ChannelType, values: ChannelValues, savedSecrets: Ch
   return kept;
 }
 
-function isEmptySecret(field: ChannelField, value: ChannelFieldValue | undefined): boolean {
-  return field.kind === 'secret' && (value === undefined || (typeof value === 'string' && value.trim() === ''));
-}
-
 /**
  * A saved secret goes only to the address where the admin saved it, so a typing error cannot send it to a different server.
  * Each `url` field of a type tells where the secrets go. When the form changes one of them, it must have each saved secret
- * again, or delete it. The same address with spaces around it is no change. Gives the error text, or null.
+ * again, or delete it. The rule is in the shared package, so the web form shows the same rule. Gives the error text, or null.
  */
 function problemWithMovedSecrets(
   type: ChannelType, values: ChannelValues, savedSettings: ChannelValues, savedSecrets: ChannelValues,
 ): string | null {
-  const changed = type.fields.filter(field => field.kind === 'url' && addressOf(values[field.key]) !== addressOf(savedSettings[field.key]));
-  const kept = type.fields.filter(field => isEmptySecret(field, values[field.key]) && savedSecrets[field.key] !== undefined);
-  if (changed.length === 0 || kept.length === 0) return null;
-  const problem = `Type the ${labelsOf(kept)} again. You changed the ${labelsOf(changed)}. `
-    + 'Chatter does not send a saved secret to a new address.';
-  // The form can delete only a secret that is not necessary
-  return kept.some(field => !field.required) ? `${problem} To use no secret, select Delete the saved secret.` : problem;
-}
-
-/** An address that is not there, or empty, is the default address of the type, for example ntfy.sh */
-function addressOf(value: ChannelFieldValue | undefined): string {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-function labelsOf(fields: ChannelField[]): string {
-  return fields.map(field => field.label.replace(/ \(optional\)$/, '')).join(' and the ');
+  const moved = movedChannelSecrets(type.fields, values, savedSettings, key => savedSecrets[key] !== undefined);
+  return moved && movedChannelSecretsText(moved);
 }
 
 function withoutKeys(values: ChannelValues, keys: string[]): ChannelValues {

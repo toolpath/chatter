@@ -49,22 +49,48 @@ describe('withoutPasswordChange', () => {
 });
 
 describe('ftpPasswordHint', () => {
+  const saved = { ...EMPTY_EDIT_FORM, host: '192.168.1.50' };
+  const textOf = (form: typeof saved, hasSavedPassword: boolean) => ftpPasswordHint(form, hasSavedPassword, saved).text;
+
   it('says when no password is saved', () => {
-    expect(ftpPasswordHint(EMPTY_EDIT_FORM, false)).toBe('No password is saved.');
+    expect(textOf(saved, false)).toBe('No password is saved.');
   });
 
   it('says that an empty box keeps the saved password', () => {
-    expect(ftpPasswordHint(EMPTY_EDIT_FORM, true)).toBe('A password is saved. Leave this empty to keep it.');
+    expect(ftpPasswordHint(saved, true, saved)).toEqual({ text: 'A password is saved. Leave this empty to keep it.', mustTypeAgain: false });
   });
 
   it('says that the saved password will be removed', () => {
-    expect(ftpPasswordHint({ ...EMPTY_EDIT_FORM, removeFtpPassword: true }, true))
-      .toBe('The saved password is removed when you click Save changes.');
+    expect(textOf({ ...saved, removeFtpPassword: true }, true)).toBe('The saved password is removed when you click Save changes.');
   });
 
   it('says that a typed password will be saved', () => {
-    expect(ftpPasswordHint({ ...EMPTY_EDIT_FORM, ftpPassword: 'x' }, true))
-      .toBe('This new password is saved when you click Save changes.');
+    expect(textOf({ ...saved, ftpPassword: 'x' }, true)).toBe('This new password is saved when you click Save changes.');
+  });
+
+  it('asks for the saved password again after a new IP address or FTP port, as the server does', () => {
+    const typeAgain = {
+      text: 'Type the password again. You changed the IP address or the FTP port. Chatter does not send a saved password to a new address. '
+        + 'To use no password, click Remove password.',
+      mustTypeAgain: true,
+    };
+    expect(ftpPasswordHint({ ...saved, host: '192.168.1.99' }, true, saved)).toEqual(typeAgain);
+    expect(ftpPasswordHint({ ...saved, ftpPort: 2121 }, true, saved)).toEqual(typeAgain);
+  });
+
+  it('does not ask again for spaces around the IP address, a new username, or a new port of the OPC UA password', () => {
+    expect(ftpPasswordHint({ ...saved, host: ' 192.168.1.50 ' }, true, saved).mustTypeAgain).toBe(false);
+    // The server refuses an empty IP address with "Host is required" first
+    expect(ftpPasswordHint({ ...saved, host: '   ' }, true, saved).mustTypeAgain).toBe(false);
+    expect(ftpPasswordHint({ ...saved, ftpUser: 'operator' }, true, saved).mustTypeAgain).toBe(false);
+    expect(ftpPasswordHint({ ...saved, opcuaPort: 4841 }, true, saved).mustTypeAgain).toBe(false);
+  });
+
+  it('does not ask again when the user types or removes the password, or when none is saved', () => {
+    const moved = { ...saved, host: '192.168.1.99' };
+    expect(ftpPasswordHint({ ...moved, ftpPassword: 'x' }, true, saved).mustTypeAgain).toBe(false);
+    expect(ftpPasswordHint({ ...moved, removeFtpPassword: true }, true, saved).mustTypeAgain).toBe(false);
+    expect(ftpPasswordHint(moved, false, saved).mustTypeAgain).toBe(false);
   });
 });
 
@@ -103,8 +129,15 @@ describe('the Siemens settings in the edit form', () => {
   });
 
   it('tells what happens to the OPC UA password', () => {
-    expect(opcuaPasswordHint(EMPTY_EDIT_FORM, true)).toBe('A password is saved. Leave this empty to keep it.');
-    expect(opcuaPasswordHint({ ...EMPTY_EDIT_FORM, removeOpcuaPassword: true }, true))
+    expect(opcuaPasswordHint(EMPTY_EDIT_FORM, true, EMPTY_EDIT_FORM).text).toBe('A password is saved. Leave this empty to keep it.');
+    expect(opcuaPasswordHint({ ...EMPTY_EDIT_FORM, removeOpcuaPassword: true }, true, EMPTY_EDIT_FORM).text)
       .toBe('The saved password is removed when you click Save changes.');
+  });
+
+  it('asks for the saved OPC UA password again after a new OPC UA port, and not after a new FTP port', () => {
+    expect(opcuaPasswordHint({ ...EMPTY_EDIT_FORM, opcuaPort: 4841 }, true, EMPTY_EDIT_FORM).text)
+      .toBe('Type the password again. You changed the IP address or the OPC UA port. Chatter does not send a saved password to a new address. '
+        + 'To use no password, click Remove password.');
+    expect(opcuaPasswordHint({ ...EMPTY_EDIT_FORM, ftpPort: 2121 }, true, EMPTY_EDIT_FORM).mustTypeAgain).toBe(false);
   });
 });

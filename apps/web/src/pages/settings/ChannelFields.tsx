@@ -14,11 +14,13 @@ interface ChannelFieldsProps {
   form: ChannelFormState;
   /** True for each secret field that has a saved value */
   hasSecret: Record<string, boolean>;
+  /** The text for each saved secret that the admin must type again, because the form changes an address */
+  typeAgain: Record<string, string>;
   onChange: (form: ChannelFormState) => void;
 }
 
 /** The inputs that the channel type asks for, in its order. Each type gives its own list, so a new service needs no new form. */
-export function ChannelFields({ type, form, hasSecret, onChange }: ChannelFieldsProps) {
+export function ChannelFields({ type, form, hasSecret, typeAgain, onChange }: ChannelFieldsProps) {
   const setValue = (key: string, value: string | string[]) => onChange({ ...form, values: { ...form.values, [key]: value } });
   const setClearSecret = (key: string, clear: boolean) => onChange({
     ...form, clearSecrets: clear ? [...form.clearSecrets, key] : form.clearSecrets.filter(entry => entry !== key),
@@ -39,6 +41,7 @@ export function ChannelFields({ type, form, hasSecret, onChange }: ChannelFields
                 value={asText(value)}
                 isSaved={hasSecret[field.key] === true}
                 isCleared={form.clearSecrets.includes(field.key)}
+                typeAgain={typeAgain[field.key]}
                 onChange={text => setValue(field.key, text)}
                 onClearChange={clear => setClearSecret(field.key, clear)}
               />
@@ -57,15 +60,23 @@ export function ChannelFields({ type, form, hasSecret, onChange }: ChannelFields
       {basic.map(fieldOf)}
       {advanced.length > 0 && (
         // A new type has other advanced fields, so the heading starts again
-        <AdvancedGroup key={type.id} startOpen={hasAdvancedValue}>{advanced.map(fieldOf)}</AdvancedGroup>
+        <AdvancedGroup key={type.id} startOpen={hasAdvancedValue} mustOpen={advanced.some(field => typeAgain[field.key] !== undefined)}>
+          {advanced.map(fieldOf)}
+        </AdvancedGroup>
       )}
     </>
   );
 }
 
-/** The fields that most admins leave empty, under a heading that opens and closes */
-function AdvancedGroup({ startOpen, children }: { startOpen: boolean; children: ReactNode }) {
+/** The fields that most admins leave empty, under a heading that opens and closes. `mustOpen` opens it. */
+function AdvancedGroup({ startOpen, mustOpen, children }: { startOpen: boolean; mustOpen: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(startOpen);
+  // A hint that the admin must see (type a secret again) opens the heading when it comes
+  const [hadMustOpen, setHadMustOpen] = useState(mustOpen);
+  if (mustOpen !== hadMustOpen) {
+    setHadMustOpen(mustOpen);
+    if (mustOpen) setOpen(true);
+  }
   return (
     <details open={open} className="flex flex-col gap-4">
       <summary
@@ -136,12 +147,17 @@ function ChoiceField({ field, value, onChange }: TextFieldProps) {
 interface SecretFieldProps extends TextFieldProps {
   isSaved: boolean;
   isCleared: boolean;
+  /** The server refuses the form until the admin types the saved secret again or deletes it */
+  typeAgain?: string;
   onClearChange: (clear: boolean) => void;
 }
 
 /** The server never sends a secret back. An empty box keeps the saved secret, and a secret that is not necessary can be deleted. */
-function SecretField({ field, value, isSaved, isCleared, onChange, onClearChange }: SecretFieldProps) {
+function SecretField({ field, value, isSaved, isCleared, typeAgain, onChange, onClearChange }: SecretFieldProps) {
   const canClear = isSaved && !field.required;
+  const typeAgainId = `${idOf(field)}-again`;
+  // The box is described by both texts, so a screen reader also tells to type the secret again
+  const describedBy = [hintIdOf(field), typeAgain && typeAgainId].filter(Boolean).join(' ') || undefined;
   return (
     <Field id={idOf(field)} label={field.label} hint={field.hint}>
       <TextInput
@@ -149,13 +165,15 @@ function SecretField({ field, value, isSaved, isCleared, onChange, onClearChange
         type="password"
         mono={field.mono}
         value={value}
-        placeholder={isSaved && !isCleared ? SAVED_SECRET_PLACEHOLDER : undefined}
+        placeholder={isSaved && !isCleared && !typeAgain ? SAVED_SECRET_PLACEHOLDER : undefined}
         onChange={event => onChange(event.target.value)}
-        aria-describedby={hintIdOf(field)}
+        aria-describedby={describedBy}
         // new-password stops a browser from filling in a saved login
         autoComplete="new-password"
         spellCheck={false}
       />
+      {/* The live region is always there, so a screen reader also says the text when it comes. Empty, it takes no space. */}
+      <p id={typeAgainId} aria-live="polite" className="m-0 text-xs font-semibold text-primary-text empty:absolute">{typeAgain}</p>
       {canClear && (
         <label className="flex items-center gap-2 text-xs text-zinc-200">
           <input

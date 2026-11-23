@@ -19,7 +19,7 @@ Add the machine with the type **Siemens SINUMERIK**. Then, on the machine page, 
 - **Security**: **None**, or **Sign and encrypt (Basic256Sha256)**.
 - **OPC UA username** and **OPC UA password**: the login from the control. Leave the username empty for an anonymous login.
 
-The server never sends the password back, the same as the FTP password. When you change the IP address or the OPC UA port, type the OPC UA password again. Chatter does not send a saved password to a new address.
+The server never sends the password back, the same as the FTP password. When you change the IP address or the OPC UA port, type the OPC UA password again. Chatter does not send a saved password to a new address. Before you save, the text under the password box tells you to type it again.
 
 ### Sign and encrypt
 
