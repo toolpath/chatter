@@ -91,6 +91,13 @@ describe('alert rule routes', () => {
       expect(res.status).toBe(403);
       expect(JSON.stringify(await res.json())).not.toContain('in-alarm');
     });
+
+    // 403 also for an unknown id, so the reply does not tell which machine ids are there
+    it(`refuses ${role === 'viewer' ? 'a Viewer' : 'an Operator'} with 403, not 404, for an unknown machine`, async () => {
+      const res = await send(await cookieOf(role), 'GET', '/machine/nope/alert-rules');
+
+      expect(res.status).toBe(403);
+    });
   }
 
   it('saves a new list for an admin', async () => {
