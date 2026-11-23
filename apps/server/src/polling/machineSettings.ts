@@ -1,3 +1,4 @@
+import { mustTypePasswordAgain } from '@local-chatter/shared';
 import { BaseMachineConnector, DEFAULT_FTP_USER } from '../machines/BaseMachineConnector.js';
 import type { BrotherConnector } from '../machines/brother/BrotherConnector.js';
 import type { HaasConnector } from '../machines/haas/HaasConnector.js';
@@ -178,23 +179,30 @@ interface DestinationUpdate {
   opcuaPassword?: string;
 }
 
-const isChange = <Value>(newValue: Value | undefined, savedValue: Value) => newValue !== undefined && newValue !== savedValue;
-
 /**
  * A saved password goes only to the address where the user saved it, so a typing error cannot send it to a different device.
  * A new IP address, or a new port of the password (FTP port, OPC UA port), moves the password.
  * Then the change must have the password again. An empty password removes it.
  * A new username does not move the password: it still goes to the same machine and port.
+ * The rule is in the shared package (mustTypePasswordAgain), so the web form shows the same rule.
  * Throws PasswordNeededError, before anything is saved.
  */
 export function checkSavedPasswordsStay(connector: BaseMachineConnector, updates: DestinationUpdate): void {
-  const newHost = isChange(updates.host, connector.host);
   const missing: string[] = [];
-  if (connector.hasFtpPassword && updates.ftpPassword === undefined && (newHost || isChange(updates.ftpPort, connector.ftpPort))) {
+  if (mustTypePasswordAgain({
+    hasSavedPassword: connector.hasFtpPassword,
+    isPasswordSent: updates.ftpPassword !== undefined,
+    saved: { host: connector.host, port: connector.ftpPort },
+    change: { host: updates.host, port: updates.ftpPort },
+  })) {
     missing.push('FTP password');
   }
-  if (connector instanceof SiemensConnector && connector.hasOpcuaPassword && updates.opcuaPassword === undefined
-    && (newHost || isChange(updates.opcuaPort, connector.opcuaPort))) {
+  if (connector instanceof SiemensConnector && mustTypePasswordAgain({
+    hasSavedPassword: connector.hasOpcuaPassword,
+    isPasswordSent: updates.opcuaPassword !== undefined,
+    saved: { host: connector.host, port: connector.opcuaPort },
+    change: { host: updates.host, port: updates.opcuaPort },
+  })) {
     missing.push('OPC UA password');
   }
   if (missing.length === 0) return;
