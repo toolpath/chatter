@@ -60,6 +60,12 @@ export function writeAudit(message: string, context: LogContext): void {
 
 const log = createLogger('audit');
 
+/** Write one line in the audit log and in the server log, at the info level */
+export function writeAuditAndLog(message: string, context: LogContext): void {
+  writeAudit(message, context);
+  log.info(message, context);
+}
+
 /** A GET changes nothing. HEAD and OPTIONS read only. */
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -87,6 +93,5 @@ function recordChange(c: Context<LoggedInEnv>, proxySettings: ProxySettings, sta
   // The parameters come after the fixed details. A parameter with the name of a fixed detail does not replace it.
   const params = Object.entries(c.req.param()).filter(([key]) => !(key in fixed)).map(([key, value]) => [key, cutValue(value)]);
   const details = { ...fixed, ...Object.fromEntries(params) };
-  writeAudit('Change', details);
-  log.info('Change', details);
+  writeAuditAndLog('Change', details);
 }

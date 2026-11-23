@@ -12,7 +12,7 @@ import type { RequestOrigin } from './proxyTrust.js';
 import { originOf } from './requestOrigin.js';
 import { SESSION_LIFETIME_SECONDS, type SessionClient } from './sessionStore.js';
 import { UsernameTakenError } from './userStore.js';
-import { cutValue, writeAudit } from '../logging/audit.js';
+import { cutValue, writeAudit, writeAuditAndLog } from '../logging/audit.js';
 import { createLogger } from '../logging/logger.js';
 
 const log = createLogger('auth');
@@ -365,7 +365,11 @@ export function authRoutes(guard: LoginGuard) {
 
     .post('/auth/logout', c => {
       const session = currentSession(c, auth);
-      if (session) auth.logOut(session);
+      if (session) {
+        auth.logOut(session);
+        // The routes of the login come before the audit middleware (app.ts), so they write their own lines
+        writeAuditAndLog('Logged out', { user: session.user.username, address: originOf(c, proxySettings).address });
+      }
       deleteCookie(c, SESSION_COOKIE, { path: SESSION_COOKIE_PATH });
       return c.json({ loggedIn: false });
     })
