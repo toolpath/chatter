@@ -15,6 +15,11 @@ function uploadFileId(fileName: string): number {
   return file.id;
 }
 
+/** Give each upload this time. The time has whole seconds only, so two sends in one second have the same time. */
+function setUploadTimes(...times: string[]) {
+  times.forEach((time, index) => getDb().prepare('UPDATE upload_events SET uploaded_at = ? WHERE id = ?').run(time, index + 1));
+}
+
 async function decompress(storedContent: Buffer): Promise<string> {
   return (await gunzip(storedContent)).toString('utf-8');
 }
@@ -119,6 +124,26 @@ describe('database', () => {
       expect(part2!.event_count).toBe(1);
     });
 
+    it('gives the path of the newest upload as the last path, also when two uploads have the same time', async () => {
+      await recordUpload('machine1', 'part.nc', 'O0100.NC', '/TEST/O0100.NC', 'v1', ANN);
+      await recordUpload('machine1', 'part.nc', 'O0100.NC', '/PROD/O0100.NC', 'v2', ANN);
+      setUploadTimes('2026-11-23 10:00:00', '2026-11-23 10:00:00');
+
+      const [file] = await getUploadFiles('machine1');
+
+      expect(file.last_path).toBe('/PROD/O0100.NC');
+    });
+
+    it('gives the path of the upload with the newest time as the last path, before the row order', async () => {
+      await recordUpload('machine1', 'part.nc', 'O0100.NC', '/TEST/O0100.NC', 'v1', ANN);
+      await recordUpload('machine1', 'part.nc', 'O0100.NC', '/PROD/O0100.NC', 'v2', ANN);
+      setUploadTimes('2026-11-23 10:00:01', '2026-11-23 10:00:00');
+
+      const [file] = await getUploadFiles('machine1');
+
+      expect(file.last_path).toBe('/TEST/O0100.NC');
+    });
+
     it('returns no more files than the limit', async () => {
       await recordUpload('machine1', 'part1.nc', 'O0100.NC', '/test', 'c1', ANN);
       await recordUpload('machine1', 'part2.nc', 'O0200.NC', '/test', 'c2', ANN);
@@ -145,6 +170,17 @@ describe('database', () => {
       await recordUpload('machine1', 'part.nc', 'O0100.NC', '/O0100.NC', 'content', ANN);
 
       expect(await getUploadEvents('machine2', uploadFileId('part.nc'))).toEqual([]);
+    });
+
+    it('puts the newest upload first, and the later row first when two uploads have the same time', async () => {
+      await recordUpload('machine1', 'part.nc', 'O0100.NC', '/A/O0100.NC', 'v1', ANN);
+      await recordUpload('machine1', 'part.nc', 'O0100.NC', '/B/O0100.NC', 'v2', ANN);
+      await recordUpload('machine1', 'part.nc', 'O0100.NC', '/C/O0100.NC', 'v3', ANN);
+      setUploadTimes('2026-11-23 10:00:00', '2026-11-23 10:00:00', '2026-11-23 09:59:59');
+
+      const result = await getUploadEvents('machine1', uploadFileId('part.nc'));
+
+      expect(result.map(e => e.remote_path)).toEqual(['/B/O0100.NC', '/A/O0100.NC', '/C/O0100.NC']);
     });
   });
 
