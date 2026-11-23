@@ -50,9 +50,9 @@ export interface UploadFile {
 
 /**
  * What a user did to a file. Today each row is a send: the audit log alone records a delete.
- * A row from an older version is a send too.
+ * A row from an older version is a send too. A new action comes here when a change writes it.
  */
-export type UploadAction = 'sent' | 'deleted';
+export type UploadAction = 'sent';
 
 /** One send of a file. A row from before Chatter recorded the user has null in uploaded_by and address. */
 export interface UploadEvent {
