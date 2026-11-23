@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router';
+import { useCan } from '../../components/CurrentUser';
 import { tabPanelProps } from '../../components/ui/tabPanel';
 import { UnderlineTabs, type TabItem } from '../../components/ui/UnderlineTabs';
 import type { Machine, MachineUpdate, ToolTable } from '../../types';
@@ -55,7 +56,7 @@ export function MachineSections({ machine, machines, now, onUpdate, onRemove, da
   const [searchParams, setSearchParams] = useSearchParams();
   const openTab = searchParams.get(TAB_PARAM);
   const messages = useUploadMessages();
-  const alertRules = useAlertRules(machine.id);
+  const alertRules = useAlertRules(machine.id, useCan('manage-machines'));
   // The range of the report stays when the user opens another tab and comes back
   const reportRange = useState(FIRST_REPORT_RANGE);
   const tools = toolTabOf(machine);

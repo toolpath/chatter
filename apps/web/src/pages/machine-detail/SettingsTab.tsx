@@ -29,31 +29,19 @@ interface SettingsTabProps {
 
 /**
  * Five panels, one under the other: the machine settings, the connection, the alert rules, Advanced, and Delete machine.
- * A user who is not an admin sees only the connection and the alert rules, read only.
+ * A user who cannot manage machines sees only the connection. The alert rules are settings, so the server does not give them to that user.
  */
 export function SettingsTab({ machine, machines, rules, onUpdate, onRemove }: SettingsTabProps) {
   const canManageMachines = useCan('manage-machines');
   const canManageChatter = useCan('manage-chatter');
   useScrollToSection(!!rules.saved);
 
-  const alertRules = (
-    <SettingsSection id={SETTINGS_SECTION_IDS.alertRules} title="Alert rules">
-      <AlertRulesSection machineId={machine.id} otherMachines={machines.filter(other => other.id !== machine.id)} rules={rules} />
-    </SettingsSection>
-  );
   const connection = (
     <SettingsSection id={SETTINGS_SECTION_IDS.connection} title="Connection">
       <ConnectionSection machine={machine} />
     </SettingsSection>
   );
-  if (!canManageMachines) {
-    return (
-      <div className="flex flex-col gap-5">
-        {connection}
-        {alertRules}
-      </div>
-    );
-  }
+  if (!canManageMachines) return <div className="flex flex-col gap-5">{connection}</div>;
 
   return (
     <div className="flex flex-col gap-5">
@@ -61,7 +49,9 @@ export function SettingsTab({ machine, machines, rules, onUpdate, onRemove }: Se
         <MachineSettingsSection machine={machine} onUpdate={onUpdate} />
       </SettingsSection>
       {connection}
-      {alertRules}
+      <SettingsSection id={SETTINGS_SECTION_IDS.alertRules} title="Alert rules">
+        <AlertRulesSection machineId={machine.id} otherMachines={machines.filter(other => other.id !== machine.id)} rules={rules} />
+      </SettingsSection>
       <AdvancedSection>
         <HistoryBackupSection machine={machine} canRestore={canManageChatter} />
       </AdvancedSection>

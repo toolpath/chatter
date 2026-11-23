@@ -91,7 +91,7 @@ Chatter keeps the alerts for 1 year.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/machine/:id/alert-rules` | The alert rules of one machine |
+| GET | `/api/machine/:id/alert-rules` | The alert rules of one machine. Needs `manage-machines`. |
 | PUT | `/api/machine/:id/alert-rules` | Put a new list in place of the rules of one machine. Needs `manage-machines`. |
 | POST | `/api/machine/:id/alert-rules/copy` | Copy the rules of one machine to other machines. Needs `manage-machines`. |
 | POST | `/api/alert-rules/test` | Run a custom query one time, now. Needs `manage-machines`. |

@@ -12,13 +12,13 @@ import { alertRulesSchema, copyAlertRulesSchema, testAlertQuerySchema } from './
  */
 const RULES_BODY_LIMIT_BYTES = 512 * 1024;
 
-/** Read, change and copy the alert rules of a machine. Only a role with manage-machines can change them. */
+/** Read, change and copy the alert rules of a machine. The rules are settings, so only a role with manage-machines can read or change them (decision D4). */
 export function alertRuleRoutes(poller: HardwarePoller, alertRules: AlertRuleService) {
   const canManageMachines = requirePermission('manage-machines');
   const isKnownMachine = (machineId: string) => poller.getMachine(machineId) !== null;
 
   return new Hono()
-    .get('/machine/:id/alert-rules', c => {
+    .get('/machine/:id/alert-rules', canManageMachines, c => {
       const machineId = c.req.param('id');
       if (!isKnownMachine(machineId)) return notFound(c);
       return c.json({ rules: alertRules.rulesOf(machineId) });

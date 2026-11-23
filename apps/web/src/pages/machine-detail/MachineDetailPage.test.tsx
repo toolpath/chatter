@@ -674,6 +674,7 @@ describe('MachineDetailPage', () => {
       expect(within(machineSection).getByRole('button', { name: 'Save changes' })).toBeInTheDocument();
       const rulesSection = screen.getByRole('region', { name: 'Alert rules' });
       expect(await within(rulesSection).findByText(/Click a word in a rule to change it/)).toBeInTheDocument();
+      expect(fetchAlertRules).toHaveBeenCalledWith('m1');
       const panel = screen.getByRole('tabpanel', { name: 'Settings' });
       expect(within(panel).getAllByRole('region').map(region => region.id).filter(Boolean)).toEqual([
         machineSection.id, SETTINGS_SECTION_IDS.connection, rulesSection.id, SETTINGS_SECTION_IDS.advanced, SETTINGS_SECTION_IDS.deleteMachine,
@@ -701,30 +702,32 @@ describe('MachineDetailPage', () => {
       expect(screen.queryByRole('button', { name: 'Back up history' })).not.toBeInTheDocument();
     });
 
-    it('shows a viewer only the alert rules, and they cannot change them', async () => {
-      renderPage({ role: 'viewer' });
+    // The alert rules are settings. The server gives them only to a role with manage-machines (decision D4).
+    it.each(['operator', 'viewer'] as const)('does not load the alert rules for %s, and shows only the connection, with no error', role => {
+      renderPage({ role });
 
       fireEvent.click(screen.getByRole('tab', { name: 'Settings' }));
 
-      const rulesSection = screen.getByRole('region', { name: 'Alert rules' });
-      expect(await within(rulesSection).findByText(/Only an admin can change them/)).toBeInTheDocument();
-      expect(screen.queryByRole('region', { name: 'Machine' })).not.toBeInTheDocument();
+      const panel = screen.getByRole('tabpanel', { name: 'Settings' });
+      expect(within(panel).getAllByRole('region').map(region => region.id)).toEqual([SETTINGS_SECTION_IDS.connection]);
+      expect(within(panel).queryByText(/alert rules/i)).not.toBeInTheDocument();
+      expect(fetchAlertRules).not.toHaveBeenCalled();
       expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument();
-      expect(screen.queryByRole('navigation', { name: 'Settings sections' })).not.toBeInTheDocument();
     });
 
-    it('shows an operator only the alert rules, and they cannot change them', async () => {
-      vi.mocked(fetchAlertRules).mockResolvedValue([OFFLINE_RULE]);
-      renderPage({ role: 'operator' });
+    it('shows no rules of the old machine when the user goes to another machine', async () => {
+      vi.mocked(fetchAlertRules).mockImplementation(id => (id === 'm1' ? Promise.resolve([OFFLINE_RULE]) : new Promise(() => {})));
+      renderPage({
+        address: '/machine/m1?tab=settings',
+        machines: [testMachine({ id: 'm1', name: 'Mill 1' }), testMachine({ id: 'm2', name: 'Mill 2' })],
+      });
+      expect(await screen.findByRole('switch', { name: 'Not connected' })).toBeInTheDocument();
 
-      fireEvent.click(screen.getByRole('tab', { name: 'Settings' }));
+      go('/machine/m2?tab=settings');
 
-      const rulesSection = screen.getByRole('region', { name: 'Alert rules' });
-      expect(await within(rulesSection).findByText(/Only an admin can change them/)).toBeInTheDocument();
-      expect(screen.queryByRole('region', { name: 'Machine' })).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /Add rule/ })).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: 'Copy rules to other machines' })).not.toBeInTheDocument();
-      expect(screen.queryByRole('navigation', { name: 'Settings sections' })).not.toBeInTheDocument();
+      expect(screen.getByText('Loading the alert rules…')).toBeInTheDocument();
+      expect(screen.queryByRole('switch', { name: 'Not connected' })).not.toBeInTheDocument();
+      expect(fetchAlertRules).toHaveBeenLastCalledWith('m2');
     });
   });
 
@@ -830,6 +833,28 @@ describe('MachineDetailPage', () => {
     afterEach(() => {
       delete (Element.prototype as Partial<Element>).scrollIntoView;
     });
+
+    it.each(['operator', 'viewer'] as const)('is not there for %s, who cannot read the rules', async role => {
+      renderPage({ role });
+
+      const alerts = screen.getByRole('region', { name: 'Alerts' });
+      expect(await within(alerts).findByText(/No alerts in the last 7 days/)).toBeInTheDocument();
+      expect(within(alerts).queryByRole('link')).not.toBeInTheDocument();
+      expect(within(alerts).queryByText(/Alert rules/)).not.toBeInTheDocument();
+    });
+
+    // Older links and bookmarks can open the rules as an Operator or a Viewer. The page then shows the connection.
+    it.each(['operator', 'viewer'] as const)('opens Settings with no error for %s, from an old link to the rules', role => {
+      renderPage({ role, address: '/machine/m1?tab=settings#settings-alert-rules' });
+
+      expect(screen.getByRole('tab', { name: 'Settings' })).toHaveAttribute('aria-selected', 'true');
+      const panel = screen.getByRole('tabpanel', { name: 'Settings' });
+      expect(within(panel).getAllByRole('region').map(region => region.id)).toEqual([SETTINGS_SECTION_IDS.connection]);
+      expect(scrolledTo).toEqual([]);
+      expect(fetchAlertRules).not.toHaveBeenCalled();
+    });
+
+    // These tests of an Admin also check that the link is there for an Admin. Keep them.
 
     it('opens Settings at the alert rules', async () => {
       renderPage();

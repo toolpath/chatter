@@ -22,15 +22,13 @@ A machine that you added before keeps its rules. Chatter does not change them.
 ## Open the rules
 
 1. On the **Machines** page, click the machine.
-2. Click the **Settings** tab.
-   - An **Admin** sees three panels, one under the other: **Machine**, **Alert rules** and **Delete machine**. Scroll down to **Alert rules**.
-   - A user who is not an Admin sees only the **Alert rules** section.
+2. Click the **Settings** tab. Scroll down to **Alert rules**.
 
 ![Settings > Alert rules: rules as sentences, and a custom query](../images/chatter-alert-rules-tab.png)
 
-Each user can see the rules. Only an **Admin** can change them.
+Only an **Admin** can see and change the rules. The rules are settings. An Operator and a Viewer do not see the **Alert rules** section. They see the alerts in the **Alerts** panel.
 
-When the machine has no alerts, the **Alerts** panel has a link to **Settings › Alert rules**.
+When the machine has no alerts, the **Alerts** panel of an Admin has a link to **Settings › Alert rules**.
 
 ## Change a rule
 

@@ -75,8 +75,6 @@ const VIEWER_CAN_READ: Record<string, string> = {
   '/api/machine/:id/state-timeline': 'machine history',
   '/api/machine/:id/history/:value': 'machine history',
   '/api/machine/:id/files': 'the program list of the machine page',
-  // Open owner question: alert rules are settings of a machine (D4)
-  '/api/machine/:id/alert-rules': 'the alert rules of the machine page',
   // Open owner question: the upload history tells who sent a program (D4, uploaded_by in PR 13)
   '/api/machine/:id/uploads': 'the upload history of the machine page',
   '/api/machine/:id/uploads/:fileId/events': 'the upload history of the machine page',

@@ -57,12 +57,12 @@ describe('alert rule routes', () => {
 
   const asAdmin = (method: string, path: string, body?: object) => send(adminCookie, method, path, body);
 
-  async function viewerCookie() {
-    await accounts.add({ username: 'jo', password: PASSWORD, role: 'viewer' });
+  async function cookieOf(role: 'viewer' | 'operator') {
+    await accounts.add({ username: role, password: PASSWORD, role });
     const res = await app.request('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: 'jo', password: PASSWORD }),
+      body: JSON.stringify({ username: role, password: PASSWORD }),
     });
     return (res.headers.get('Set-Cookie') ?? '').split(';')[0];
   }
@@ -75,13 +75,30 @@ describe('alert rule routes', () => {
     expect((await app.request(`/api/machine/${haasId}/alert-rules`)).status).toBe(401);
   });
 
-  it('shows the starter rules of a new machine to every logged-in user', async () => {
-    const res = await send(await viewerCookie(), 'GET', `/machine/${haasId}/alert-rules`);
+  it('shows the starter rules of a new machine to an admin', async () => {
+    const res = await asAdmin('GET', `/machine/${haasId}/alert-rules`);
 
     expect(res.status).toBe(200);
     const { rules } = (await res.json()) as { rules: AlertRule[] };
     expect(rules.map(rule => rule.kind === 'simple' && rule.subject)).toEqual(['in-alarm', 'emergency-stop', 'program-ended']);
   });
+
+  // The alert rules are settings of a machine. Only a role with manage-machines (the Admin) can read them (decision D4).
+  for (const role of ['operator', 'viewer'] as const) {
+    it(`does not show the rules to ${role === 'viewer' ? 'a Viewer' : 'an Operator'}`, async () => {
+      const res = await send(await cookieOf(role), 'GET', `/machine/${haasId}/alert-rules`);
+
+      expect(res.status).toBe(403);
+      expect(JSON.stringify(await res.json())).not.toContain('in-alarm');
+    });
+
+    // 403 also for an unknown id, so the reply does not tell which machine ids are there
+    it(`refuses ${role === 'viewer' ? 'a Viewer' : 'an Operator'} with 403, not 404, for an unknown machine`, async () => {
+      const res = await send(await cookieOf(role), 'GET', '/machine/nope/alert-rules');
+
+      expect(res.status).toBe(403);
+    });
+  }
 
   it('saves a new list for an admin', async () => {
     const res = await asAdmin('PUT', `/machine/${haasId}/alert-rules`, { rules: [highLoad, slowSpindle] });
@@ -95,7 +112,7 @@ describe('alert rule routes', () => {
   });
 
   it('does not let a viewer change the rules', async () => {
-    const res = await send(await viewerCookie(), 'PUT', `/machine/${haasId}/alert-rules`, { rules: [] });
+    const res = await send(await cookieOf('viewer'), 'PUT', `/machine/${haasId}/alert-rules`, { rules: [] });
 
     expect(res.status).toBe(403);
     expect(await rulesOf(haasId)).toHaveLength(3);

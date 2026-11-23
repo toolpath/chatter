@@ -26,7 +26,7 @@ const HIGH_LOAD: AlertRule = {
 const OTHER_MACHINES = [{ id: 'm2', name: 'Brother 2' }, { id: 'm3', name: 'Haas 3' }];
 
 function Section() {
-  const rules = useAlertRules('m1');
+  const rules = useAlertRules('m1', true);
   return <AlertRulesSection machineId="m1" otherMachines={OTHER_MACHINES} rules={rules} />;
 }
 
@@ -209,15 +209,6 @@ describe('AlertRulesSection', () => {
     expect(await within(dialog).findByText(
       '1 rule was copied. 2 rules were not copied, because a machine can have at most 50 rules.',
     )).toBeInTheDocument();
-  });
-
-  it('shows a viewer the rules, with nothing to change', async () => {
-    await renderSection(undefined, 'viewer');
-
-    expect(screen.getByText(/Only an admin can change them/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Add rule/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Remove the rule/ })).not.toBeInTheDocument();
-    expect(limitBox()).toBeDisabled();
   });
 
   it('offers to try again when the rules do not load', async () => {
