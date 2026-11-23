@@ -164,7 +164,7 @@ type PasswordPort = 'ftpPort' | 'opcuaPort';
 /**
  * The server sends a saved password only to the address where the user saved it (checkSavedPasswordsStay).
  * The rule is in the shared package (mustTypePasswordAgain), and the server uses it too.
- * The server removes the spaces around the IP address.
+ * The server removes the spaces around the IP address. The text has the same sentences as the refusal of the server.
  */
 function passwordHint(form: EditFormState, saved: EditFormState, hasSavedPassword: boolean, port: PasswordPort): PasswordHint {
   const [newPassword, remove, portName] = port === 'ftpPort'
@@ -177,10 +177,11 @@ function passwordHint(form: EditFormState, saved: EditFormState, hasSavedPasswor
     hasSavedPassword,
     isPasswordSent: false,
     saved: { host: saved.host.trim(), port: saved[port] },
-    change: { host: form.host.trim(), port: form[port] },
+    // An empty IP address is no new address: the server refuses it with "Host is required" first
+    change: { host: form.host.trim() || undefined, port: form[port] },
   })) {
     return hint(`Type the password again. You changed the IP address or the ${portName}. `
-      + 'Chatter does not send a saved password to a new address.', true);
+      + 'Chatter does not send a saved password to a new address. To use no password, click Remove password.', true);
   }
   if (hasSavedPassword) return hint('A password is saved. Leave this empty to keep it.');
   return hint('No password is saved.');

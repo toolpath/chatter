@@ -340,8 +340,12 @@ function PasswordField({ id, label, value, onChange, hint, hasSavedPassword, isR
       label={label}
       hint={
         <>
-          {/* The box is described by the hint, so a screen reader also tells to type the password again */}
-          {hint.mustTypeAgain ? <span className="font-semibold text-primary-text">{hint.text}</span> : hint.text}{' '}
+          {/* The box is described by the hint, so a screen reader also tells to type the password again.
+              The live region is always there, so a screen reader also says the text when it comes. */}
+          <span aria-live="polite">
+            {hint.mustTypeAgain && <span className="font-semibold text-primary-text">{hint.text}</span>}
+          </span>
+          {!hint.mustTypeAgain && hint.text}{' '}
           {hasSavedPassword && (
             <button
               type="button"
