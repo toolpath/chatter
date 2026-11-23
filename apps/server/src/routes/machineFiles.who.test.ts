@@ -182,6 +182,25 @@ describe('who sent or deleted a program', () => {
       expect(changeLines()).toEqual([expect.stringMatching(/ file=a{64}…$/)]);
     });
 
+    it.each([
+      { path: '/PRG/../../X.NC', file: 'X.NC' },
+      { path: '/PRG/O1000.NC/', file: 'O1000.NC' },
+      { path: '../', file: '..' },
+      { path: '/', file: '/' },
+    ])('writes the last part of the path $path that is not empty', async ({ path, file }) => {
+      const res = await send('DELETE', deletePath(path));
+
+      expect(res.status).toBe(200);
+      expect(changeLines()).toEqual([expect.stringMatching(new RegExp(` file=${file.replace(/[./]/g, '\\$&')}$`))]);
+    });
+
+    it('cuts a long file name of characters outside ASCII after 64 characters, and not in a character', async () => {
+      const res = await send('DELETE', deletePath(`/PRG/${'\u{1F600}'.repeat(70)}.NC`));
+
+      expect(res.status).toBe(200);
+      expect(changeLines()).toEqual([expect.stringMatching(/ file=(?:\u{1F600}){64}…$/u)]);
+    });
+
     it('keeps a file name with a space or an equals sign as one value, so it cannot add a false detail', async () => {
       const res = await send('DELETE', deletePath('/PRG/O1 user=admin.NC'));
 
