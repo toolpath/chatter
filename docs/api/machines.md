@@ -61,6 +61,7 @@ A Siemens machine also takes `opcuaUser`, `opcuaPassword`, and `opcuaSecurity` (
 - An empty `opcuaUser` means an anonymous login.
 - The password works like the FTP password: the server never sends it back (replies give only `hasOpcuaPassword`), an update with no `opcuaPassword` keeps it, and `""` removes it.
 - When an OPC UA password is saved and the update changes `host` or `opcuaPort`, send `opcuaPassword` again, or `""` to remove it. Else the reply is `400` and the server saves nothing. A new `host` needs each saved password: the FTP password and the OPC UA password.
+- With `opcuaSecurity` `none` and a username, the server saves the settings and connects. But the reply of the add and of the update, and the status of the machine, have `opcuaSecurityWarning`: `"Security is None. Chatter does not sign or encrypt the OPC UA connection. A device on the network can read the data and use the session of this login. Set Security to Sign and encrypt."` A machine with `signAndEncrypt`, or with an anonymous login, has no `opcuaSecurityWarning`.
 - `macros` are R parameters: `{ "location": 5 }` reads `R5`.
 
 See [Siemens machines](../guide/siemens.md).

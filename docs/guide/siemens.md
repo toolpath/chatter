@@ -19,6 +19,8 @@ Add the machine with the type **Siemens SINUMERIK**. Then, on the machine page, 
 - **Security**: **None**, or **Sign and encrypt (Basic256Sha256)**.
 - **OPC UA username** and **OPC UA password**: the login from the control. Leave the username empty for an anonymous login.
 
+If you set a username and Security **None**, Chatter saves the settings and connects. But the status of the machine gives a warning: `Security is None. Chatter does not sign or encrypt the OPC UA connection. A device on the network can read the data and use the session of this login. Set Security to Sign and encrypt.` The warning stays until you set Security to **Sign and encrypt**, or remove the username. The server log also gets a warning each time a change sets this mix. An anonymous login gets no warning, because Chatter sends no login. For the reason, see [What the check protects](#what-the-check-protects).
+
 The server never sends the password back, the same as the FTP password. When you change the IP address or the OPC UA port, type the OPC UA password again. Chatter does not send a saved password to a new address. Before you save, the text under the password box tells you to type it again.
 
 ### Sign and encrypt
@@ -101,7 +103,7 @@ How much the check protects depends on the **Security** setting:
   - Chatter never sends the password with no encryption. If the control asks for the password with no encryption, or shows no certificate, Chatter does not send the password. The machine stays offline, and the machine page shows this error: `Chatter did not send the OPC UA password. Set Security to Sign and encrypt.`
   - With no username, Chatter connects with no password, also to a control that shows no certificate.
 
-With **None**, the values that Chatter reads are not encrypted, and a device in the middle can change them. To keep the login and the values safe, use **Sign and encrypt**.
+With **None**, the values that Chatter reads are not encrypted, and a device in the middle can change them. The device can also use the session after the login, with the rights of that user. So with a username and **None**, Chatter gives a warning (see [Add the machine](#add-the-machine)). To keep the login and the values safe, use **Sign and encrypt**.
 
 Chatter was not tested yet with a real SINUMERIK control that asks for the password with no encryption. If your control with Security **None** and a username shows the error above, set Security to **Sign and encrypt**.
 
