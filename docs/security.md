@@ -91,6 +91,7 @@ Chatter keeps an audit log in the data volume: `logs/audit.log`, at most 2 files
 - **Each password try has a line, but a flood gets a count.** The audit log and the server log write the first 20 tries with unknown usernames from one address in 15 minutes. Then they write one line that they stop. After the 15 minutes, the next password try writes one line with the count of the other tries. So a person with no login cannot push old lines out, and the log still counts each try. A restart of Chatter in these 15 minutes loses the count. The lock stops the tries with a known username (see above). The first-run setup, each refused setup, and `npm run reset-password` also get a line.
 - **The audit log has no secret.** A line never has a value of the body or of the query, a password, a token, or a cookie. Chatter hides secrets in the details as in the server log.
 - **Only an Admin can read the logs.** The server log, the live log, the login log (**Settings > Logins**), the log of the update helper, and the support bundle (which has the audit log) answer `403` to a Viewer and to an Operator. The connection health of a machine (`/api/machine/:id/health`) is machine status, not a log. Each logged-in user can read it (see [Diagnostics](#diagnostics)).
+- **Only an Admin can read the alert rules.** The rules are settings of a machine. `GET /api/machine/:id/alert-rules` answers `403` to a Viewer and to an Operator. These users see the alerts (`/api/alerts`): the name, the level, and the text of each alert. The name of a simple rule tells its limit, for example "Spindle load above 90%". The text can tell its minutes. These users do not see the query of a custom rule, or a rule that did not fire.
 - **The audit log is not proof.** A person with access to the data volume or to the server can change or delete the file. When the card is too slow, Chatter can drop lines, and it writes how many. When the files are full, Chatter deletes the oldest lines. Each logged-in user, also a Viewer, can send many requests that are not `GET`, and each one gets a line. So a user who sends many requests can push old lines out in some minutes. To keep the lines longer, copy the file to another computer.
 - **A request with no login gets no `Change` line.** Chatter refuses it before it can change something. The login and the setup have their own lines.
 
@@ -129,7 +130,7 @@ VictoriaMetrics (the machine history database) and vmalert have no login. Anyone
 - Each container on the network `history` can reach VictoriaMetrics and vmalert. Each container on the network `default` can reach port 3002. Do not add other services to this `docker-compose.yml`, and do not connect other containers to its networks.
 - Without Docker, Chatter listens on port 3002 only on `127.0.0.1`. Change `ALERT_HOST` only to an address that other computers cannot reach.
 
-Only an Admin can change the alert rules. A custom alert query can only read the machine history. It cannot change or delete data.
+Only an Admin can read and change the alert rules. A custom alert query can only read the machine history. It cannot change or delete data.
 
 ## Limit who can reach Chatter
 

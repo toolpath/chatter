@@ -126,7 +126,7 @@ Go to **Settings > Users and roles**, and click **Add user**. Give each person a
 |------|--------|
 | **Viewer** | See the machines and their history. See the names of the files. A Viewer cannot download or read a program, and cannot click **Sync** in the tool table. |
 | **Operator** | All that a Viewer can do. Download and read files. Send files to the machines, and delete files on them. Click **Sync** to read the tool table now. |
-| **Admin** | All that an Operator can do. Add, change, and delete machines. Manage the users and the settings. Update Chatter. |
+| **Admin** | All that an Operator can do. Add, change, and delete machines. See and change the alert rules. Manage the users and the settings. Update Chatter. |
 
 Give the username and the password to the person. They can change the password on **Settings > Your account**.
 
