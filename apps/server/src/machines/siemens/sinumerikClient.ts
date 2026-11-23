@@ -22,9 +22,7 @@ import type { AlarmEvent } from './sinumerikAlarms.js';
 import { sinumerikNodeId } from './sinumerikValues.js';
 
 /** How Chatter talks to the control: no security, or signed and encrypted with Basic256Sha256 */
-export type SinumerikSecurity = 'none' | 'signAndEncrypt';
-
-export const SINUMERIK_SECURITY_MODES: readonly SinumerikSecurity[] = ['none', 'signAndEncrypt'];
+type SinumerikSecurity = 'none' | 'signAndEncrypt';
 
 export interface SinumerikConnectOptions {
   host: string;
