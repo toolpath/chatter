@@ -84,7 +84,7 @@ A `Change` line has the user, the role, the method, the route, the status of the
 ```
 
 - The route is the pattern, for example `/api/machine/:id/files`, and the IDs come after it.
-- The line of a program delete has the name of the file after the IDs (`file=`), without the folder. Chatter adds the name before it deletes the file, so the line of a failed delete has it too. A send has no file name in its line: the upload history of the machine tells who sent each file.
+- The line of a program delete has the name of the file after the IDs (`file=`), without the folder. Chatter adds the name before it deletes the file, so the line of a delete that the machine refused has it too. Chatter refuses some deletes before it reads the path: a delete by a Viewer (`403`), or a path that is not valid (`400`). The line of such a delete has no file name. A send has no file name in its line: the upload history of the machine tells who sent each file.
 - A person can type any text in the place of an ID or a file name. So Chatter cuts each ID and each file name to 64 characters, and puts `…` at the end. A long username in a `Password try` line is cut the same way. A value with a space, a quote or `=` gets quotes, so it stays one value.
 - The line never has a value from the body of the request, a password, a token, or a cookie. From the query, it has only the file name of a delete. Chatter hides secrets as in the server log.
 - A request that failed with an unexpected error has the status `500`. Other errors keep their status, for example `413` for a body that is too large.
