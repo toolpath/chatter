@@ -207,8 +207,16 @@ export interface SiemensMachineData extends MachineData {
  * An Admin checks the control, and then trusts the new certificate with POST /api/machine/:id/opcua/trust-certificate.
  */
 export interface OpcUaCertificateChange {
-  /** The thumbprint (SHA-256, 64 hex digits) of the certificate that the control shows now. Null when it shows none. */
+  /**
+   * The thumbprint (SHA-256, 64 hex digits) of the certificate that the control shows now. Null when it shows none.
+   * Chatter keeps this thumbprint, and the trust route takes it.
+   */
   presentedThumbprint: string | null;
+  /**
+   * The SHA-1 thumbprint (40 hex digits) of the same certificate, to compare with the screen of the control, which can
+   * show only SHA-1. Only for that comparison: Chatter does not trust a certificate by its SHA-1. Null when it shows none.
+   */
+  presentedSha1Thumbprint: string | null;
 }
 
 export interface SiemensMachine extends BaseMachine {
