@@ -79,7 +79,7 @@ Chatter keeps each version of each program that it sends to a machine. To see th
 
 - An Operator and an Admin see who sent each version, for example "Sent by alice".
 - An Admin also sees the address of the computer that sent it, for example "Sent by alice from 192.168.1.20". This helps you find the computer when many people use one login.
-- A Viewer sees the date and the folder of each version. A Viewer does not see who sent it.
+- A Viewer sees the date, the folder and the name of each version. A Viewer does not see who sent it.
 - A version that an older Chatter sent shows "Sent by an unknown user". Older versions of Chatter did not record the user.
 
 A delete is not in the upload history. The [audit log](./logs.md#audit-log) records each delete.
