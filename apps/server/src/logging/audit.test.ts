@@ -10,7 +10,7 @@ import { ProxySettings } from '../auth/proxySettings.js';
 import { loggedInAuth } from '../auth/testSupport.js';
 import type { UserAccounts } from '../auth/userAccounts.js';
 import { testApp } from '../routes/testSupport.js';
-import { AUDIT_FILE_BYTES, auditLog, configureAudit, writeAudit } from './audit.js';
+import { addAuditDetail, AUDIT_FILE_BYTES, auditLog, configureAudit, writeAudit } from './audit.js';
 import { configureLogging } from './logger.js';
 import { ServerLog } from './ServerLog.js';
 import { captureAudit, captureLog, type CapturedAudit, type CapturedLog } from './testSupport.js';
@@ -293,6 +293,24 @@ describe('auditLog middleware', () => {
       expect((await app.request('/x/admin/200', { method: 'POST' })).status).toBe(403);
 
       expect(changeLines()).toEqual([expect.stringMatching(/ Change user=ann role=operator method=POST route=\/x\/:user\/:status status=403 address=unknown$/)]);
+    });
+
+    it('writes a detail that the route adds after the path parameters, and the detail replaces no fixed detail and no parameter', async () => {
+      const app = new Hono<LoggedInEnv>()
+        .use(asAnn)
+        .use(auditLog(ProxySettings.inMemory()))
+        .delete('/machine/:id/files', c => {
+          addAuditDetail(c, 'file', 'O1000.NC');
+          addAuditDetail(c, 'user', 'admin');
+          addAuditDetail(c, 'id', 'other-machine');
+          return c.json({});
+        });
+
+      expect((await app.request('/machine/m1/files?path=/O1000.NC', { method: 'DELETE' })).status).toBe(200);
+
+      expect(changeLines()).toEqual([
+        expect.stringMatching(/ Change user=ann role=operator method=DELETE route=\/machine\/:id\/files status=200 address=unknown id=m1 file=O1000\.NC$/),
+      ]);
     });
 
     it('writes a 500 also when the error goes on past the audit', async () => {
