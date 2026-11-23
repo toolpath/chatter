@@ -40,8 +40,11 @@ export interface AlertRules {
   clearNotice: () => void;
 }
 
-/** The alert rules of one machine: the saved list, the list that the user changes, and Save */
-export function useAlertRules(machineId: string): AlertRules {
+/**
+ * The alert rules of one machine: the saved list, the list that the user changes, and Save.
+ * Nothing loads until `isWanted` is true: only a role with manage-machines can read the rules.
+ */
+export function useAlertRules(machineId: string, isWanted: boolean): AlertRules {
   const [saved, setSaved] = useState<AlertRule[] | null>(null);
   const [draft, setDraft] = useState<DraftRule[]>([]);
   const [failed, setFailed] = useState(false);
@@ -51,6 +54,7 @@ export function useAlertRules(machineId: string): AlertRules {
   const [loadCount, setLoadCount] = useState(0);
 
   useEffect(() => {
+    if (!isWanted) return;
     let stopped = false;
     fetchAlertRules(machineId).then(
       rules => {
@@ -66,7 +70,7 @@ export function useAlertRules(machineId: string): AlertRules {
     return () => {
       stopped = true;
     };
-  }, [machineId, loadCount]);
+  }, [machineId, isWanted, loadCount]);
 
   const edit = useCallback((update: (rules: DraftRule[]) => DraftRule[]) => {
     setDraft(update);

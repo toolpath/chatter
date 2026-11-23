@@ -1,5 +1,6 @@
 import { Link } from 'react-router';
 import type { MachineAlert } from '../../api/alerts';
+import { useCan } from '../../components/CurrentUser';
 import { Panel } from '../../components/ui/Panel';
 import { ShowMoreFooter } from '../../components/ui/ShowMoreFooter';
 import { StatusDot } from '../../components/ui/StatusDot';
@@ -19,6 +20,8 @@ export function AlertsPanel({ machineId, alerts: { alerts, loaded, failed } }: {
   const { firing, past } = splitFiring(alerts);
   const { shown: shownPast, total: pastCount, showMore } = useShownItems(past, PAST_ALERTS_PAGE_SIZE, machineId);
   const firingCount = firing.length;
+  // Only a role with manage-machines can read the rules, so only that role gets the link
+  const canManageMachines = useCan('manage-machines');
 
   return (
     <Panel
@@ -28,8 +31,13 @@ export function AlertsPanel({ machineId, alerts: { alerts, loaded, failed } }: {
       {failed && <p className="m-0 px-5 py-4 text-alarm-soft">Could not load the alerts. Chatter tries again in 15 seconds.</p>}
       {loaded && !failed && alerts.length === 0 && (
         <p className="m-0 px-5 py-4 text-zinc-300">
-          No alerts in the last 7 days. Set the rules in{' '}
-          <Link to={tabLink('settings', SETTINGS_SECTION_IDS.alertRules)} className="font-semibold text-primary-text">Settings › Alert rules</Link>.
+          No alerts in the last 7 days.
+          {canManageMachines && (
+            <>
+              {' '}Set the rules in{' '}
+              <Link to={tabLink('settings', SETTINGS_SECTION_IDS.alertRules)} className="font-semibold text-primary-text">Settings › Alert rules</Link>.
+            </>
+          )}
         </p>
       )}
       {alerts.length > 0 && (

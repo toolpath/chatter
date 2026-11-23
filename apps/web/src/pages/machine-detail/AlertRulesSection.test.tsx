@@ -26,7 +26,7 @@ const HIGH_LOAD: AlertRule = {
 const OTHER_MACHINES = [{ id: 'm2', name: 'Brother 2' }, { id: 'm3', name: 'Haas 3' }];
 
 function Section() {
-  const rules = useAlertRules('m1');
+  const rules = useAlertRules('m1', true);
   return <AlertRulesSection machineId="m1" otherMachines={OTHER_MACHINES} rules={rules} />;
 }
 
