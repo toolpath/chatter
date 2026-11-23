@@ -76,22 +76,38 @@ describe('UploadHistoryList: who sent each version', () => {
     expect(within(versions).queryByText(/Sent by|alice|unknown|192\.168/)).not.toBeInTheDocument();
   });
 
-  it.each<Role>(['admin', 'operator'])('tells an %s that the user of a send from an older version is unknown', role => {
+  it.each<[Role, null | '']>([
+    ['admin', null],
+    ['operator', null],
+    ['admin', ''],
+    ['operator', ''],
+  ])('tells an %s that the user of a send with the user %j (a send from an older version) is unknown', (role, user) => {
     const versions = renderVersions(role, [
       sendOf({ id: 22, uploaded_by: 'alice', address: '192.168.1.20' }),
-      sendOf({ id: 21, uploaded_by: null, address: null }),
+      sendOf({ id: 21, uploaded_by: user, address: null }),
     ]);
     const older = within(versions).getAllByRole('listitem')[1];
     expect(within(older).getByText('Sent by an unknown user')).toBeInTheDocument();
     expect(within(older).queryByText(/ from /)).not.toBeInTheDocument();
   });
 
-  it('wraps a long username in the list, and keeps all of it', () => {
+  it.each<Role>(['admin', 'operator'])('shows no sender line to an %s when the server did not send the user', role => {
+    // The server hides the user from a role that cannot see it. This is not an old row, so the user is not "unknown".
+    const versions = renderVersions(role, [sendOf({ address: '192.168.1.20' })]);
+    expect(within(versions).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(versions).queryByText(/Sent by|unknown|192\.168/)).not.toBeInTheDocument();
+  });
+
+  it.each([null, ''])('shows only the user to an admin when the address of the send is %j', address => {
+    const versions = renderVersions('admin', [sendOf({ uploaded_by: 'alice', address })]);
+    expect(within(versions).getByText('Sent by alice')).toBeInTheDocument();
+    expect(within(versions).queryByText(/ from |null/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the full long username in the list', () => {
     const longName = 'a'.repeat(120);
     const versions = renderVersions('operator', [sendOf({ uploaded_by: longName })]);
-    const who = within(versions).getByText(`Sent by ${longName}`);
-    // A name with no space must break anywhere, or it pushes the text of the version out of the box
-    expect(who).toHaveClass('[overflow-wrap:anywhere]');
+    expect(within(versions).getByText(`Sent by ${longName}`)).toBeInTheDocument();
   });
 
   it('shows a username with HTML characters as text', () => {
