@@ -431,6 +431,112 @@ describe('ChannelForm', () => {
     });
   });
 
+  // The server refuses a save or a test that moves a saved secret (problemWithMovedSecrets), so the form tells it first
+  describe('a saved secret and a new address', () => {
+    const SECRET_AGAIN = 'Type the Secret again. You changed the Web address. Chatter does not send a saved secret to a new address.';
+    const secretBox = () => screen.getByLabelText('Secret (optional)');
+    const ntfy: NotificationChannel = {
+      ...slack, id: 'phones', type: 'ntfy', name: 'Phones', settings: { topic: 'shop', url: 'https://ntfy.example.com' }, hasSecret: { token: true },
+    };
+
+    it('asks for the secret again after a change of the address', () => {
+      renderForm({ channel: slack });
+
+      type('Web address', 'https://hooks.slack.com/y');
+
+      expect(secretBox()).toHaveAccessibleDescription(SECRET_AGAIN);
+      expect(screen.getByText(SECRET_AGAIN)).toHaveClass('text-primary-text');
+      expect(secretBox()).not.toHaveAttribute('placeholder');
+    });
+
+    it('asks for the secret again when the admin empties the address', () => {
+      renderForm({ channel: ntfy });
+
+      type('Server (optional)', '');
+
+      expect(screen.getByLabelText('Access token (optional)'))
+        .toHaveAccessibleDescription('Type the Access token again. You changed the Server. Chatter does not send a saved secret to a new address.');
+    });
+
+    it('keeps the hint of the type in the description', () => {
+      const twilioWithAddress: ChannelTypeInfo = {
+        ...TYPES[0], fields: [...TYPES[0].fields, { key: 'url', label: 'API address', kind: 'url', required: false }],
+      };
+      renderForm({
+        types: [twilioWithAddress],
+        channel: { ...slack, type: 'twilio-sms', settings: { accountSid: 'AC1', to: ['+15559870001'], url: 'https://api.twilio.com' }, hasSecret: { authToken: true } },
+      });
+
+      type('API address', 'https://api.example.com');
+
+      expect(screen.getByLabelText('Auth token')).toHaveAccessibleDescription(
+        'Chatter keeps the token secret. Type the Auth token again. You changed the API address. Chatter does not send a saved secret to a new address.',
+      );
+    });
+
+    it('stops asking when the admin types the secret', () => {
+      renderForm({ channel: slack });
+
+      type('Web address', 'https://hooks.slack.com/y');
+      type('Secret (optional)', 'new-secret');
+
+      expect(screen.queryByText(SECRET_AGAIN)).not.toBeInTheDocument();
+    });
+
+    it('still asks when the admin types only spaces, because the server keeps the saved secret then', () => {
+      renderForm({ channel: slack });
+
+      type('Web address', 'https://hooks.slack.com/y');
+      type('Secret (optional)', '   ');
+
+      expect(screen.getByText(SECRET_AGAIN)).toBeInTheDocument();
+    });
+
+    it('stops asking when the admin deletes the saved secret', () => {
+      renderForm({ channel: slack });
+
+      type('Web address', 'https://hooks.slack.com/y');
+      fireEvent.click(screen.getByLabelText('Delete the saved secret'));
+
+      expect(screen.queryByText(SECRET_AGAIN)).not.toBeInTheDocument();
+    });
+
+    it('does not ask for spaces around the saved address, because the server removes them', () => {
+      renderForm({ channel: slack });
+
+      type('Web address', '  https://hooks.slack.com/x  ');
+
+      expect(screen.queryByText(SECRET_AGAIN)).not.toBeInTheDocument();
+      expect(secretBox()).toHaveAttribute('placeholder', 'Saved. Leave it empty to keep it.');
+    });
+
+    it('does not ask after a change of a field that is not an address', () => {
+      renderForm({ channel: ntfy });
+
+      type('Topic', 'night-shift');
+      type('Name', 'Night phones');
+
+      expect(screen.queryByText(/again/)).not.toBeInTheDocument();
+    });
+
+    it('does not ask when no secret is saved', () => {
+      renderForm({ channel: { ...slack, hasSecret: { secret: false } } });
+
+      type('Web address', 'https://hooks.slack.com/y');
+
+      expect(screen.queryByText(SECRET_AGAIN)).not.toBeInTheDocument();
+    });
+
+    it('does not ask in the form of a new channel', () => {
+      renderForm();
+      fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'webhook' } });
+
+      type('Web address', 'https://hooks.slack.com/y');
+
+      expect(screen.queryByText(SECRET_AGAIN)).not.toBeInTheDocument();
+    });
+  });
+
   it('sends a test of a form that is not saved, and shows why it failed', async () => {
     vi.mocked(sendTestMessage).mockResolvedValue({ ok: false, error: 'Twilio does not accept the Auth token.' });
     const { onTested } = renderForm();
