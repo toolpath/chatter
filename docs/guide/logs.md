@@ -57,15 +57,20 @@ Each poll of a machine must end in 10 seconds. A Brother answers each request in
 The audit log tells who changed what, and each try to log in. Chatter writes it in a separate file, so busy machines cannot push old lines out of it.
 
 - **Where:** `logs/audit.log` in the data volume, next to `chatter.db`. With Docker, the volume is `chatter_chatterbox-data`.
-- **How long Chatter keeps it:** at most 2 files of 5 MB (`audit.log` and the old file `audit.log.1`). When `audit.log` is full, it becomes `audit.log.1`, and Chatter deletes the old `audit.log.1`. The two files keep about 50,000 lines. In a small shop, this is many months.
-- **Who can read it:** only an Admin. The [support bundle](./diagnostics.md#support-bundle) in **Settings > Diagnostics** has the two files. A Viewer and an Operator cannot read any log.
+- **How long Chatter keeps it:** at most 2 files of 5 MB (`audit.log` and the old file `audit.log.1`). When `audit.log` is full, it becomes `audit.log.1`, and Chatter deletes the old `audit.log.1`. The two files keep about 50,000 lines. In a small shop, this is many months. But a logged-in user who sends many requests can push old lines out in some minutes (see [Security](../security.md#audit)).
+- **Who can read it:** only an Admin. The [support bundle](./diagnostics.md#support-bundle) in **Settings > Diagnostics** has the two files. A Viewer and an Operator cannot read the server log, the login log, or the audit log. The connection health of a machine is machine status, not a log. Each logged-in user can read it.
+- **Format:** always text, as in the example below. `LOG_FORMAT=json` does not change the audit file, so a log collector that reads JSON cannot read it.
 
 The audit log has a line for each of these:
 
 | Message | When |
 |---------|------|
 | `Change` | A logged-in user sends a request that can change something: each method except `GET`. For example, an upload, a delete, a new machine, or a new setting. The line is there also when Chatter refuses the request. |
-| `Password try` | Each try to log in or to change a password, also each try with an unknown username. The server log keeps only the first 20 tries with unknown usernames from one address in 15 minutes. The audit log keeps all. |
+| `Password try` | Each try to log in or to change a password. For tries with unknown usernames, see the next two lines. |
+| `More password tries with unknown usernames from this address are not logged one by one` | One address sent more than 20 tries with unknown usernames in 15 minutes. The audit log and the server log write only the first 20. |
+| `Password tries with unknown usernames that had no line` | The 15 minutes of that address ended. The line has the count of the tries that had no line, so the log counts each try. The next password try writes this line. If Chatter stops before, the count is lost. |
+| `Logged out` | A user logged out |
+| `Logged out the other browsers` | A user logged out each other browser of the account |
 | `First-run setup made a new Admin` | The first visitor made the Admin account |
 | `First-run setup refused` | A person tried the setup when an Admin existed. The line has the address only. |
 | `reset-password made a new Admin` | A person ran `npm run reset-password` on the server |
@@ -79,8 +84,9 @@ A `Change` line has the user, the role, the method, the route, the status of the
 ```
 
 - The route is the pattern, for example `/api/machine/:id/files`, and the IDs come after it. The line has no file name and no other value of the request.
+- A person can type any text in the place of an ID. So Chatter cuts each ID to 64 characters, and puts `…` at the end. A long username in a `Password try` line is cut the same way.
 - The line never has a value from the body or the query of the request, a password, a token, or a cookie. Chatter hides secrets as in the server log.
-- A request that failed in Chatter has the status `500`.
+- A request that failed with an unexpected error has the status `500`. Other errors keep their status, for example `413` for a body that is too large.
 - A request with no login does not get a `Change` line. Chatter refuses it before it can change something.
 - The server log also gets each `Change` line.
 - `LOG_LEVEL` does not change the audit log. `LOG_FILE=off` turns off the audit file too. Then the `Change` lines are only in the server log.
