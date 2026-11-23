@@ -1,4 +1,4 @@
-import type { AlertSeverity, ChannelField, ChannelFieldValue, ChannelValues } from '@local-chatter/shared';
+import { channelFieldLabels, movedChannelSecrets, type AlertSeverity, type ChannelField, type ChannelValues } from '@local-chatter/shared';
 import type { ChannelInput, ChannelTypeInfo, NotificationChannel } from '../../api/notifications';
 
 /** What the channel form holds while the admin types. A phone list has one empty box, so the admin can type the first number. */
@@ -54,28 +54,18 @@ export function channelInputOf(form: ChannelFormState): ChannelInput {
 
 /**
  * The text for each saved secret that the admin must type again, by the key of its field.
- * The server sends a saved secret only to the address where the admin saved it (problemWithMovedSecrets in ChannelStore).
- * So it refuses a save or a test that changes a `url` field and keeps a saved secret. The rules here are the same:
- * the server gets the trimmed values of channelInputOf, and an empty secret keeps the saved one unless the admin deletes it.
+ * The server sends a saved secret only to the address where the admin saved it, so it refuses a save or a test
+ * that changes a `url` field and keeps a saved secret. The rule is in the shared package (movedChannelSecrets),
+ * and the server uses it too. The server gets the values of channelInputOf.
  */
 export function secretsToTypeAgain(form: ChannelFormState, channel: NotificationChannel | undefined, type: ChannelTypeInfo): Record<string, string> {
   if (!channel || channel.type !== type.id) return {};
   const { values, clearSecrets = [] } = channelInputOf(form);
-  const changed = type.fields.filter(field => field.kind === 'url' && addressOf(values[field.key]) !== addressOf(channel.settings[field.key]));
-  const kept = type.fields.filter(field => field.kind === 'secret' && channel.hasSecret[field.key] === true
-    && addressOf(values[field.key]) === '' && !clearSecrets.includes(field.key));
-  if (changed.length === 0) return {};
-  const reason = `You changed the ${labelsOf(changed)}. Chatter does not send a saved secret to a new address.`;
-  return Object.fromEntries(kept.map(field => [field.key, `Type the ${labelsOf([field])} again. ${reason}`]));
-}
-
-/** A field that is not there, or not text, is the default address of the type, for example ntfy.sh */
-function addressOf(value: ChannelFieldValue | undefined): string {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-function labelsOf(fields: ChannelField[]): string {
-  return fields.map(field => field.label.replace(/ \(optional\)$/, '')).join(' and the ');
+  const moved = movedChannelSecrets(type.fields, values, channel.settings,
+    key => channel.hasSecret[key] === true && !clearSecrets.includes(key));
+  if (!moved) return {};
+  const reason = `You changed the ${channelFieldLabels(moved.changed)}. Chatter does not send a saved secret to a new address.`;
+  return Object.fromEntries(moved.kept.map(field => [field.key, `Type the ${channelFieldLabels([field])} again. ${reason}`]));
 }
 
 function emptyValuesOf(fields: ChannelField[]): ChannelValues {
