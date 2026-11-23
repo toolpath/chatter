@@ -41,6 +41,7 @@ import { ReleaseWatcher, releasesRepo, sqliteCheckSettingStore } from './updates
 import { createLogger } from './logging/logger.js';
 import { ConnectionLog } from './logging/ConnectionLog.js';
 import { startServerLog } from './logging/startServerLog.js';
+import { writeAudit } from './logging/audit.js';
 
 const log = createLogger('server');
 
@@ -139,6 +140,8 @@ async function start(): Promise<void> {
     });
     await historyBackup.removeLeftovers();
     log.info('Chatter started', { version, logLevel: process.env.LOG_LEVEL || 'info' });
+    // The audit log tells each start, so a gap in the lines has a reason
+    writeAudit('Chatter started', { version });
     if (TWILIO_ADDRESS.warning) log.warn(TWILIO_ADDRESS.warning);
     // Asks GitHub once a day for the newest release, while the Admin has the check on (the default)
     const releases = new ReleaseWatcher({ repo: releasesRepo(), store: sqliteCheckSettingStore(settings) });
@@ -187,7 +190,7 @@ async function start(): Promise<void> {
       }
       await focasStopped;
       await closeDatabase();
-      await serverLog.file?.close();
+      await serverLog.close();
       server.close(() => process.exit(0));
       // The live event streams stay open until they are closed
       server.closeAllConnections();

@@ -352,6 +352,42 @@ describe('LoginLimiter tries with an unknown username', () => {
 
     expect(limiter.countUnknownUser('10.0.0.5')).toBe(MAX_LOGGED_UNKNOWN_USERS + 1);
   });
+
+  describe('the floods that ended', () => {
+    it('gives each address group that had more tries than the logs write, one time, after its 15 minutes', () => {
+      let now = 0;
+      const limiter = new LoginLimiter(() => now);
+      for (let i = 0; i < MAX_LOGGED_UNKNOWN_USERS + 3; i++) limiter.countUnknownUser('10.0.0.5');
+      for (let i = 0; i < MAX_LOGGED_UNKNOWN_USERS; i++) limiter.countUnknownUser('10.0.0.6');
+      expect(limiter.takeEndedUnknownUserFloods()).toEqual([]);
+
+      now = FIFTEEN_MINUTES + 1;
+
+      expect(limiter.takeEndedUnknownUserFloods()).toEqual([{ address: '10.0.0.5', notLogged: 3 }]);
+      expect(limiter.takeEndedUnknownUserFloods()).toEqual([]);
+    });
+
+    it('gives the flood of an address group also when the next try of that group comes first', () => {
+      let now = 0;
+      const limiter = new LoginLimiter(() => now);
+      for (let i = 0; i < MAX_LOGGED_UNKNOWN_USERS + 2; i++) limiter.countUnknownUser('2001:db8:1:2::66');
+
+      now = FIFTEEN_MINUTES + 1;
+      expect(limiter.countUnknownUser('2001:db8:1:2::67')).toBe(1);
+
+      expect(limiter.takeEndedUnknownUserFloods()).toEqual([{ address: '2001:db8:1:2::/64', notLogged: 2 }]);
+    });
+
+    it('gives the flood of an address group that a full list pushed out early', () => {
+      const limiter = new LoginLimiter();
+      for (let i = 0; i < MAX_LOGGED_UNKNOWN_USERS + 1; i++) limiter.countUnknownUser('10.0.0.5');
+      for (let i = 0; i < 2000; i++) {
+        for (let j = 0; j < MAX_LOGGED_UNKNOWN_USERS + 2; j++) limiter.countUnknownUser(`10.1.${Math.floor(i / 250)}.${i % 250}`);
+      }
+
+      expect(limiter.takeEndedUnknownUserFloods()).toContainEqual({ address: '10.0.0.5', notLogged: 1 });
+    });
+  });
 });
 
 describe('LoginLimiter log', () => {

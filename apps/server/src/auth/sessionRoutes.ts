@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Auth, UserSession } from './Auth.js';
 import { checkedSession, currentSession, knownDevice, logInFirst, markSessionSeen, setDeviceCookie, type LoginGuard } from './authRoutes.js';
 import { deviceName } from './deviceName.js';
+import { writeAuditAndLog } from '../logging/audit.js';
 import { originOf } from './requestOrigin.js';
 
 /** The browsers where the user is logged in, as the "Your account" tab shows them */
@@ -43,8 +44,11 @@ export function sessionRoutes(guard: Pick<LoginGuard, 'auth' | 'proxySettings'>)
       const { username } = current.user;
       const wasKnown = knownDevice(c, auth, username) !== undefined;
       auth.logOutOtherBrowsers(current);
+      // A person who took over the account can log out the real user, so the audit log tells it
+      const origin = originOf(c, proxySettings);
+      writeAuditAndLog('Logged out the other browsers', { user: username, address: origin.address });
       // The device cookie of this browser stops too, so a known browser gets a new one and stays known
-      if (wasKnown) setDeviceCookie(c, auth, originOf(c, proxySettings), username);
+      if (wasKnown) setDeviceCookie(c, auth, origin, username);
       return c.json(sessionsReport(auth, current));
     });
 }

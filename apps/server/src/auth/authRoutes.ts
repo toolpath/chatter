@@ -12,6 +12,7 @@ import type { RequestOrigin } from './proxyTrust.js';
 import { originOf } from './requestOrigin.js';
 import { SESSION_LIFETIME_SECONDS, type SessionClient } from './sessionStore.js';
 import { UsernameTakenError } from './userStore.js';
+import { cutValue, writeAudit, writeAuditAndLog } from '../logging/audit.js';
 import { createLogger } from '../logging/logger.js';
 
 const log = createLogger('auth');
@@ -140,6 +141,11 @@ const tooManyTries = (c: Context) =>
   c.json({
     error: `Too many wrong passwords. Try again in up to ${LOCK_MINUTES} minutes, or ask an Admin to unlock you in Settings > Logins.`,
   }, 429);
+/** The audit log tells the address of each setup that Chatter refuses, but not the username, which a person can mistype */
+function setUpClosed(c: Context, origin: RequestOrigin) {
+  writeAudit('First-run setup refused', { address: origin.address });
+  return c.json({ error: SETUP_CLOSED }, 409);
+}
 const wrongLogin = (c: Context) => c.json({ error: 'Wrong username or password' }, 401);
 
 type Checked<Value> = { ok: true; value: Value } | { ok: false; reply: Response };
@@ -185,25 +191,36 @@ async function withPasswordCheck<Value>(
 /** Results of a password try that are not a problem. The other results can show an attack, so they are warnings. */
 const GOOD_RESULTS: readonly LoginResult[] = ['logged-in', 'password-changed'];
 
+/** A line in the audit log and in the server log */
+function warnAndAudit(message: string, details: Record<string, unknown>): void {
+  log.warn(message, details);
+  writeAudit(message, details);
+}
+
 /**
- * Write each password try in the server log, also when the login log cannot save it.
- * The login log keeps only the last 50 tries. The server log usually keeps more, but it is only 2 files of 1 MB.
- * So it keeps only the first MAX_LOGGED_UNKNOWN_USERS tries with an unknown username from one address in LOCK_MINUTES.
+ * Write each password try in the audit log and in the server log, also when the login log cannot save it.
+ * The login log keeps only the last 50 tries. The audit log and the server log have a limit of size,
+ * so they write only the first MAX_LOGGED_UNKNOWN_USERS tries with an unknown username from one address in LOCK_MINUTES.
+ * When that time ends, the next password try writes the count of the other tries. A long username is cut.
  * Never log the password or the cookie.
  */
 function logTry(
   limiter: LoginLimiter,
   { username, address, result, device }: { username: string; address: string; result: LoginResult; device?: string },
 ) {
+  for (const { address: group, notLogged } of limiter.takeEndedUnknownUserFloods()) {
+    warnAndAudit('Password tries with unknown usernames that had no line', { address: group, count: notLogged });
+  }
   if (result === 'no-such-user') {
     const count = limiter.countUnknownUser(address);
     if (count === MAX_LOGGED_UNKNOWN_USERS + 1) {
-      log.warn('More password tries with unknown usernames from this address are not logged', { address, minutes: LOCK_MINUTES });
+      warnAndAudit('More password tries with unknown usernames from this address are not logged one by one', { address, minutes: LOCK_MINUTES });
     }
     if (count > MAX_LOGGED_UNKNOWN_USERS) return;
   }
-  // The login log on the Logins tab does not show the device, so the server log tells it
-  const details = { username, address, result, ...(device ? { knownDevice: true } : {}) };
+  // The login log on the Logins tab does not show the device, so the audit log and the server log tell it
+  const details = { username: cutValue(username), address, result, ...(device ? { knownDevice: true } : {}) };
+  writeAudit('Password try', details);
   if (GOOD_RESULTS.includes(result)) log.info('Password try', details);
   else log.warn('Password try failed', details);
 }
@@ -319,14 +336,16 @@ export function authRoutes(guard: LoginGuard) {
       try {
         const setUp = c.req.valid('json');
         const token = await auth.setUp(setUp, clientOf(c, origin));
-        if (!token) return c.json({ error: SETUP_CLOSED }, 409);
+        if (!token) return setUpClosed(c, origin);
         // Only the first visitor can make an Admin, so the log tells who did it
-        log.warn('First-run setup made a new Admin', { username: setUp.username, address: origin.address });
+        const details = { username: setUp.username, address: origin.address };
+        log.warn('First-run setup made a new Admin', details);
+        writeAudit('First-run setup made a new Admin', details);
         return replyLoggedIn(c, auth, origin, token, setUp.username);
       } catch (error) {
         // A user who is not an admin can have this username, in the database of an older version after its
         // reset-password. The same reply as for a closed setup does not tell that the username exists.
-        if (error instanceof UsernameTakenError) return c.json({ error: SETUP_CLOSED }, 409);
+        if (error instanceof UsernameTakenError) return setUpClosed(c, origin);
         throw error;
       }
     })
@@ -346,7 +365,11 @@ export function authRoutes(guard: LoginGuard) {
 
     .post('/auth/logout', c => {
       const session = currentSession(c, auth);
-      if (session) auth.logOut(session);
+      if (session) {
+        auth.logOut(session);
+        // The routes of the login come before the audit middleware (app.ts), so they write their own lines
+        writeAuditAndLog('Logged out', { user: session.user.username, address: originOf(c, proxySettings).address });
+      }
       deleteCookie(c, SESSION_COOKIE, { path: SESSION_COOKIE_PATH });
       return c.json({ loggedIn: false });
     })

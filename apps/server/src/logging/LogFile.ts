@@ -18,6 +18,7 @@ export class LogFile {
   private size = 0;
   private droppedLines = 0;
   private isBroken = false;
+  private isClosed = false;
   /** The old files that still get their last lines */
   private readonly endings = new Set<Promise<void>>();
 
@@ -30,6 +31,11 @@ export class LogFile {
 
   write(text: string): void {
     if (this.isBroken) return;
+    // A request that ends while Chatter stops. A new stream would not end before the exit, so the line is written at once.
+    if (this.isClosed) {
+      appendToExistingLog(this.filePath, text);
+      return;
+    }
     const line = `${text}\n`;
     const bytes = Buffer.byteLength(line);
     const stream = this.openStream();
@@ -48,6 +54,7 @@ export class LogFile {
 
   /** Ends the file, with the number of lines dropped since the last line. The promise ends when each line is on the card. */
   async close(): Promise<void> {
+    this.isClosed = true;
     const stream = this.stream;
     this.stream = null;
     if (stream) {

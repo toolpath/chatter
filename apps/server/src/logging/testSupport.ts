@@ -1,3 +1,4 @@
+import { configureAudit } from './audit.js';
 import { configureLogging, type LogLevel } from './logger.js';
 
 export interface CapturedLog {
@@ -20,4 +21,18 @@ export function captureLog(): CapturedLog {
       configureLogging(old);
     },
   };
+}
+
+export interface CapturedAudit {
+  /** Each line of the audit log, as text */
+  lines: string[];
+  /** Write the audit log as before */
+  restore(): void;
+}
+
+/** Keep the lines of the audit log in a list. Call restore() at the end of the test. */
+export function captureAudit(): CapturedAudit {
+  const lines: string[] = [];
+  const old = configureAudit(text => lines.push(text));
+  return { lines, restore: () => configureAudit(old) };
 }
