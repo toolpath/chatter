@@ -25,6 +25,7 @@ describe('who sent or deleted a program', () => {
   let auth: Auth;
   let accounts: UserAccounts;
   let operatorCookie: string;
+  let viewerCookie: string;
   let poller: HardwarePoller;
   let connector: BaseMachineConnector;
   let machineId: string;
@@ -37,6 +38,9 @@ describe('who sent or deleted a program', () => {
     const login = { username: 'olga', password: 'test-password' };
     await accounts.add({ ...login, role: 'operator' });
     operatorCookie = `${SESSION_COOKIE}=${await auth.logIn(login, { userAgent: 'test browser', address: '127.0.0.1' })}`;
+    const viewer = { username: 'vic', password: 'test-password' };
+    await accounts.add({ ...viewer, role: 'viewer' });
+    viewerCookie = `${SESSION_COOKIE}=${await auth.logIn(viewer, { userAgent: 'test browser', address: '127.0.0.1' })}`;
   });
 
   beforeEach(async () => {
@@ -101,6 +105,35 @@ describe('who sent or deleted a program', () => {
         { target_name: 'O2000.NC', remote_path: '/PRG/O2000.NC', action: 'sent', uploaded_by: 'olga', address: COMPUTER },
       ]);
     });
+
+    it('records only the files of a batch that reached the machine', async () => {
+      vi.mocked(connector.uploadFiles).mockResolvedValue({
+        success: [{ remotePath: '/PRG/O1000.NC' }],
+        failed: [{ remotePath: '/PRG/O2000.NC', error: '553 Could not create file' }],
+      });
+      const form = new FormData();
+      form.append('files', new File(['O1000\nM30\n'], 'O1000.NC'));
+      form.append('files', new File(['O2000\nM30\n'], 'O2000.NC'));
+      form.append('basePath', '/PRG');
+
+      const res = await send('POST', `/api/machine/${machineId}/files/upload-batch`, form);
+
+      expect(res.status).toBe(200);
+      expect(rows()).toEqual([
+        { target_name: 'O1000.NC', remote_path: '/PRG/O1000.NC', action: 'sent', uploaded_by: 'olga', address: COMPUTER },
+      ]);
+    });
+
+    it('records the address of the connection when a computer that is not the proxy sends X-Forwarded-For', async () => {
+      const res = await app.request(`/api/machine/${machineId}/files/upload`, {
+        method: 'POST',
+        headers: { Cookie: operatorCookie, 'X-Forwarded-For': '10.0.0.1' },
+        body: uploadForm('/PRG/O1000.NC'),
+      }, { incoming: { socket: { remoteAddress: '192.168.1.99' } } });
+
+      expect(res.status).toBe(200);
+      expect(rows()).toEqual([expect.objectContaining({ uploaded_by: 'olga', address: '192.168.1.99' })]);
+    });
   });
 
   describe('a delete', () => {
@@ -122,6 +155,24 @@ describe('who sent or deleted a program', () => {
 
       expect(res.status).not.toBe(200);
       expect(changeLines()).toEqual([expect.stringMatching(new RegExp(` status=${res.status} .* file=O1000\\.NC$`))]);
+    });
+
+    // Chatter refuses these requests before the route reads the path, so the line has no file name (docs/guide/logs.md)
+    it('writes no file name when Chatter refuses the delete of a Viewer', async () => {
+      const res = await app.request(deletePath('/PRG/O1000.NC'), {
+        method: 'DELETE',
+        headers: { Cookie: viewerCookie, 'X-Forwarded-For': COMPUTER },
+      }, fromProxy);
+
+      expect(res.status).toBe(403);
+      expect(changeLines()).toEqual([expect.stringMatching(new RegExp(` user=vic .* status=403 address=192\\.168\\.1\\.20 id=${machineId}$`))]);
+    });
+
+    it('writes no file name when the path is not valid', async () => {
+      const res = await send('DELETE', deletePath('/PRG/O1000.NC\r\nDELE O1'));
+
+      expect(res.status).toBe(400);
+      expect(changeLines()).toEqual([expect.stringMatching(new RegExp(` status=400 address=192\\.168\\.1\\.20 id=${machineId}$`))]);
     });
 
     it('cuts a long file name to 64 characters and marks the cut, as the path parameters', async () => {
