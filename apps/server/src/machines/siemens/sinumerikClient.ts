@@ -84,7 +84,8 @@ let certificateManager: OPCUACertificateManager | null = null;
  * Keep the client certificate in this folder, which must survive updates (the data folder).
  * The operator trusts this certificate on the control once, so it must not change.
  */
-export function useSinumerikCertificateFolder(folder: string): void {
+export function useSinumerikCertificateFolder(folder: string | null): void {
+  certificateManager?.dispose().catch(() => undefined);
   certificateFolder = folder;
   certificateManager = null;
 }
@@ -139,21 +140,44 @@ function certificateOf(endpoint: EndpointDescription | undefined): Buffer | null
   return certificate && certificate.length > 0 ? certificate : null;
 }
 
+/** The host name and the port of an OPC UA address, to compare two addresses. Null when it is not an address. */
+function addressOf(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url.replace(/^opc\.tcp:/i, 'http:'));
+    return `${parsed.hostname.toLowerCase()}:${parsed.port}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The endpoint for one security. A control with more than one network can list each endpoint for each address, so the
+ * endpoint at the address that Chatter uses comes first. Else the first one, as node-opcua does when no address matches.
+ */
+function endpointFor(
+  endpoints: EndpointDescription[], endpointUrl: string, matches: (endpoint: EndpointDescription) => boolean,
+): EndpointDescription | undefined {
+  const candidates = endpoints.filter(matches);
+  const address = addressOf(endpointUrl);
+  return candidates.find(endpoint => address !== null && addressOf(endpoint.endpointUrl) === address) ?? candidates[0];
+}
+
 /**
  * The certificate that the control shows for the security that is set.
  * Sign and encrypt uses the certificate of its endpoint, and the session cannot open without the private key of it.
  * With no security, a control may give no certificate in its None endpoint, so the certificate of any endpoint counts.
  */
-function serverCertificateFor(endpoints: EndpointDescription[], security: SinumerikSecurity): Buffer | null {
+function serverCertificateFor(endpoints: EndpointDescription[], endpointUrl: string, security: SinumerikSecurity): Buffer | null {
   if (security === 'signAndEncrypt') {
-    const secure = endpoints.find(endpoint =>
+    const secure = endpointFor(endpoints, endpointUrl, endpoint =>
       endpoint.securityMode === MessageSecurityMode.SignAndEncrypt && endpoint.securityPolicyUri === SecurityPolicy.Basic256Sha256);
     if (!secure) throw new Error('The control has no OPC UA endpoint for Sign and encrypt (Basic256Sha256). Turn it on at the control.');
     const certificate = certificateOf(secure);
     if (!certificate) throw new Error('The Sign and encrypt endpoint of the control has no certificate');
     return certificate;
   }
-  const plain = endpoints.find(endpoint => endpoint.securityMode === MessageSecurityMode.None);
+  const plain = endpointFor(endpoints, endpointUrl, endpoint => endpoint.securityMode === MessageSecurityMode.None);
   return certificateOf(plain) ?? endpoints.map(certificateOf).find(certificate => certificate !== null) ?? null;
 }
 
@@ -164,7 +188,7 @@ async function readServerCertificate(
   const discovery = createClient({ ...clientOptions(options), securityMode: MessageSecurityMode.None, securityPolicy: SecurityPolicy.None });
   try {
     await discovery.connect(endpointUrl);
-    return serverCertificateFor(await discovery.getEndpoints(), options.security);
+    return serverCertificateFor(await discovery.getEndpoints(), endpointUrl, options.security);
   } finally {
     await discovery.disconnect().catch(() => undefined);
   }
