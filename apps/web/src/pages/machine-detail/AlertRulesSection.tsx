@@ -1,6 +1,5 @@
 import { Menu } from '@toolpath/ui';
 import { useState, type ComponentProps } from 'react';
-import { useCan } from '../../components/CurrentUser';
 import { Button } from '../../components/ui/Button';
 import { DocsLink } from '../../components/ui/DocsLink';
 import { ChevronDownIcon, PlusIcon } from '../../components/ui/icons';
@@ -16,9 +15,8 @@ interface AlertRulesSectionProps {
   rules: AlertRules;
 }
 
-/** The alert rules of one machine, as sentences. An admin changes the words, then clicks Save changes. */
+/** The alert rules of one machine, as sentences. Only an admin sees them. The admin changes the words, then clicks Save changes. */
 export function AlertRulesSection({ machineId, otherMachines, rules }: AlertRulesSectionProps) {
-  const canChange = useCan('manage-machines');
   const [isCopyOpen, setIsCopyOpen] = useState(false);
 
   if (rules.failed) {
@@ -37,21 +35,18 @@ export function AlertRulesSection({ machineId, otherMachines, rules }: AlertRule
     <div className="flex flex-col gap-3 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="m-0 text-[0.8125rem] text-zinc-200">
-          Chatter checks these rules for this machine every 15 seconds.
-          {canChange ? ' Click a word in a rule to change it.' : ' Only an admin can change them.'}
+          Chatter checks these rules for this machine every 15 seconds. Click a word in a rule to change it.
           {' '}<DocsLink page="guide/alerts">How alert rules work</DocsLink>
         </p>
-        {canChange && (
-          <div className="flex gap-2">
-            <Button onClick={() => setIsCopyOpen(true)}>Copy rules to other machines</Button>
-            <AddRuleMenu onAdd={rules.add} />
-          </div>
-        )}
+        <div className="flex gap-2">
+          <Button onClick={() => setIsCopyOpen(true)}>Copy rules to other machines</Button>
+          <AddRuleMenu onAdd={rules.add} />
+        </div>
       </div>
 
       {rules.draft.length === 0 ? (
         <p className="m-0 rounded-lg border border-dashed border-zinc-700 px-3 py-4 text-center text-zinc-300">
-          This machine has no alert rules.{canChange && ' Click + Add rule to make one.'}
+          This machine has no alert rules. Click + Add rule to make one.
         </p>
       ) : (
         <ul aria-label="Alert rules" className="m-0 flex list-none flex-col gap-2 p-0">
@@ -59,7 +54,6 @@ export function AlertRulesSection({ machineId, otherMachines, rules }: AlertRule
             <AlertRuleRow
               key={rule.key}
               rule={rule}
-              canChange={canChange}
               problem={problemOf(rule.key)}
               machineId={machineId}
               onChange={patch => rules.change(rule.key, patch)}
@@ -72,7 +66,7 @@ export function AlertRulesSection({ machineId, otherMachines, rules }: AlertRule
 
       {rules.problem && rules.problem.key === null && <Notice tone="error" title={rules.problem.message} />}
       <SaveNotice rules={rules} />
-      {canChange && rules.changes > 0 && <SaveBar rules={rules} />}
+      {rules.changes > 0 && <SaveBar rules={rules} />}
 
       {isCopyOpen && (
         <CopyRulesDialog

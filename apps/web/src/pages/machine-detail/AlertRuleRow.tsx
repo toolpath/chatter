@@ -32,13 +32,8 @@ const SEVERITY_CHOICES: Choice<AlertSeverity>[] = [
 ];
 const SEVERITY_COLORS: Record<AlertSeverity, string> = { warning: 'text-idle-text', critical: 'text-alarm-soft' };
 
-/** The look of a word that a viewer cannot change. It matches a choice button. */
-const FIXED_WORD = 'inline-flex h-6 items-center rounded border border-zinc-800 px-2 text-sm font-bold';
-
 export interface AlertRuleRowProps {
   rule: DraftRule;
-  /** False for a user who can only look */
-  canChange: boolean;
   /** The reason this rule cannot be saved, shown under it */
   problem: string | null;
   machineId: string;
@@ -49,7 +44,7 @@ export interface AlertRuleRowProps {
 
 /** One rule: an on/off switch, the rule, and a trash button */
 export function AlertRuleRow(props: AlertRuleRowProps) {
-  const { rule, canChange, problem, onChange, onRemove } = props;
+  const { rule, problem, onChange, onRemove } = props;
   const nameId = useId();
   const name = ruleName({ ...rule, id: rule.id ?? '' });
   return (
@@ -66,18 +61,15 @@ export function AlertRuleRow(props: AlertRuleRowProps) {
           aria-labelledby={nameId}
           checked={rule.enabled}
           onCheckedChange={enabled => onChange({ enabled })}
-          disabled={!canChange}
         />
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         {rule.kind === 'simple' ? <SimpleRule {...props} rule={rule} /> : <QueryRule {...props} rule={rule} />}
         {problem && <p role="alert" className="m-0 text-[0.8125rem] text-alarm-soft">{problem}</p>}
       </div>
-      {canChange && (
-        <Button variant="quiet" size="icon" aria-label={`Remove the rule ${name}`} onClick={onRemove}>
-          <TrashIcon />
-        </Button>
-      )}
+      <Button variant="quiet" size="icon" aria-label={`Remove the rule ${name}`} onClick={onRemove}>
+        <TrashIcon />
+      </Button>
     </li>
   );
 }
@@ -89,58 +81,58 @@ const SENTENCE_STARTS = { value: 'When this machine has', state: 'When this mach
  * "When this machine has [spindle load] [above] [90]% for [1] min, raise a [warning]."
  * An event has no minutes: "When this machine reports [program ended], raise a [warning]."
  */
-function SimpleRule({ rule, canChange, onChange, onMakeCustomQuery }: AlertRuleRowProps & { rule: SimpleDraft }) {
+function SimpleRule({ rule, onChange, onMakeCustomQuery }: AlertRuleRowProps & { rule: SimpleDraft }) {
   const subject = ALERT_SUBJECTS[rule.subject];
   return (
     <>
       <p className="m-0 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm leading-7 text-zinc-100">
         {SENTENCE_STARTS[subject.kind]}
-        <Word
-          label="What to check" canChange={canChange} choices={SUBJECT_CHOICES} value={rule.subject}
+        <ChoiceMenu
+          label="What to check" choices={SUBJECT_CHOICES} value={rule.subject}
           onChoose={id => onChange(subjectPatch(rule, id))}
         />
         {subject.kind === 'value' && (
           <>
-            <Word label="Above or below" canChange={canChange} choices={CHECK_CHOICES} value={rule.check} onChoose={check => onChange({ check })} />
-            <NumberBox label="Limit" value={rule.limit} canChange={canChange} wide onChange={limit => onChange({ limit })} />
+            <ChoiceMenu label="Above or below" choices={CHECK_CHOICES} value={rule.check} onChoose={check => onChange({ check })} />
+            <NumberBox label="Limit" value={rule.limit} wide onChange={limit => onChange({ limit })} />
             <span className={cn(subject.unitSuffix === '%' && '-ml-1')}>{subject.unitSuffix.trim()}</span>
           </>
         )}
         {subject.kind === 'event' ? (
           <>
             <span className="-ml-1">,</span>
-            <Severity rule={rule} canChange={canChange} onChange={onChange} />
+            <Severity rule={rule} onChange={onChange} />
           </>
         ) : (
           <>
             for
-            <MinutesAndSeverity rule={rule} canChange={canChange} onChange={onChange} />
+            <MinutesAndSeverity rule={rule} onChange={onChange} />
           </>
         )}
       </p>
-      <ExpertQuery rule={rule} canChange={canChange} onMakeCustomQuery={onMakeCustomQuery} />
+      <ExpertQuery rule={rule} onMakeCustomQuery={onMakeCustomQuery} />
     </>
   );
 }
 
 /** "[1] min, raise a [warning]." The end of every rule. */
-function MinutesAndSeverity({ rule, canChange, onChange }: Pick<AlertRuleRowProps, 'canChange' | 'onChange'> & { rule: DraftRule }) {
+function MinutesAndSeverity({ rule, onChange }: Pick<AlertRuleRowProps, 'onChange'> & { rule: DraftRule }) {
   return (
     <>
-      <NumberBox label="Minutes" value={rule.forMinutes} canChange={canChange} onChange={forMinutes => onChange({ forMinutes })} />
+      <NumberBox label="Minutes" value={rule.forMinutes} onChange={forMinutes => onChange({ forMinutes })} />
       {'min, '}
-      <Severity rule={rule} canChange={canChange} onChange={onChange} />
+      <Severity rule={rule} onChange={onChange} />
     </>
   );
 }
 
 /** "raise a [warning]." */
-function Severity({ rule, canChange, onChange }: Pick<AlertRuleRowProps, 'canChange' | 'onChange'> & { rule: DraftRule }) {
+function Severity({ rule, onChange }: Pick<AlertRuleRowProps, 'onChange'> & { rule: DraftRule }) {
   return (
     <>
       raise a
-      <Word
-        label="Level" canChange={canChange} choices={SEVERITY_CHOICES} value={rule.severity}
+      <ChoiceMenu
+        label="Level" choices={SEVERITY_CHOICES} value={rule.severity}
         onChoose={severity => onChange({ severity })} className={SEVERITY_COLORS[rule.severity]}
       />
       <span className="-ml-1">.</span>
@@ -149,17 +141,16 @@ function Severity({ rule, canChange, onChange }: Pick<AlertRuleRowProps, 'canCha
 }
 
 /** The query that Chatter makes from the words. An admin can turn it into a custom query, to change it. */
-function ExpertQuery({ rule, canChange, onMakeCustomQuery }: Pick<AlertRuleRowProps, 'canChange' | 'onMakeCustomQuery'> & { rule: SimpleDraft }) {
+function ExpertQuery({ rule, onMakeCustomQuery }: Pick<AlertRuleRowProps, 'onMakeCustomQuery'> & { rule: SimpleDraft }) {
   const query = ruleQuery({ ...rule, id: rule.id ?? '' }, MACHINE_PLACEHOLDER);
   return (
     <details className="text-xs text-zinc-300">
       <summary className="w-fit cursor-pointer hover:text-zinc-100">Expert: show the query</summary>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <code className="rounded bg-zinc-950 px-2 py-1 font-mono text-zinc-100">{query}</code>
-        {canChange && canBeCustomQuery(rule) && (
+        {canBeCustomQuery(rule) ? (
           <Button size="sm" variant="quiet" onClick={onMakeCustomQuery}>Change to a custom query</Button>
-        )}
-        {canChange && !canBeCustomQuery(rule) && (
+        ) : (
           <span>An event rule cannot change to a custom query. A custom query sends an &quot;OK&quot; message after each event.</span>
         )}
       </div>
@@ -168,7 +159,7 @@ function ExpertQuery({ rule, canChange, onMakeCustomQuery }: Pick<AlertRuleRowPr
 }
 
 /** A rule with a query that the user wrote: a name, the query, a Test button, the minutes and the level */
-function QueryRule({ rule, canChange, problem, machineId, onChange }: AlertRuleRowProps & { rule: QueryDraft }) {
+function QueryRule({ rule, problem, machineId, onChange }: AlertRuleRowProps & { rule: QueryDraft }) {
   const id = useId();
   return (
     <div className="flex flex-col gap-3">
@@ -179,7 +170,7 @@ function QueryRule({ rule, canChange, problem, machineId, onChange }: AlertRuleR
       <Field id={`${id}-name`} label="Name">
         <TextInput
           id={`${id}-name`} value={rule.name} placeholder="For example: Slow spindle" maxLength={MAX_ALERT_NAME_LENGTH}
-          disabled={!canChange} onChange={event => onChange({ name: event.target.value })}
+          onChange={event => onChange({ name: event.target.value })}
         />
       </Field>
       <Field id={`${id}-query`} label="Query" hint={<QueryHint />}>
@@ -187,14 +178,14 @@ function QueryRule({ rule, canChange, problem, machineId, onChange }: AlertRuleR
         <div className="flex flex-wrap gap-2">
           <TextInput
             id={`${id}-query`} mono value={rule.query} maxLength={MAX_ALERT_QUERY_LENGTH} spellCheck={false} className="min-w-0 flex-1"
-            aria-describedby={`${id}-query-hint`} disabled={!canChange} onChange={event => onChange({ query: event.target.value })}
+            aria-describedby={`${id}-query-hint`} onChange={event => onChange({ query: event.target.value })}
           />
-          {canChange && <TestQueryButton machineId={machineId} query={rule.query} hideResult={problem !== null} />}
+          <TestQueryButton machineId={machineId} query={rule.query} hideResult={problem !== null} />
         </div>
       </Field>
       <p className="m-0 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm leading-7 text-zinc-100">
         When the query gives a result for
-        <MinutesAndSeverity rule={rule} canChange={canChange} onChange={onChange} />
+        <MinutesAndSeverity rule={rule} onChange={onChange} />
       </p>
     </div>
   );
@@ -255,43 +246,25 @@ function QueryCheckText({ check }: { check: QueryCheck }) {
   );
 }
 
-interface WordProps<Id extends string> {
-  label: string;
-  canChange: boolean;
-  choices: readonly Choice<Id>[];
-  value: Id;
-  onChoose: (id: Id) => void;
-  className?: string;
-}
-
-/** A word of the rule. An admin clicks it to choose another word. */
-function Word<Id extends string>({ canChange, className, ...menu }: WordProps<Id>) {
-  if (canChange) return <ChoiceMenu {...menu} className={className} />;
-  const chosen = menu.choices.find(choice => choice.id === menu.value);
-  return <span className={cn(FIXED_WORD, className)}>{chosen?.name ?? menu.value}</span>;
-}
-
 interface NumberBoxProps {
   label: string;
   value: number;
-  canChange: boolean;
   /** For a limit such as 10000 RPM */
   wide?: boolean;
   onChange: (value: number) => void;
 }
 
 /** A small number box in the rule. An empty box gives NaN, so the check before Save finds it. */
-function NumberBox({ label, value, canChange, wide = false, onChange }: NumberBoxProps) {
+function NumberBox({ label, value, wide = false, onChange }: NumberBoxProps) {
   return (
     <input
       type="number"
       aria-label={label}
       value={Number.isNaN(value) ? '' : value}
-      disabled={!canChange}
       onChange={event => onChange(event.target.value === '' ? Number.NaN : Number(event.target.value))}
       className={cn(
         'h-6 rounded border border-zinc-700 bg-zinc-950 px-1 text-center font-mono text-sm font-bold text-zinc-50',
-        'disabled:border-zinc-800 disabled:bg-transparent hover:border-zinc-500',
+        'hover:border-zinc-500',
         wide ? 'w-20' : 'w-12',
       )}
     />
