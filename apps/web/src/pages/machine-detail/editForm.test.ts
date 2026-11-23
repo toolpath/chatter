@@ -70,7 +70,8 @@ describe('ftpPasswordHint', () => {
 
   it('asks for the saved password again after a new IP address or FTP port, as the server does', () => {
     const typeAgain = {
-      text: 'Type the password again. You changed the IP address or the FTP port. Chatter does not send a saved password to a new address.',
+      text: 'Type the password again. You changed the IP address or the FTP port. Chatter does not send a saved password to a new address. '
+        + 'To use no password, click Remove password.',
       mustTypeAgain: true,
     };
     expect(ftpPasswordHint({ ...saved, host: '192.168.1.99' }, true, saved)).toEqual(typeAgain);
@@ -79,6 +80,8 @@ describe('ftpPasswordHint', () => {
 
   it('does not ask again for spaces around the IP address, a new username, or a new port of the OPC UA password', () => {
     expect(ftpPasswordHint({ ...saved, host: ' 192.168.1.50 ' }, true, saved).mustTypeAgain).toBe(false);
+    // The server refuses an empty IP address with "Host is required" first
+    expect(ftpPasswordHint({ ...saved, host: '   ' }, true, saved).mustTypeAgain).toBe(false);
     expect(ftpPasswordHint({ ...saved, ftpUser: 'operator' }, true, saved).mustTypeAgain).toBe(false);
     expect(ftpPasswordHint({ ...saved, opcuaPort: 4841 }, true, saved).mustTypeAgain).toBe(false);
   });
@@ -133,7 +136,8 @@ describe('the Siemens settings in the edit form', () => {
 
   it('asks for the saved OPC UA password again after a new OPC UA port, and not after a new FTP port', () => {
     expect(opcuaPasswordHint({ ...EMPTY_EDIT_FORM, opcuaPort: 4841 }, true, EMPTY_EDIT_FORM).text)
-      .toBe('Type the password again. You changed the IP address or the OPC UA port. Chatter does not send a saved password to a new address.');
+      .toBe('Type the password again. You changed the IP address or the OPC UA port. Chatter does not send a saved password to a new address. '
+        + 'To use no password, click Remove password.');
     expect(opcuaPasswordHint({ ...EMPTY_EDIT_FORM, ftpPort: 2121 }, true, EMPTY_EDIT_FORM).mustTypeAgain).toBe(false);
   });
 });

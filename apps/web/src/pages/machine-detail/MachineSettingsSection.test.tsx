@@ -5,15 +5,24 @@ import { testMachine } from '../../test/testMachine';
 import { MachineSettingsSection } from './MachineSettingsSection';
 
 const NEW_HOST = '192.168.1.99';
+// The same sentences as the refusal of the server (checkSavedPasswordsStay)
 const FTP_AGAIN = 'Type the password again. You changed the IP address or the FTP port. '
-  + 'Chatter does not send a saved password to a new address.';
+  + 'Chatter does not send a saved password to a new address. To use no password, click Remove password.';
 const OPCUA_AGAIN = 'Type the password again. You changed the IP address or the OPC UA port. '
-  + 'Chatter does not send a saved password to a new address.';
+  + 'Chatter does not send a saved password to a new address. To use no password, click Remove password.';
 
 function renderSection(machine: Machine, onUpdate = vi.fn().mockResolvedValue(false)) {
-  render(<MachineSettingsSection machine={machine} onUpdate={onUpdate} />);
-  return onUpdate;
+  const view = render(<MachineSettingsSection machine={machine} onUpdate={onUpdate} />);
+  return Object.assign(onUpdate, { rerender: (next: Machine) => view.rerender(<MachineSettingsSection machine={next} onUpdate={onUpdate} />) });
 }
+
+/** The server accepts the save. The new machine status comes later, so the machine prop stays the same. */
+async function saveAccepted() {
+  fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+  expect(await screen.findByText('The settings are saved')).toBeInTheDocument();
+}
+
+const undo = () => fireEvent.click(screen.getByRole('button', { name: 'Undo changes' }));
 
 const type = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
 const ftpPassword = () => screen.getByLabelText('FTP password');
@@ -42,6 +51,18 @@ describe('MachineSettingsSection', () => {
 
       expect(ftpPassword()).toHaveAccessibleDescription(expect.stringContaining(FTP_AGAIN));
       expect(screen.getByText(FTP_AGAIN)).toHaveClass('text-primary-text');
+    });
+
+    it('tells a screen reader the hint when it comes, in a polite live region that is there before', () => {
+      renderSection(testMachine({ hasFtpPassword: true }));
+      const liveRegions = () => Array.from(document.querySelectorAll('[aria-live="polite"]'));
+      const before = liveRegions();
+
+      type('IP address', NEW_HOST);
+
+      const region = screen.getByText(FTP_AGAIN).closest('[aria-live="polite"]');
+      expect(region).not.toBeNull();
+      expect(before).toContain(region);
     });
 
     it('asks for the password again after a change of the FTP port', () => {
@@ -80,15 +101,89 @@ describe('MachineSettingsSection', () => {
       expect(screen.queryByText(FTP_AGAIN)).not.toBeInTheDocument();
     });
 
+    it('stops asking when the user types the saved FTP port again', () => {
+      renderSection(testMachine({ hasFtpPassword: true }));
+
+      type('FTP port', '2121');
+      type('FTP port', '21');
+
+      expect(screen.queryByText(FTP_AGAIN)).not.toBeInTheDocument();
+    });
+
     it('does not ask after a save, when the server has the new address and the password', async () => {
       renderSection(testMachine({ hasFtpPassword: true }), vi.fn().mockResolvedValue(true));
 
       type('IP address', NEW_HOST);
       type('FTP password', 'new-secret');
-      fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+      await saveAccepted();
 
-      expect(await screen.findByText('The settings are saved')).toBeInTheDocument();
       expect(ftpPassword()).toHaveValue('');
+      expect(screen.queryByText(FTP_AGAIN)).not.toBeInTheDocument();
+    });
+
+    it('asks after a save that adds the first password, before the new machine status comes', async () => {
+      renderSection(testMachine({ hasFtpPassword: false }), vi.fn().mockResolvedValue(true));
+
+      type('FTP password', 'new-secret');
+      await saveAccepted();
+      type('IP address', NEW_HOST);
+
+      expect(ftpPassword()).toHaveAccessibleDescription(expect.stringContaining(FTP_AGAIN));
+    });
+
+    it('does not ask after a save that removes the password, before the new machine status comes', async () => {
+      renderSection(testMachine({ hasFtpPassword: true }), vi.fn().mockResolvedValue(true));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Remove password' }));
+      await saveAccepted();
+      type('IP address', NEW_HOST);
+
+      expect(screen.queryByText(FTP_AGAIN)).not.toBeInTheDocument();
+      expect(ftpPassword()).toHaveAccessibleDescription(expect.stringContaining('No password is saved.'));
+    });
+
+    it('asks when the server has a new address from another browser, and the form still has the old one', () => {
+      const view = renderSection(testMachine({ hasFtpPassword: true }));
+
+      view.rerender(testMachine({ hasFtpPassword: true, host: NEW_HOST }));
+
+      expect(screen.getByLabelText('IP address')).toHaveValue('192.168.1.50');
+      expect(ftpPassword()).toHaveAccessibleDescription(expect.stringContaining(FTP_AGAIN));
+    });
+  });
+
+  describe('Undo changes', () => {
+    it('goes back to the saved IP address, and stops asking', () => {
+      renderSection(testMachine({ hasFtpPassword: true }));
+
+      type('IP address', NEW_HOST);
+      undo();
+
+      expect(screen.getByLabelText('IP address')).toHaveValue('192.168.1.50');
+      expect(screen.queryByText(FTP_AGAIN)).not.toBeInTheDocument();
+    });
+
+    it('goes back to the values of the last save, also before the new machine status comes', async () => {
+      renderSection(testMachine({ hasFtpPassword: true }), vi.fn().mockResolvedValue(true));
+
+      type('IP address', NEW_HOST);
+      type('FTP password', 'new-secret');
+      await saveAccepted();
+      type('Machine name', 'Mill 2');
+      undo();
+
+      expect(screen.getByLabelText('IP address')).toHaveValue(NEW_HOST);
+      expect(screen.getByLabelText('Machine name')).toHaveValue('Mill 1');
+      expect(screen.queryByText(FTP_AGAIN)).not.toBeInTheDocument();
+    });
+
+    it('goes to the address that the server has after a change from another browser', () => {
+      const view = renderSection(testMachine({ hasFtpPassword: true }));
+
+      view.rerender(testMachine({ hasFtpPassword: true, host: NEW_HOST }));
+      undo();
+
+      expect(screen.getByLabelText('IP address')).toHaveValue(NEW_HOST);
       expect(screen.queryByText(FTP_AGAIN)).not.toBeInTheDocument();
     });
   });
@@ -122,6 +217,15 @@ describe('MachineSettingsSection', () => {
       expect(ftpPassword()).toHaveAccessibleDescription(expect.stringContaining('A password is saved. Leave this empty to keep it.'));
     });
 
+    it('does not ask for an IP address of only spaces, because the server refuses it with "Host is required" first', () => {
+      renderSection(testMachine({ hasFtpPassword: true }));
+
+      type('IP address', '   ');
+
+      expect(screen.queryByText(FTP_AGAIN)).not.toBeInTheDocument();
+      expect(ftpPassword()).toHaveAccessibleDescription(expect.stringContaining('A password is saved. Leave this empty to keep it.'));
+    });
+
     it('does not ask when the FTP port box is empty and the saved port is the default port 21', () => {
       renderSection(testMachine({ hasFtpPassword: true, ftpPort: undefined }));
 
@@ -139,6 +243,15 @@ describe('MachineSettingsSection', () => {
 
       expect(opcuaPassword()).toHaveAccessibleDescription(expect.stringContaining(OPCUA_AGAIN));
       expect(screen.queryByText(FTP_AGAIN)).not.toBeInTheDocument();
+    });
+
+    it('stops asking when the user types the saved OPC UA port again', () => {
+      renderSection(siemens({ hasOpcuaPassword: true }));
+
+      type('OPC UA port', '4841');
+      type('OPC UA port', '4840');
+
+      expect(screen.queryByText(OPCUA_AGAIN)).not.toBeInTheDocument();
     });
 
     it('asks for each saved password again after a change of the IP address', () => {
