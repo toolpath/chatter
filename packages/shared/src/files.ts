@@ -48,10 +48,22 @@ export interface UploadFile {
   last_path: string;
 }
 
+/**
+ * What a user did to a file. Today each row is a send: the audit log alone records a delete.
+ * A row from an older version is a send too.
+ */
+export type UploadAction = 'sent' | 'deleted';
+
+/** One send of a file. A row from before Chatter recorded the user has null in uploaded_by and address. */
 export interface UploadEvent {
   id: number;
   target_name: string | null;
   remote_path: string;
   uploaded_at: string;
+  action: UploadAction;
+  /** The user who sent the file. Only a role that can read programs gets it, so a Viewer does not (decision D4). */
+  uploaded_by?: string | null;
+  /** The address of the computer of that user. Only an Admin gets it. */
+  address?: string | null;
   file_content?: string;
 }
