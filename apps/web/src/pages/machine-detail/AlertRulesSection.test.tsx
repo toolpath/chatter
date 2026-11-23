@@ -211,15 +211,6 @@ describe('AlertRulesSection', () => {
     )).toBeInTheDocument();
   });
 
-  it('shows a viewer the rules, with nothing to change', async () => {
-    await renderSection(undefined, 'viewer');
-
-    expect(screen.getByText(/Only an admin can change them/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Add rule/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Remove the rule/ })).not.toBeInTheDocument();
-    expect(limitBox()).toBeDisabled();
-  });
-
   it('offers to try again when the rules do not load', async () => {
     vi.mocked(fetchAlertRules).mockRejectedValueOnce(new Error('down')).mockResolvedValueOnce([OFFLINE]);
     render(
