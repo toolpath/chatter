@@ -1,8 +1,9 @@
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { writeAudit } from './audit.js';
 import { startServerLog } from './startServerLog.js';
 
 describe('startServerLog', () => {
@@ -40,5 +41,31 @@ describe('startServerLog', () => {
     await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(1));
     expect(serverLog.filePaths).toContain(logFile);
     expect(textAtExit).toContain('socket hang up');
+  });
+
+  it('writes the audit lines to logs/audit.log, and each line is on the card before Chatter stops after a crash', async () => {
+    const target = new EventEmitter();
+    const auditFile = path.join(folder, 'logs', 'audit.log');
+    let textAtExit = '';
+    const exit = vi.fn<(code: number) => void>(() => { textAtExit = readFileSync(auditFile, 'utf-8'); });
+    ({ stopListening } = startServerLog(folder, { target, environment: {}, exit }));
+
+    writeAudit('Password try', { username: 'ann', result: 'no-such-user' });
+    target.emit('uncaughtException', new Error('socket hang up'));
+
+    await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(1));
+    expect(textAtExit).toMatch(/\[audit\] Password try username=ann result=no-such-user\n$/);
+  });
+
+  it('stops the writes to the audit file when it stops listening', async () => {
+    let serverLog;
+    ({ serverLog, stopListening } = startServerLog(folder, { target: new EventEmitter(), environment: {}, exit: vi.fn() }));
+    stopListening();
+    stopListening = () => {};
+
+    writeAudit('Password try', { username: 'ann' });
+    await serverLog.close();
+
+    expect(existsSync(path.join(folder, 'logs', 'audit.log'))).toBe(false);
   });
 });

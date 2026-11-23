@@ -168,4 +168,24 @@ describe('GET /support-bundle', () => {
     expect(files.get('log/recent.log')).toContain('gave 429');
     expect(files.get('log/chatter.log')).toContain('Machine went offline');
   });
+
+  it('has the audit log files, the old one first, so an Admin can read who changed what', async () => {
+    const auditPath = path.join(folder, 'logs', 'audit.log');
+    mkdirSync(path.dirname(auditPath), { recursive: true });
+    writeFileSync(`${auditPath}.1`, 'INFO  [audit] Change user=ann role=operator method=DELETE\n');
+    writeFileSync(auditPath, 'INFO  [audit] Password try username=bob result=no-such-user\n');
+    stopListening();
+    await serverLog.file?.close();
+    serverLog = new ServerLog(new LogFile(path.join(folder, 'logs', 'chatter.log')), undefined, undefined, new LogFile(auditPath));
+    stopListening = serverLog.listen();
+    const app = await appWithSecrets();
+
+    const res = await app.request('/api/support-bundle', { headers: { Cookie: cookie } });
+
+    const files = untar(gunzipSync(Buffer.from(await res.arrayBuffer())));
+    expect([...files.keys()].filter(name => name.startsWith('log/audit'))).toEqual(['log/audit.log.1', 'log/audit.log']);
+    expect(files.get('log/audit.log.1')).toContain('method=DELETE');
+    expect(files.get('log/audit.log')).toContain('username=bob result=no-such-user');
+    expect(files.get('README.txt')).toContain('audit');
+  });
 });

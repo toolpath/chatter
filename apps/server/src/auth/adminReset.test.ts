@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { describe, expect, it, vi } from 'vitest';
-import { captureLog } from '../logging/testSupport.js';
+import { captureAudit, captureLog } from '../logging/testSupport.js';
 import { PromoteNotConfirmedError, resetAdmins } from './adminReset.js';
 import { LoginLog } from './loginLog.js';
 import { hashPassword } from './passwords.js';
@@ -124,6 +124,21 @@ describe('resetAdmins (npm run reset-password)', () => {
 
     expect(roles(users)).toEqual(before);
     expect(auth.sessionOf(samSession)).not.toBeNull();
+  });
+
+  it('writes the new Admin in the audit log, but not the password', async () => {
+    const { users, sessions, loginLog } = await shop();
+    const audit = captureAudit();
+    try {
+      const admin = await newAdmin('sam', 'secret-password');
+      resetAdmins({ users, sessions, loginLog }, admin, { promote: true });
+
+      expect(audit.lines).toEqual([expect.stringMatching(/\[audit\] reset-password made a new Admin username=sam promoted=true$/)]);
+      expect(audit.lines.join('\n')).not.toContain('secret-password');
+      expect(audit.lines.join('\n')).not.toContain(admin.passwordHash);
+    } finally {
+      audit.restore();
+    }
   });
 
   it('writes a warn line with the name of the new Admin, but not the password', async () => {
