@@ -101,6 +101,37 @@ describe('Siemens settings', () => {
     expect(connector.getStatus().hasOpcuaPassword).toBe(false);
   });
 
+  describe('the trusted certificate of the control', () => {
+    const THUMBPRINT = 'c'.repeat(64);
+    let connector: SiemensConnector;
+    let saved: (string | null)[];
+
+    beforeEach(() => {
+      connector = new SiemensConnector({ name: 'S', host: HOST, opcuaPort: 4840, opcuaServerThumbprint: THUMBPRINT });
+      saved = [];
+      connector.onTrustedThumbprintChange = thumbprint => saved.push(thumbprint);
+    });
+
+    it('is forgotten when the IP address changes, because a different device can answer there', () => {
+      applySiemensUpdate(connector, { host: '192.168.1.99' });
+      expect(connector.getStatus().opcuaServerThumbprint).toBeNull();
+      expect(saved).toEqual([null]);
+    });
+
+    it('is forgotten when the OPC UA port changes', () => {
+      applySiemensUpdate(connector, { opcuaPort: 4841 });
+      expect(connector.getStatus().opcuaServerThumbprint).toBeNull();
+    });
+
+    it('stays when the address comes back the same, or when other settings change', () => {
+      applySiemensUpdate(connector, {
+        host: HOST, opcuaPort: 4840, name: 'Renamed', opcuaUser: 'u', opcuaPassword: 'p', opcuaSecurity: 'signAndEncrypt', ftpPort: 2121,
+      });
+      expect(connector.getStatus().opcuaServerThumbprint).toBe(THUMBPRINT);
+      expect(saved).toEqual([]);
+    });
+  });
+
   it('applies new OPC UA settings to the connector', () => {
     const connector = new SiemensConnector({ name: 'S', host: HOST });
     applySiemensUpdate(connector, { opcuaPort: 4841, opcuaUser: 'u', opcuaSecurity: 'signAndEncrypt' });
