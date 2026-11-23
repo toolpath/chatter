@@ -178,6 +178,8 @@ export interface SiemensMachineStatus extends BaseMachineStatus {
   opcuaServerThumbprint: string | null;
   /** Set while the control shows a different certificate, so Chatter does not connect */
   opcuaCertificateChanged?: OpcUaCertificateChange;
+  /** Set while a user logs in with Security None (F-11, D6). Chatter still connects and saves the settings. */
+  opcuaSecurityWarning?: string;
   data: SiemensMachineData;
 }
 

@@ -166,7 +166,9 @@ export class HardwarePoller extends EventEmitter {
   async addSiemensMachine(config: SiemensMachineConfig): Promise<SiemensMachineStatus> {
     const machine = newSiemensMachine(config);
     this.repository.insertSiemens(machine);
-    return this.addConnector(new SiemensConnector(machine)).getStatus();
+    const connector = this.addConnector(new SiemensConnector(machine));
+    connector.logSecurityWarning();
+    return connector.getStatus();
   }
 
   /** Add a machine of any type, from a request to the API */

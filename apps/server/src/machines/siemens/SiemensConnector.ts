@@ -1,4 +1,4 @@
-import { DEFAULT_OPCUA_PORT } from '@local-chatter/shared';
+import { DEFAULT_OPCUA_PORT, opcuaSecurityWarning } from '@local-chatter/shared';
 import { createLogger } from '../../logging/logger.js';
 import { BaseMachineConnector, errorMessage } from '../BaseMachineConnector.js';
 import type {
@@ -285,6 +285,7 @@ export class SiemensConnector extends BaseMachineConnector {
       opcuaSecurity: this.opcuaSecurity,
       opcuaServerThumbprint: this.trustedThumbprint,
       ...(this.certificateChange ? { opcuaCertificateChanged: { ...this.certificateChange } } : {}),
+      ...(this.securityWarning !== null ? { opcuaSecurityWarning: this.securityWarning } : {}),
       ftpPort: this.ftpPort,
       ftpUser: this.ftpUser,
       hasFtpPassword: this.hasFtpPassword,
@@ -333,12 +334,30 @@ export class SiemensConnector extends BaseMachineConnector {
     return this.opcuaPassword !== '';
   }
 
+  /** The warning for a user login with Security None (F-11, D6), or null */
+  private get securityWarning(): string | null {
+    return opcuaSecurityWarning({ opcuaSecurity: this.opcuaSecurity, opcuaUser: this.opcuaUser });
+  }
+
+  /**
+   * Write the warning for a user login with Security None in the log, if it applies. The poller calls it for a new machine,
+   * and a change of the settings calls it when the change turns the warning on. So the log tells once for each change.
+   */
+  logSecurityWarning(): void {
+    if (this.securityWarning === null) return;
+    log.warn('Security is None. Chatter logs in to the OPC UA server of the control on a connection with no signature and no encryption.', {
+      machine: this.id, host: this.host, port: this.opcuaPort,
+    });
+  }
+
   /** The next poll connects again with the new settings */
   updateOpcUaSettings(settings: { port?: number; user?: string; password?: string; security?: OpcUaSecurity }): void {
+    const warnedBefore = this.securityWarning !== null;
     if (settings.port !== undefined) this.opcuaPort = settings.port;
     if (settings.user !== undefined) this.opcuaUser = settings.user;
     if (settings.password !== undefined) this.opcuaPassword = settings.password;
     if (settings.security !== undefined) this.opcuaSecurity = settings.security;
+    if (!warnedBefore) this.logSecurityWarning();
     this.disconnect();
   }
 }
