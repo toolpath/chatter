@@ -37,6 +37,11 @@ function endpoint(
   return { securityMode, securityPolicyUri, serverCertificate, userIdentityTokens } as unknown as EndpointDescription;
 }
 
+/** The endpoint, at this address */
+function at(endpointUrl: string, description: EndpointDescription): EndpointDescription {
+  return { ...description, endpointUrl } as EndpointDescription;
+}
+
 /** The endpoints of a control that has the two modes that Chatter uses, each with the same certificate */
 function endpointsWith(certificate: Buffer | null): EndpointDescription[] {
   return [
@@ -159,6 +164,39 @@ describe('openSinumerikSession and the certificate of the control', () => {
       endpoint(MessageSecurityMode.SignAndEncrypt, SecurityPolicy.Basic256Sha256, CONTROL_CERTIFICATE),
     ]);
     const session = await control.open({ ...LOGIN, security: 'signAndEncrypt' });
+    expect(session.serverThumbprint).toBe(CONTROL_THUMBPRINT);
+  });
+
+  it('with no security, uses the certificate of the None endpoint when the endpoints have different certificates', async () => {
+    const control = fakeControl([
+      endpoint(MessageSecurityMode.SignAndEncrypt, SecurityPolicy.Basic256Sha256, OTHER_CERTIFICATE),
+      endpoint(MessageSecurityMode.None, SecurityPolicy.None, CONTROL_CERTIFICATE),
+    ]);
+    const session = await control.open(LOGIN);
+    expect(session.serverThumbprint).toBe(CONTROL_THUMBPRINT);
+  });
+
+  it.each(['none', 'signAndEncrypt'] as const)(
+    'with %s, uses the certificate of the endpoint at the address that Chatter uses, when the control lists more than one',
+    async security => {
+      const [mode, securityPolicy] = security === 'none'
+        ? [MessageSecurityMode.None, SecurityPolicy.None]
+        : [MessageSecurityMode.SignAndEncrypt, SecurityPolicy.Basic256Sha256];
+      const control = fakeControl([
+        at('opc.tcp://192.168.200.1:4840', endpoint(mode, securityPolicy, OTHER_CERTIFICATE)),
+        at('opc.tcp://10.0.0.5:4840/', endpoint(mode, securityPolicy, CONTROL_CERTIFICATE)),
+      ]);
+      const session = await control.open({ ...LOGIN, security });
+      expect(session.serverThumbprint).toBe(CONTROL_THUMBPRINT);
+    },
+  );
+
+  it('uses the first endpoint for the security when no endpoint has the address that Chatter uses', async () => {
+    const control = fakeControl([
+      at('opc.tcp://SINUMERIK-828D:4840', endpoint(MessageSecurityMode.None, SecurityPolicy.None, CONTROL_CERTIFICATE)),
+      at('opc.tcp://192.168.200.1:4840', endpoint(MessageSecurityMode.None, SecurityPolicy.None, OTHER_CERTIFICATE)),
+    ]);
+    const session = await control.open(LOGIN);
     expect(session.serverThumbprint).toBe(CONTROL_THUMBPRINT);
   });
 

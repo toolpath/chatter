@@ -4,9 +4,10 @@ import { SESSION_COOKIE } from '../auth/authRoutes.js';
 import { loggedInAuth } from '../auth/testSupport.js';
 import type { Auth } from '../auth/Auth.js';
 import type { UserAccounts } from '../auth/userAccounts.js';
-import { captureAudit, type CapturedAudit } from '../logging/testSupport.js';
+import { captureAudit, captureLog, type CapturedAudit } from '../logging/testSupport.js';
 import { CertificateChangedError } from '../machines/siemens/certificatePin.js';
 import type { SinumerikConnectOptions, SinumerikSession } from '../machines/siemens/sinumerikClient.js';
+import { MachineRepository } from '../polling/machineRepository.js';
 import { HardwarePoller } from '../polling/poller.js';
 import { applySchema } from '../storage/schema.js';
 import { errorOf, testApp } from './testSupport.js';
@@ -106,6 +107,38 @@ describe('the certificate of a Siemens control', () => {
     await poller.poll();
     expect(savedThumbprint()).toBe(FIRST);
     expect(await machine()).toMatchObject({ connected: true, opcuaServerThumbprint: FIRST });
+  });
+
+  it('keeps the trusted certificate after a restart of Chatter, and still refuses a changed certificate', async () => {
+    await poller.poll();
+    poller.stop();
+    control.thumbprint = SECOND;
+
+    poller = new HardwarePoller(db);
+    await poller.loadFromDatabase();
+    await poller.poll();
+
+    expect(control.connects).toHaveLength(1);
+    expect(await machine()).toMatchObject({
+      connected: false, opcuaServerThumbprint: FIRST, opcuaCertificateChanged: { presentedThumbprint: SECOND },
+    });
+    expect(savedThumbprint()).toBe(FIRST);
+  });
+
+  it('still connects when the database cannot save the certificate, and logs the error', async () => {
+    const log = captureLog();
+    const save = vi.spyOn(MachineRepository.prototype, 'setSiemensServerThumbprint').mockImplementation(() => {
+      throw new Error('disk full');
+    });
+    try {
+      await poller.poll();
+      expect(await machine()).toMatchObject({ connected: true, opcuaServerThumbprint: FIRST });
+      expect(log.text('error')).toContain('Could not save the trusted OPC UA certificate');
+      expect(log.text('error')).toContain('disk full');
+    } finally {
+      save.mockRestore();
+      log.restore();
+    }
   });
 
   it('shows a changed certificate in the status, and does not send the password to the control', async () => {

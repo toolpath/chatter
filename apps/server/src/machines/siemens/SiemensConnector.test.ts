@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { captureLog, type CapturedLog } from '../../logging/testSupport.js';
 import { CertificateChangedError } from './certificatePin.js';
 import { SiemensConnector } from './SiemensConnector.js';
 import type { AlarmEvent } from './sinumerikAlarms.js';
@@ -225,7 +226,62 @@ describe('SiemensConnector', () => {
     });
   });
 
+  describe('the log of the certificate', () => {
+    let log: CapturedLog;
+    beforeEach(() => {
+      log = captureLog();
+    });
+    afterEach(() => log.restore());
+
+    const refuse = (presented: string) => openSession.mockImplementation(async options => {
+      throw new CertificateChangedError(presented, options.trustedThumbprint ?? '', null);
+    });
+    const warnings = () => log.lines.filter(line => line.level === 'warn' && line.text.includes('certificate of the control changed'));
+
+    it('writes one warning for each new refused certificate, not one at each poll', async () => {
+      connector = new SiemensConnector({ id: 'm1', name: 'M', host: '10.0.0.5', opcuaServerThumbprint: CONTROL_THUMBPRINT }, openSession);
+      refuse(NEW_THUMBPRINT);
+      for (let poll = 0; poll < 3; poll++) await connector.poll();
+      expect(warnings()).toHaveLength(1);
+      expect(warnings()[0].text).toContain(NEW_THUMBPRINT);
+      expect(warnings()[0].text).toContain(CONTROL_THUMBPRINT);
+
+      refuse('f'.repeat(64));
+      await connector.poll();
+      expect(warnings()).toHaveLength(2);
+    });
+
+    it('tells when it trusts the certificate of the first connect, and when an Admin trusts or forgets one', async () => {
+      await connector.poll();
+      expect(log.text('info')).toContain('Trusted the OPC UA certificate of the control on the first connect');
+      expect(log.text('info')).toContain(CONTROL_THUMBPRINT);
+
+      connector.disconnect();
+      refuse(NEW_THUMBPRINT);
+      await connector.poll();
+      connector.trustCertificate(NEW_THUMBPRINT);
+      expect(log.text('info')).toContain('An Admin trusted the new OPC UA certificate of the control');
+
+      connector.forgetServerCertificate();
+      expect(log.text('info')).toContain('Forgot the trusted OPC UA certificate of the control');
+    });
+  });
+
   describe('a connect that ends after a disconnect', () => {
+    it('does not show a refused certificate of a connect that ends after a disconnect, for example to the old IP address', async () => {
+      connector = new SiemensConnector({ id: 'm1', name: 'M', host: '10.0.0.5', opcuaServerThumbprint: CONTROL_THUMBPRINT }, openSession);
+      let failNow: (error: Error) => void = () => {};
+      openSession.mockImplementationOnce(() => new Promise((_resolve, reject) => { failNow = reject; }));
+      const connecting = connector.connect();
+      // The user changes the IP address while the connect to the old address is open
+      connector.forgetServerCertificate();
+      failNow(new CertificateChangedError(NEW_THUMBPRINT, CONTROL_THUMBPRINT, NEW_SHA1_THUMBPRINT));
+
+      await expect(connecting).rejects.toBeInstanceOf(CertificateChangedError);
+      expect(connector.getStatus().opcuaCertificateChanged).toBeUndefined();
+      expect(connector.trustCertificate(NEW_THUMBPRINT)).toBe('nothing-to-trust');
+    });
+
     it('closes the late session, stays disconnected and keeps the reason of the poll timeout', async () => {
       let openNow: (session: SinumerikSession) => void = () => {};
       openSession.mockImplementationOnce(() => new Promise(resolve => { openNow = resolve; }));
