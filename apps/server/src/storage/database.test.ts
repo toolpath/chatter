@@ -85,22 +85,41 @@ describe('database', () => {
   });
 
   describe('a database of an older version', () => {
-    it('gets the new columns of upload_events, and an old row keeps no user and no address and is a send', () => {
+    // The upload tables as v1.8.1 (the last release before this change) made them, copied from its schema.ts
+    const V1_8_1_UPLOAD_FILES = `CREATE TABLE IF NOT EXISTS upload_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    machine_id TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(machine_id, file_name)
+  )`;
+    const V1_8_1_UPLOAD_EVENTS = `CREATE TABLE IF NOT EXISTS upload_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_id INTEGER NOT NULL REFERENCES upload_files(id) ON DELETE CASCADE,
+    target_name TEXT,
+    remote_path TEXT NOT NULL,
+    file_content BLOB,
+    uploaded_at TEXT DEFAULT CURRENT_TIMESTAMP
+  )`;
+
+    it.each([
+      { version: 'v1.8.1', uploadEvents: V1_8_1_UPLOAD_EVENTS, targetName: 'O0100.NC' },
+      // ADDED_COLUMNS in schema.ts adds target_name, so an older table did not have it
+      { version: 'a version before target_name', uploadEvents: V1_8_1_UPLOAD_EVENTS.replace('target_name TEXT,', ''), targetName: null },
+    ])('of $version gets the new columns of upload_events, and an old row keeps no user and no address and is a send', ({ uploadEvents, targetName }) => {
       const db = new Database(':memory:');
-      db.exec(`CREATE TABLE upload_files (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, machine_id TEXT NOT NULL, file_name TEXT NOT NULL,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP, UNIQUE(machine_id, file_name))`);
-      db.exec(`CREATE TABLE upload_events (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, file_id INTEGER NOT NULL REFERENCES upload_files(id) ON DELETE CASCADE,
-        target_name TEXT, remote_path TEXT NOT NULL, file_content BLOB, uploaded_at TEXT DEFAULT CURRENT_TIMESTAMP)`);
+      db.exec(V1_8_1_UPLOAD_FILES);
+      db.exec(uploadEvents);
       db.exec("INSERT INTO upload_files (machine_id, file_name) VALUES ('machine1', 'part.nc')");
-      db.exec("INSERT INTO upload_events (file_id, target_name, remote_path) VALUES (1, 'O0100.NC', '/O0100.NC')");
+      db.prepare('INSERT INTO upload_events (file_id, remote_path) VALUES (1, ?)').run('/O0100.NC');
+      if (targetName) db.prepare('UPDATE upload_events SET target_name = ?').run(targetName);
 
       applySchema(db);
       applySchema(db);
 
-      expect(db.prepare('SELECT target_name, uploaded_by, address, action FROM upload_events').all()).toEqual([
-        { target_name: 'O0100.NC', uploaded_by: null, address: null, action: 'sent' },
+      expect(db.prepare('SELECT remote_path, target_name, uploaded_by, address, action FROM upload_events').all()).toEqual([
+        { remote_path: '/O0100.NC', target_name: targetName, uploaded_by: null, address: null, action: 'sent' },
       ]);
       db.close();
     });
