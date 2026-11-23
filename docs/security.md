@@ -82,6 +82,17 @@ Each logged-in user can read the connection of a machine: `/api/machine/:id/heal
 - **The live log has limits**, so a forgotten browser tab cannot fill the memory of the Pi: at most 3 live logs, and 200 waiting lines for each. A slow browser loses lines, and Chatter tells how many.
 - **The log file** is in the data volume, next to `chatter.db` (`logs/chatter.log`, at most 2 files of 1 MB).
 
+## Audit
+
+Chatter keeps an audit log in the data volume: `logs/audit.log`, at most 2 files of 5 MB. For the lines and the format, see [Audit log](./guide/logs.md#audit-log).
+
+- **Each change has a line.** After the login check, each request with a method that is not `GET` gets a line: the user, the role, the method, the route pattern, the IDs in the route, the status, and the address. The address comes from a trusted proxy, as for the login. A request that Chatter refuses (for example `403`) and a request that fails (`500`) also get a line. So a delete is in the audit log.
+- **Each password try has a line.** Also each try with an unknown username: the server log drops these after 20 from one address in 15 minutes, but the audit log keeps all. The first-run setup, each refused setup, and `npm run reset-password` also get a line.
+- **The audit log has no secret.** A line never has a value of the body or of the query, a password, a token, or a cookie. Chatter hides secrets in the details as in the server log.
+- **Only an Admin can read a log.** The server log, the live log, the login log (**Settings > Logins**), the log of the update helper, and the support bundle (which has the audit log) answer `403` to a Viewer and to an Operator.
+- **The audit log is not proof.** A person with access to the data volume or to the server can change or delete the file. When the card is too slow, Chatter can drop lines, and it writes how many. When the files are full, Chatter deletes the oldest lines, so many password tries can push old lines out. To keep the lines longer, copy the file to another computer.
+- **A request with no login gets no `Change` line.** Chatter refuses it before it can change something. The login and the setup have their own lines.
+
 ## History backup of a machine
 
 The **Advanced** panel of the Settings tab of a machine backs up its history to a file, and restores such a file (see [Back up and restore the history of a machine](./guide/get-started.md#back-up-and-restore-the-history-of-a-machine)).
@@ -99,7 +110,7 @@ The **Advanced** panel of the Settings tab of a machine backs up its history to 
 - The FTP passwords of the machines and the OPC UA passwords of Siemens machines, as plain text, because Chatter must send them to the machines.
 - The Twilio auth tokens, the webhook secrets, the Discord webhook addresses, the Telegram bot tokens, the ntfy topics and access tokens, and the Apprise passwords of the notification channels, as plain text, because Chatter must send them to the service. Anyone with the file can send text messages with your Twilio account, can post to your Discord channel, can send messages with your Telegram bot, and can read and send to your ntfy topic.
 - The usernames and roles. Each password is kept only as a hash (a one-way code, so nobody can read the password back from it).
-- The logged-in browsers and the last 50 password tries, with their addresses. The server log also has each password try. A login cookie is kept only as a hash, so the file cannot be used to log in.
+- The logged-in browsers and the last 50 password tries, with their addresses. The audit log also has each password try. A login cookie is kept only as a hash, so the file cannot be used to log in.
 
 The folder `opcua-pki` next to `chatter.db` holds the private key of the Chatter certificate for Siemens machines.
 
@@ -166,10 +177,11 @@ The command removes each Admin account and logs out every browser. After this, n
 
 If the username belongs to a Viewer or an Operator, the command shows a warning. To make that user the Admin with the new password, type `PROMOTE`. Any other answer stops the command, and nothing changes.
 
-The command records the new Admin in two places. Neither has the password:
+The command records the new Admin in three places. None has the password:
 
 - **Settings > Logins** shows a row with the username, the address `server terminal` and the result **New Admin from reset-password**. The real Admin can see this row after the reset.
 - The log file `logs/chatter.log` in the data folder gets a warning with the username. The [support bundle](./guide/diagnostics.md#support-bundle) has this file. The command writes the line only when the file exists, so it does not make a file that the server cannot write. The log view in **Settings > Diagnostics** does not show this line, because the command does not run in the server process.
+- The audit log `logs/audit.log` gets a line with the username. The command writes it only when the file exists, as for the log file.
 
 ## Not in scope
 
