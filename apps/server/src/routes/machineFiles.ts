@@ -90,7 +90,8 @@ function fileTaskErrorReply(error: Error, c: Context) {
 
 /** The form sends booleans as the text "true" or "false" */
 const isTrueText = (value: string | undefined) => value === 'true';
-const fileNameOf = (remotePath: string) => remotePath.slice(remotePath.lastIndexOf('/') + 1);
+/** The last part of the path that is not empty, so "/PRG/O1000.NC/" gives "O1000.NC". A path of only "/" stays as it is. */
+const fileNameOf = (remotePath: string) => remotePath.split('/').filter(part => part !== '').pop() ?? remotePath;
 
 async function receive(file: File): Promise<ReceivedFile> {
   return { name: file.name, content: Buffer.from(await file.arrayBuffer()) };
