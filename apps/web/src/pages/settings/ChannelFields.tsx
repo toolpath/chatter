@@ -60,15 +60,23 @@ export function ChannelFields({ type, form, hasSecret, typeAgain, onChange }: Ch
       {basic.map(fieldOf)}
       {advanced.length > 0 && (
         // A new type has other advanced fields, so the heading starts again
-        <AdvancedGroup key={type.id} startOpen={hasAdvancedValue}>{advanced.map(fieldOf)}</AdvancedGroup>
+        <AdvancedGroup key={type.id} startOpen={hasAdvancedValue} mustOpen={advanced.some(field => typeAgain[field.key] !== undefined)}>
+          {advanced.map(fieldOf)}
+        </AdvancedGroup>
       )}
     </>
   );
 }
 
-/** The fields that most admins leave empty, under a heading that opens and closes */
-function AdvancedGroup({ startOpen, children }: { startOpen: boolean; children: ReactNode }) {
+/** The fields that most admins leave empty, under a heading that opens and closes. `mustOpen` opens it. */
+function AdvancedGroup({ startOpen, mustOpen, children }: { startOpen: boolean; mustOpen: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(startOpen);
+  // A hint that the admin must see (type a secret again) opens the heading when it comes
+  const [hadMustOpen, setHadMustOpen] = useState(mustOpen);
+  if (mustOpen !== hadMustOpen) {
+    setHadMustOpen(mustOpen);
+    if (mustOpen) setOpen(true);
+  }
   return (
     <details open={open} className="flex flex-col gap-4">
       <summary
@@ -164,7 +172,8 @@ function SecretField({ field, value, isSaved, isCleared, typeAgain, onChange, on
         autoComplete="new-password"
         spellCheck={false}
       />
-      {typeAgain && <p id={typeAgainId} className="m-0 text-xs font-semibold text-primary-text">{typeAgain}</p>}
+      {/* The live region is always there, so a screen reader also says the text when it comes. Empty, it takes no space. */}
+      <p id={typeAgainId} aria-live="polite" className="m-0 text-xs font-semibold text-primary-text empty:absolute">{typeAgain}</p>
       {canClear && (
         <label className="flex items-center gap-2 text-xs text-zinc-200">
           <input

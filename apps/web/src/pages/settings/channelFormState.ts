@@ -1,4 +1,4 @@
-import { channelFieldLabels, movedChannelSecrets, type AlertSeverity, type ChannelField, type ChannelValues } from '@local-chatter/shared';
+import { movedChannelSecrets, movedChannelSecretsText, type AlertSeverity, type ChannelField, type ChannelValues } from '@local-chatter/shared';
 import type { ChannelInput, ChannelTypeInfo, NotificationChannel } from '../../api/notifications';
 
 /** What the channel form holds while the admin types. A phone list has one empty box, so the admin can type the first number. */
@@ -64,8 +64,8 @@ export function secretsToTypeAgain(form: ChannelFormState, channel: Notification
   const moved = movedChannelSecrets(type.fields, values, channel.settings,
     key => channel.hasSecret[key] === true && !clearSecrets.includes(key));
   if (!moved) return {};
-  const reason = `You changed the ${channelFieldLabels(moved.changed)}. Chatter does not send a saved secret to a new address.`;
-  return Object.fromEntries(moved.kept.map(field => [field.key, `Type the ${channelFieldLabels([field])} again. ${reason}`]));
+  // The same text as the refusal of the server, for one secret at a time
+  return Object.fromEntries(moved.kept.map(field => [field.key, movedChannelSecretsText({ changed: moved.changed, kept: [field] })]));
 }
 
 function emptyValuesOf(fields: ChannelField[]): ChannelValues {
