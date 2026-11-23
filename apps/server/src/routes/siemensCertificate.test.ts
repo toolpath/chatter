@@ -87,6 +87,10 @@ describe('the certificate of a Siemens control', () => {
     body: JSON.stringify(body),
   });
 
+  const forget = (as = cookie, machineId = id) => app().request(`/api/machine/${machineId}/opcua/forget-certificate`, {
+    method: 'POST', headers: { Cookie: as },
+  });
+
   /** The first connect trusts FIRST. Then the control shows SECOND, and Chatter refuses it. */
   async function controlChangesItsCertificate(): Promise<void> {
     await poller.poll();
@@ -171,6 +175,18 @@ describe('the certificate of a Siemens control', () => {
       expect(savedThumbprint()).toBe(FIRST);
     });
 
+    it('tells how to go on when the control now shows no certificate', async () => {
+      await poller.poll();
+      control.thumbprint = null;
+      poller.getConnector(id)?.disconnect();
+      await poller.poll();
+
+      const res = await trust({ thumbprint: SECOND });
+
+      expect(res.status).toBe(409);
+      expect(await errorOf(res)).toContain('/opcua/forget-certificate');
+    });
+
     it.each([{}, { thumbprint: 'abc' }, { thumbprint: 'g'.repeat(64) }, { thumbprint: 42 }, []])('refuses the body %j with 400', async body => {
       await controlChangesItsCertificate();
       expect((await trust(body)).status).toBe(400);
@@ -184,6 +200,60 @@ describe('the certificate of a Siemens control', () => {
     it('gives 400 for a machine that is not a Siemens machine', async () => {
       const brother = (await poller.addMachine({ type: 'brother', name: 'B', host: '192.168.1.61' })).id;
       const res = await trust({ thumbprint: SECOND }, cookie, brother);
+      expect(res.status).toBe(400);
+      expect(await errorOf(res)).toContain('Siemens');
+    });
+  });
+
+  describe('POST /api/machine/:id/opcua/forget-certificate', () => {
+    it('lets an Admin forget the trusted certificate, and the next connect trusts the certificate that it gets', async () => {
+      await controlChangesItsCertificate();
+
+      const res = await forget();
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ opcuaServerThumbprint: null });
+      expect(savedThumbprint()).toBeNull();
+      expect((await machine()).opcuaCertificateChanged).toBeUndefined();
+      await poller.poll();
+      expect(control.connects.at(-1)).toEqual({ trustedThumbprint: null, password: 'secret' });
+      expect(savedThumbprint()).toBe(SECOND);
+      expect(await machine()).toMatchObject({ connected: true, opcuaServerThumbprint: SECOND });
+    });
+
+    it('lets an Admin go on with a control that now shows no certificate', async () => {
+      await poller.poll();
+      control.thumbprint = null;
+      poller.getConnector(id)?.disconnect();
+      await poller.poll();
+      expect((await machine()).opcuaCertificateChanged?.presentedThumbprint).toBeNull();
+
+      expect((await forget()).status).toBe(200);
+      await poller.poll();
+
+      expect(await machine()).toMatchObject({ connected: true, opcuaServerThumbprint: null });
+    });
+
+    it('writes the forget in the audit log, with the user', async () => {
+      await poller.poll();
+      await forget();
+      const line = audit.lines.find(text => text.includes('/opcua/forget-certificate'));
+      expect(line).toContain('admin');
+    });
+
+    it.each([['an Operator', () => operatorCookie], ['a Viewer', () => viewerCookie]])('refuses %s with 403, and forgets nothing', async (_role, as) => {
+      await poller.poll();
+      expect((await forget(as())).status).toBe(403);
+      expect(savedThumbprint()).toBe(FIRST);
+    });
+
+    it('gives 404 for an unknown machine', async () => {
+      expect((await forget(cookie, 'no-such-machine')).status).toBe(404);
+    });
+
+    it('gives 400 for a machine that is not a Siemens machine', async () => {
+      const brother = (await poller.addMachine({ type: 'brother', name: 'B', host: '192.168.1.61' })).id;
+      const res = await forget(cookie, brother);
       expect(res.status).toBe(400);
       expect(await errorOf(res)).toContain('Siemens');
     });
