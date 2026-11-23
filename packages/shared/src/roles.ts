@@ -35,3 +35,17 @@ export interface UserToAdd {
 export function roleCan(role: Role, permission: Permission): boolean {
   return PERMISSIONS_OF[role].includes(permission);
 }
+
+/** Which details of a send of a program a role may see. True means that the role sees the field. */
+export interface UploadSenderFields {
+  uploaded_by: boolean;
+  address: boolean;
+}
+
+/**
+ * Decision D4: a Viewer does not see who sent a program. An Operator sees who sent it, but only an Admin sees the
+ * address of the computer. The server removes the other fields, and the web app shows only these fields.
+ */
+export function uploadSenderFieldsFor(role: Role): UploadSenderFields {
+  return { uploaded_by: roleCan(role, 'read-files'), address: roleCan(role, 'manage-chatter') };
+}
