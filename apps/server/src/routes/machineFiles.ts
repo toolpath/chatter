@@ -4,9 +4,12 @@ import { createMiddleware } from 'hono/factory';
 import type { UnofficialStatusCode } from 'hono/utils/http-status';
 import { FILE_LIST_CUT_SHORT_HEADER, PROGRAM_UPLOAD_LIMIT_BYTES } from '@local-chatter/shared';
 import type { HardwarePoller } from '../polling/poller.js';
-import { recordUpload } from '../storage/database.js';
+import { recordUpload, type SentBy } from '../storage/database.js';
 import { attachmentHeader, downloadAsStream } from './fileDownload.js';
-import { requirePermission } from '../auth/authRoutes.js';
+import { requirePermission, type LoggedInEnv } from '../auth/authRoutes.js';
+import type { ProxySettings } from '../auth/proxySettings.js';
+import { originOf } from '../auth/requestOrigin.js';
+import { addAuditDetail } from '../logging/audit.js';
 import { checkedForm, checkedQuery } from './checks.js';
 import { allowLongUpload } from '../webServerOptions.js';
 import { machineErrorReply, notFound } from './responses.js';
@@ -87,7 +90,8 @@ function fileTaskErrorReply(error: Error, c: Context) {
 
 /** The form sends booleans as the text "true" or "false" */
 const isTrueText = (value: string | undefined) => value === 'true';
-const fileNameOf = (remotePath: string) => remotePath.slice(remotePath.lastIndexOf('/') + 1);
+/** The last part of the path that is not empty, so "/PRG/O1000.NC/" gives "O1000.NC". A path of only "/" stays as it is. */
+const fileNameOf = (remotePath: string) => remotePath.split('/').filter(part => part !== '').pop() ?? remotePath;
 
 async function receive(file: File): Promise<ReceivedFile> {
   return { name: file.name, content: Buffer.from(await file.arrayBuffer()) };
@@ -122,32 +126,40 @@ function describeUpload(plan: UploadPlan, remotePath: string) {
   };
 }
 
+/** The logged-in user, and the address of the computer, also behind a trusted reverse proxy */
+function sentByOf(c: Context<LoggedInEnv>, proxySettings: ProxySettings): SentBy {
+  return { username: c.var.user.username, address: originOf(c, proxySettings).address };
+}
+
 /**
- * Save a sent file in the upload history.
+ * Save a sent file in the upload history, with who sent it.
  * The file is on the machine already, so an error here does not make the send fail.
  * The error goes to the log, and the user does not get the database text.
  */
-async function recordSentFile(machineId: string, file: ReceivedFile, nameOnMachine: string, remotePath: string) {
+async function recordSentFile(machineId: string, file: ReceivedFile, nameOnMachine: string, remotePath: string, sentBy: SentBy) {
   try {
-    await recordUpload(machineId, file.name, nameOnMachine, remotePath, file.content.toString('utf-8'));
+    await recordUpload(machineId, file.name, nameOnMachine, remotePath, file.content.toString('utf-8'), sentBy);
   } catch (error) {
     log.error('The file is on the machine, but Chatter could not save it in the upload history', { machineId, path: remotePath, error });
   }
 }
 
-async function recordSentFiles(machineId: string, plan: UploadPlan, sentPaths: string[]) {
+async function recordSentFiles(machineId: string, plan: UploadPlan, sentPaths: string[], sentBy: SentBy) {
   for (const remotePath of sentPaths) {
     const file = plan.fileAt[remotePath];
-    if (file) await recordSentFile(machineId, file, plan.targetNameAt[remotePath], remotePath);
+    if (file) await recordSentFile(machineId, file, plan.targetNameAt[remotePath], remotePath, sentBy);
   }
 }
 
-/** Read, send, and delete the program files on a machine (over FTP) */
-export function machineFileRoutes(poller: HardwarePoller) {
+/**
+ * Read, send, and delete the program files on a machine (over FTP).
+ * The upload history records who sent each file. The audit log records each delete, with the file name.
+ */
+export function machineFileRoutes(poller: HardwarePoller, proxySettings: ProxySettings) {
   const canReadFiles = requirePermission('read-files');
   const canSendFiles = requirePermission('send-files');
   const uploadLimit = limitUploadsAtOnce();
-  return new Hono()
+  return new Hono<LoggedInEnv>()
     // The machine refused or failed, so its reply text goes to the user
     .onError(fileTaskErrorReply)
     // Names, sizes and dates only. Each role can see them.
@@ -199,7 +211,7 @@ export function machineFileRoutes(poller: HardwarePoller) {
         }
         throw error;
       }
-      await recordSentFile(machineId, received, nameOnMachine, remotePath);
+      await recordSentFile(machineId, received, nameOnMachine, remotePath, sentByOf(c, proxySettings));
       return c.json({
         message: 'File uploaded successfully',
         filename: received.name,
@@ -221,7 +233,7 @@ export function machineFileRoutes(poller: HardwarePoller) {
       const received = await Promise.all(files.map(receive));
       const plan = planUpload(received, basePath, names.names);
       const results = await connector.uploadFiles(plan.files, isTrueText(overwrite), c.req.raw.signal);
-      await recordSentFiles(machineId, plan, results.success.map(sent => sent.remotePath));
+      await recordSentFiles(machineId, plan, results.success.map(sent => sent.remotePath), sentByOf(c, proxySettings));
 
       return c.json({
         success: results.success.map(sent => describeUpload(plan, sent.remotePath)),
@@ -234,6 +246,8 @@ export function machineFileRoutes(poller: HardwarePoller) {
 
     .delete('/machine/:id/files', canSendFiles, checkedQuery(filePathQuery), async c => {
       const { path: filePath } = c.req.valid('query');
+      // The file name is in the query, so the audit line gets it only here. Before the delete, so a failed delete has it too.
+      addAuditDetail(c, 'file', fileNameOf(filePath));
       const connector = poller.getConnector(c.req.param('id'));
       if (!connector) return notFound(c);
 

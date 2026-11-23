@@ -88,7 +88,10 @@ const CREATE_TABLE_STATEMENTS = [
     target_name TEXT,
     remote_path TEXT NOT NULL,
     file_content BLOB,
-    uploaded_at TEXT DEFAULT CURRENT_TIMESTAMP
+    uploaded_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    uploaded_by TEXT,
+    address TEXT,
+    action TEXT DEFAULT 'sent'
   )`,
 ];
 
@@ -113,6 +116,11 @@ const ADDED_COLUMNS: AddedColumn[] = [
   { table: 'mtconnect_machines', column: 'ftp_user', definition: "TEXT DEFAULT 'anonymous'" },
   { table: 'mtconnect_machines', column: 'ftp_password', definition: "TEXT DEFAULT ''" },
   { table: 'upload_events', column: 'target_name', definition: 'TEXT' },
+  // Who sent the file, and from which computer (F-07). An older row keeps null: nobody knows who sent it.
+  { table: 'upload_events', column: 'uploaded_by', definition: 'TEXT' },
+  { table: 'upload_events', column: 'address', definition: 'TEXT' },
+  // Each row is a send today. The audit log records a delete.
+  { table: 'upload_events', column: 'action', definition: "TEXT DEFAULT 'sent'" },
 ];
 
 /** The tables of the old machine history. VictoriaMetrics keeps the machine history now. */

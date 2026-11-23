@@ -11,6 +11,7 @@ import type { BaseMachineConnector } from '../machines/BaseMachineConnector.js';
 import type { HardwarePoller } from '../polling/poller.js';
 import { captureLog, type CapturedLog } from '../logging/testSupport.js';
 import { startWebServer } from '../webServerOptions.js';
+import { ProxySettings } from '../auth/proxySettings.js';
 import { machineFileRoutes } from './machineFiles.js';
 
 // The whole path of a cancel: the browser closes the connection, @hono/node-server cancels the reply,
@@ -39,7 +40,7 @@ function appFor(machine: EndlessMachine) {
       c.set('user', { id: 1, username: 'operator', role: 'operator' });
       await next();
     })
-    .route('/', machineFileRoutes(poller));
+    .route('/', machineFileRoutes(poller, ProxySettings.inMemory()));
 }
 
 describe('a program download that the browser cancels', () => {

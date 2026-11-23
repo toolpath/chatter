@@ -129,7 +129,7 @@ export function createApp({
     .get('/status', c => c.json(poller.getStatus()))
     .route('/', machineRoutes(poller))
     .route('/', discoveryRoutes(poller))
-    .route('/', machineFileRoutes(poller))
+    .route('/', machineFileRoutes(poller, proxySettings))
     .route('/', uploadHistoryRoutes())
     .route('/', historyRoutes(poller, history, statePeriods))
     .route('/', reportRoutes(poller, history, statePeriods))

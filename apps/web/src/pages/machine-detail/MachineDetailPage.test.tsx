@@ -123,7 +123,7 @@ describe('MachineDetailPage', () => {
     vi.mocked(fetchFileBytes).mockReset().mockReturnValue(new Promise(() => {}));
     vi.mocked(fetchUploadFiles).mockReset().mockResolvedValue([]);
     vi.mocked(fetchUploadEvents).mockReset().mockResolvedValue([
-      { id: 21, uploaded_at: '2026-11-19T10:00:00.000Z', remote_path: '/', target_name: null },
+      { id: 21, uploaded_at: '2026-11-19T10:00:00.000Z', remote_path: '/', target_name: null, action: 'sent' },
     ]);
     vi.mocked(fetchUploadEvent).mockReset().mockReturnValue(new Promise(() => {}));
     vi.mocked(uploadMachineFiles).mockReset().mockResolvedValue({ ok: true, result: { success: [{ filename: 'O1000.nc' }] } });
@@ -518,7 +518,7 @@ describe('MachineDetailPage', () => {
     it('shows the text of the picked version to an operator, with Send this version again', async () => {
       vi.mocked(fetchUploadFiles).mockResolvedValue(SENT_FILES);
       vi.mocked(fetchUploadEvent).mockResolvedValue({
-        id: 21, uploaded_at: '2026-11-19T10:00:00.000Z', remote_path: '/', target_name: null, file_name: 'O2000.nc', file_content: 'G00 X0',
+        id: 21, uploaded_at: '2026-11-19T10:00:00.000Z', remote_path: '/', target_name: null, action: 'sent', file_name: 'O2000.nc', file_content: 'G00 X0',
       });
       renderPage({ role: 'operator', address: '/machine/m1?tab=files' });
       fireEvent.click(await within(viewSwitch()).findByRole('button', { name: 'Upload history 2' }));

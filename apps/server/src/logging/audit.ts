@@ -3,8 +3,9 @@
  * because the server log is small (2 files of 1 MB) and a busy machine can fill it in some days.
  *
  * Each line has the time, the user, the role, the method, the route pattern (for example /api/machine/:id), the values
- * of the path parameters (IDs, cut to MAX_AUDIT_VALUE characters), the status and the address. A line never has a value
- * of the body or of the query, a cookie or a password. The secrets are hidden as in the server log (redact.ts).
+ * of the path parameters (IDs, cut to MAX_AUDIT_VALUE characters), the status and the address. A route can add a detail
+ * with addAuditDetail, for example the name of a deleted file. A line never has a value of the body, a cookie or a
+ * password, and has a value of the query only when a route adds it. The secrets are hidden as in the server log (redact.ts).
  *
  * The level of the server log (LOG_LEVEL) does not stop an audit line. LOG_FILE=off also turns off the audit file.
  * Only an Admin can read the audit log: it is in the support bundle (Settings > Diagnostics).
@@ -66,6 +67,18 @@ export function writeAuditAndLog(message: string, context: LogContext): void {
   log.info(message, context);
 }
 
+/** The details that the routes add to the audit line of each request */
+const addedDetails = new WeakMap<Request, Record<string, string>>();
+
+/**
+ * Add a detail to the audit line of this request, for example the name of a deleted file, which is in the query.
+ * Add it before the route can fail, so the line of a failed change has it too. The value is cut to MAX_AUDIT_VALUE
+ * characters. It comes after the path parameters, and it does not replace a fixed detail or a path parameter.
+ */
+export function addAuditDetail(c: Context, key: string, value: string): void {
+  addedDetails.set(c.req.raw, { ...addedDetails.get(c.req.raw), [key]: cutValue(value) });
+}
+
 /** A GET changes nothing. HEAD and OPTIONS read only. */
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -91,7 +104,8 @@ function recordChange(c: Context<LoggedInEnv>, proxySettings: ProxySettings, sta
   // After next(), the route pattern and the parameters are those of the last handler that ran
   const fixed = { user: username, role, method: c.req.method, route: routePath(c), status, address: originOf(c, proxySettings).address };
   // The parameters come after the fixed details. A parameter with the name of a fixed detail does not replace it.
-  const params = Object.entries(c.req.param()).filter(([key]) => !(key in fixed)).map(([key, value]) => [key, cutValue(value)]);
-  const details = { ...fixed, ...Object.fromEntries(params) };
+  const params = Object.fromEntries(Object.entries(c.req.param()).filter(([key]) => !(key in fixed)).map(([key, value]) => [key, cutValue(value)]));
+  const added = Object.entries(addedDetails.get(c.req.raw) ?? {}).filter(([key]) => !(key in fixed) && !(key in params));
+  const details = { ...fixed, ...params, ...Object.fromEntries(added) };
   writeAuditAndLog('Change', details);
 }

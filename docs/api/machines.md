@@ -84,7 +84,7 @@ The scan finds only machines that are not added yet. To add a found machine, sen
 | GET | `/api/machine/:id/files/download` | Download a file (Operator or Admin). Query: `path`. A file is at most 64 MB, and a download stops after 30 minutes. When the machine refuses the file (for example `550`), the reply is an error with the reply of the machine. When the client closes the connection, Chatter stops the transfer from the machine and frees its FTP connection. This is also true when the machine has not sent the first byte of the file. |
 | POST | `/api/machine/:id/files/upload` | Upload a single file (Operator or Admin). Form fields: `file`, `path`, `overwrite`, `targetName`. `409` when the file exists and `overwrite` is not `true` |
 | POST | `/api/machine/:id/files/upload-batch` | Upload multiple files (Operator or Admin). Form fields: `files`, `basePath`, `overwrite`, `targetNames`. The reply is `{ success, failed }` |
-| DELETE | `/api/machine/:id/files` | Delete a file (Operator or Admin). Query: `path` |
+| DELETE | `/api/machine/:id/files` | Delete a file (Operator or Admin). Query: `path`. The audit log gets the file name (see [Audit log](../guide/logs.md#audit-log)) |
 
 The upload form fields:
 - `path`: the full path of the file on the machine. `basePath`: the folder on the machine.
@@ -96,5 +96,15 @@ The upload form fields:
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/machine/:id/uploads` | Get upload history for a machine. Query: `limit` (default `50`) |
-| GET | `/api/machine/:id/uploads/:fileId/events` | Get upload events for a file |
+| GET | `/api/machine/:id/uploads/:fileId/events` | Get upload events for a file, newest first |
 | GET | `/api/machine/:id/uploads/events/:eventId` | Get specific upload event with content (Operator or Admin) |
+
+Each upload event has these fields:
+
+- `id`, `target_name` (the name on the machine), `remote_path` and `uploaded_at`.
+- `action`: `sent`. Each event is a send. The audit log records a delete.
+- `uploaded_by`: the user who sent the file. Only an Operator and an Admin get this field. A Viewer does not.
+- `address`: the address of the computer of that user. Only an Admin gets this field.
+- `file_content`: the text of the program. Only the event with `:eventId` has it.
+
+An event from before Chatter recorded the user has `null` in `uploaded_by` and `address`.

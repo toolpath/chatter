@@ -6,6 +6,7 @@ import { SESSION_COOKIE } from '../auth/authRoutes.js';
 import { loggedInAuth } from '../auth/testSupport.js';
 import type { UserAccounts } from '../auth/userAccounts.js';
 import { HardwarePoller } from '../polling/poller.js';
+import { closeDatabase, getDb, initDatabase, recordUpload } from '../storage/database.js';
 import { applySchema } from '../storage/schema.js';
 import { testApp } from './testSupport.js';
 
@@ -75,7 +76,7 @@ const VIEWER_CAN_READ: Record<string, string> = {
   '/api/machine/:id/state-timeline': 'machine history',
   '/api/machine/:id/history/:value': 'machine history',
   '/api/machine/:id/files': 'the program list of the machine page',
-  // Open owner question: the upload history tells who sent a program (D4, uploaded_by in PR 13)
+  // The route hides who sent or deleted a program, and the address, from a Viewer (D4, uploadHistory.test.ts)
   '/api/machine/:id/uploads': 'the upload history of the machine page',
   '/api/machine/:id/uploads/:fileId/events': 'the upload history of the machine page',
 };
@@ -109,5 +110,61 @@ describe('the GET routes that a Viewer can read (D4)', () => {
     expect(notRefused.sort()).toEqual(Object.keys(VIEWER_CAN_READ).sort());
     // The walk found the settings and the logs too
     expect(getPaths.size - notRefused.length).toBeGreaterThan(15);
+  });
+});
+
+/**
+ * Who sent a program and from which address (F-07 of the security review). A Viewer does not see who sent it, and only
+ * an Admin sees the address (D4). This walk reads each GET route as a Viewer and as an Operator, so a new route that
+ * gives an upload row without the role filter of uploadHistory.ts fails here.
+ */
+describe('the GET routes do not show who sent a program to a Viewer, or the address to an Operator', () => {
+  const SENDER = 'leak-sender';
+  const ADDRESS = '10.99.99.99';
+  let poller: HardwarePoller | undefined;
+
+  afterEach(async () => {
+    poller?.stop();
+    await closeDatabase();
+  });
+
+  it('gives the user to an Operator only, and the address to nobody of these roles', async () => {
+    // A test before this one can have opened the database of the data folder, so close it before the change of the path
+    await closeDatabase();
+    process.env.DATABASE_PATH = ':memory:';
+    await initDatabase();
+    const { auth, accounts } = await loggedInAuth();
+    const cookies = {} as Record<Exclude<Role, 'admin'>, string>;
+    for (const role of ['viewer', 'operator'] as const) {
+      const login = { username: `${role}-walker`, password: 'test-password' };
+      await accounts.add({ ...login, role });
+      cookies[role] = `${SESSION_COOKIE}=${await auth.logIn(login, { userAgent: 'test browser', address: '127.0.0.1' })}`;
+    }
+    const db = new Database(':memory:');
+    applySchema(db);
+    poller = new HardwarePoller(db);
+    const machineId = (await poller.addMachine({ type: 'brother', name: 'Speedio', host: '127.0.0.1', dataPort: CLOSED_PORT })).id;
+    await recordUpload(machineId, 'part.nc', 'O1000.NC', '/PRG/O1000.NC', 'O1000\nM30\n', { username: SENDER, address: ADDRESS });
+    const { fileId, eventId } = getDb().prepare('SELECT file_id AS fileId, id AS eventId FROM upload_events').get() as { fileId: number; eventId: number };
+    const app = testApp({ auth, accounts, poller });
+
+    const getPaths = new Set(app.routes.filter(route => route.method === 'GET' && route.path.startsWith('/api/')).map(route => route.path));
+    const bodies = { viewer: new Map<string, string>(), operator: new Map<string, string>() };
+    for (const role of ['viewer', 'operator'] as const) {
+      for (const routePath of getPaths) {
+        const url = routePath.replace(':id', machineId).replace(':fileId', String(fileId)).replace(':eventId', String(eventId)).replace(/:\w+/g, '1');
+        const res = await app.request(url, { headers: { Cookie: cookies[role] } });
+        // A live stream does not end by itself, and it sends machine status only
+        if (res.headers.get('Content-Type')?.startsWith('text/event-stream')) await res.body?.cancel();
+        else bodies[role].set(routePath, await res.text());
+      }
+    }
+
+    const withText = (role: keyof typeof bodies, text: string) => [...bodies[role]].filter(([, body]) => body.includes(text)).map(([path]) => path);
+    expect(withText('viewer', SENDER)).toEqual([]);
+    expect(withText('viewer', ADDRESS)).toEqual([]);
+    expect(withText('operator', ADDRESS)).toEqual([]);
+    // The walk reached the upload: an Operator sees who sent it
+    expect(withText('operator', SENDER).sort()).toEqual(['/api/machine/:id/uploads/:fileId/events', '/api/machine/:id/uploads/events/:eventId']);
   });
 });

@@ -9,6 +9,7 @@ import type {
   OpcUaSecurity,
   PollTimings,
   SiemensMachineData,
+  UploadAction,
 } from '@local-chatter/shared';
 
 // ============================================
@@ -304,6 +305,10 @@ export interface UploadEventRow {
   file_id: number;
   target_name: string | null;
   remote_path: string;
+  action: UploadAction;
+  /** Null for a row from before Chatter recorded who sent a file */
+  uploaded_by: string | null;
+  address: string | null;
   /** Stored gzipped (Buffer) and becomes text after it is unzipped. Not selected by the list query, so absent there. */
   file_content: Buffer | string | null;
   uploaded_at: string;

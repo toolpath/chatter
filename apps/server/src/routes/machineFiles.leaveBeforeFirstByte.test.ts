@@ -10,6 +10,7 @@ import type { BaseMachineConnector } from '../machines/BaseMachineConnector.js';
 import type { HardwarePoller } from '../polling/poller.js';
 import { captureLog, type CapturedLog } from '../logging/testSupport.js';
 import { startWebServer } from '../webServerOptions.js';
+import { ProxySettings } from '../auth/proxySettings.js';
 import { machineFileRoutes } from './machineFiles.js';
 
 // The browser leaves while the route still waits for the first bytes of the machine. Then the reply has no stream
@@ -29,7 +30,7 @@ function appFor(machine: EndlessMachine, statuses: number[]) {
       await next();
       statuses.push(c.res.status);
     })
-    .route('/', machineFileRoutes(poller));
+    .route('/', machineFileRoutes(poller, ProxySettings.inMemory()));
 }
 
 describe('a program download that the browser leaves before the first byte', () => {

@@ -49,8 +49,14 @@ export async function initDatabase(): Promise<void> {
   log.info('Database tables initialized', { path: databasePath() });
 }
 
+/** The user who sent a file, and the address of the computer */
+export interface SentBy {
+  username: string;
+  address: string;
+}
+
 /**
- * Save one upload of a file to a machine. The content is stored gzip-compressed.
+ * Save one upload of a file to a machine, with who sent it. The content is stored gzip-compressed.
  * Uploads are grouped by the original file name; the target name is the name on the machine.
  */
 export async function recordUpload(
@@ -58,14 +64,15 @@ export async function recordUpload(
   originalName: string,
   targetName: string,
   remotePath: string,
-  fileContent: string
+  fileContent: string,
+  sentBy: SentBy,
 ): Promise<void> {
   const compressedContent = await gzip(Buffer.from(fileContent, STORED_TEXT_ENCODING));
   const fileId = saveUploadFile(machineId, originalName);
   getDb().prepare(`
-    INSERT INTO upload_events (file_id, target_name, remote_path, file_content)
-    VALUES (?, ?, ?, ?)
-  `).run(fileId, targetName, remotePath, compressedContent);
+    INSERT INTO upload_events (file_id, target_name, remote_path, file_content, uploaded_by, address)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(fileId, targetName, remotePath, compressedContent, sentBy.username, sentBy.address);
 }
 
 /** Add the file to the upload history, or mark it as updated now. Returns the file ID. */
@@ -83,7 +90,10 @@ function saveUploadFile(machineId: string, fileName: string): number {
   return file.id;
 }
 
-/** The uploaded files of a machine, most recently updated first, with their upload count and last path. */
+/**
+ * The uploaded files of a machine, most recently updated first, with their upload count and last path.
+ * The last path comes from the same upload that getUploadEvents gives first.
+ */
 export async function getUploadFiles(machineId: string, limit = DEFAULT_UPLOAD_FILE_LIMIT): Promise<UploadFileRow[]> {
   return getDb().prepare(`
     SELECT
@@ -92,7 +102,7 @@ export async function getUploadFiles(machineId: string, limit = DEFAULT_UPLOAD_F
       uf.created_at,
       uf.updated_at,
       COUNT(ue.id) as event_count,
-      (SELECT remote_path FROM upload_events WHERE file_id = uf.id ORDER BY uploaded_at DESC LIMIT 1) as last_path
+      (SELECT remote_path FROM upload_events WHERE file_id = uf.id ORDER BY uploaded_at DESC, id DESC LIMIT 1) as last_path
     FROM upload_files uf
     LEFT JOIN upload_events ue ON ue.file_id = uf.id
     WHERE uf.machine_id = ?
@@ -102,21 +112,28 @@ export async function getUploadFiles(machineId: string, limit = DEFAULT_UPLOAD_F
   `).all(machineId, limit) as UploadFileRow[];
 }
 
-/** The uploads of one file of a machine, newest first, without their content. A file of another machine gives none. */
+/**
+ * The uploads of one file of a machine, newest first, without their content. A file of another machine gives none.
+ * The time has whole seconds only, so the row ID puts two uploads of the same second in order.
+ */
 export async function getUploadEvents(machineId: string, fileId: number): Promise<UploadEventRow[]> {
   return getDb().prepare(`
-    SELECT ue.id, ue.target_name, ue.remote_path, ue.uploaded_at
+    SELECT ue.id, ue.target_name, ue.remote_path, ue.uploaded_at, ue.action, ue.uploaded_by, ue.address
     FROM upload_events ue
     JOIN upload_files uf ON uf.id = ue.file_id
     WHERE ue.file_id = ? AND uf.machine_id = ?
-    ORDER BY ue.uploaded_at DESC
+    ORDER BY ue.uploaded_at DESC, ue.id DESC
   `).all(fileId, machineId) as UploadEventRow[];
 }
 
-/** One upload to a machine with its decompressed content, or null when the machine has no upload with this ID. */
+/**
+ * One upload to a machine with its decompressed content, or null when the machine has no upload with this ID.
+ * The columns are listed, so a new column does not go to a reply until a person checks which roles may see it.
+ */
 export async function getUploadEventById(machineId: string, eventId: number): Promise<UploadEventRow | null> {
   const event = getDb().prepare(`
-    SELECT ue.*, uf.file_name, uf.machine_id
+    SELECT ue.id, ue.file_id, ue.target_name, ue.remote_path, ue.file_content, ue.uploaded_at, ue.action, ue.uploaded_by, ue.address,
+      uf.file_name, uf.machine_id
     FROM upload_events ue
     JOIN upload_files uf ON uf.id = ue.file_id
     WHERE ue.id = ? AND uf.machine_id = ?
