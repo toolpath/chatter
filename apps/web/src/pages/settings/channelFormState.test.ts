@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChannelTypeInfo, NotificationChannel } from '../../api/notifications';
-import { channelInputOf, editChannelForm, newChannelForm, withType } from './channelFormState';
+import { channelInputOf, editChannelForm, newChannelForm, secretsToTypeAgain, withType } from './channelFormState';
 
 const twilio: ChannelTypeInfo = {
   id: 'twilio-sms', name: 'Text message (Twilio)', fields: [
@@ -91,5 +91,44 @@ describe('channelInputOf', () => {
 
     expect(channelInputOf(form).clearSecrets).toEqual(['secret']);
     expect(channelInputOf({ ...form, values: { ...form.values, secret: 'new' } }).clearSecrets).toBeUndefined();
+  });
+});
+
+describe('secretsToTypeAgain', () => {
+  const twoAddresses: ChannelTypeInfo = {
+    id: 'relay', name: 'Relay', fields: [
+      { key: 'url', label: 'Web address', kind: 'url', required: true },
+      { key: 'backup', label: 'Backup address (optional)', kind: 'url', required: false },
+      { key: 'token', label: 'Token', kind: 'secret', required: true },
+      { key: 'secret', label: 'Secret (optional)', kind: 'secret', required: false },
+    ],
+  };
+  const relay: NotificationChannel = {
+    ...slack, type: 'relay', settings: { url: 'https://a.example.com', backup: 'https://b.example.com' }, hasSecret: { token: true, secret: true },
+  };
+  const moved = (values: Record<string, string>) => {
+    const form = editChannelForm(relay, twoAddresses);
+    return { ...form, values: { ...form.values, ...values } };
+  };
+
+  it('names each changed address for each kept secret, as the server does', () => {
+    const reason = 'You changed the Web address and the Backup address. Chatter does not send a saved secret to a new address.';
+
+    expect(secretsToTypeAgain(moved({ url: 'https://c.example.com', backup: '' }), relay, twoAddresses)).toEqual({
+      token: `Type the Token again. ${reason}`,
+      secret: `Type the Secret again. ${reason}`,
+    });
+  });
+
+  it('asks only for the secrets that the form keeps', () => {
+    const form = { ...moved({ url: 'https://c.example.com', token: 'new' }), clearSecrets: ['secret'] };
+
+    expect(secretsToTypeAgain(form, relay, twoAddresses)).toEqual({});
+  });
+
+  it('asks for nothing when no address changes, or for a channel that is not saved or has another type', () => {
+    expect(secretsToTypeAgain(moved({ url: ' https://a.example.com ' }), relay, twoAddresses)).toEqual({});
+    expect(secretsToTypeAgain(moved({ url: 'https://c.example.com' }), undefined, twoAddresses)).toEqual({});
+    expect(secretsToTypeAgain(moved({ url: 'https://c.example.com' }), { ...relay, type: 'webhook' }, twoAddresses)).toEqual({});
   });
 });

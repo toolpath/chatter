@@ -11,7 +11,7 @@ import { useSlideOut } from '../../components/ui/useSlideOut';
 import { errorMessageOf } from '../../utils/errorMessage';
 import { AlertChoiceFields } from './AlertChoiceFields';
 import { ChannelFields } from './ChannelFields';
-import { channelInputOf, editChannelForm, newChannelForm, withType, type ChannelFormState } from './channelFormState';
+import { channelInputOf, editChannelForm, newChannelForm, secretsToTypeAgain, withType, type ChannelFormState } from './channelFormState';
 import type { MachineName } from './notificationLabels';
 
 interface ChannelFormProps {
@@ -76,7 +76,15 @@ export function ChannelForm({ types, machines, messages = [], channel, error, is
           <Field id="channel-name" label="Name">
             <TextInput id="channel-name" value={form.name} placeholder="Shop phones" autoComplete="off" onChange={event => setForm({ ...form, name: event.target.value })} />
           </Field>
-          {type && <ChannelFields type={type} form={form} hasSecret={channel?.hasSecret ?? {}} onChange={setForm} />}
+          {type && (
+            <ChannelFields
+              type={type}
+              form={form}
+              hasSecret={channel?.hasSecret ?? {}}
+              typeAgain={secretsToTypeAgain(form, channel, type)}
+              onChange={setForm}
+            />
+          )}
           {type?.note && <Notice tone="info" title={`About ${type.name}`}>{type.note}</Notice>}
           <AlertChoiceFields form={form} machines={machines} messages={messages} channelId={channel?.id} onChange={setForm} />
         </div>
