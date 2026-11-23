@@ -170,6 +170,42 @@ async function readServerCertificate(
   }
 }
 
+/** With security None, the control asks for the OPC UA password with no encryption. Chatter did not send it. */
+export class ClearTextPasswordError extends Error {
+  constructor(reason: string) {
+    super(`${reason} Chatter did not send the OPC UA password. Set Security to Sign and encrypt.`);
+    this.name = 'ClearTextPasswordError';
+  }
+}
+
+/** The security policies that encrypt a password. None, an empty one and an unknown one do not. */
+const ENCRYPTING_POLICIES = new Set<string>(
+  Object.values(SecurityPolicy).filter(uri => uri !== SecurityPolicy.None && uri !== SecurityPolicy.Invalid),
+);
+
+/**
+ * With security None, the channel does not encrypt. So the password is safe only when its user token policy encrypts it
+ * with the certificate of the control. node-opcua takes the password policy of a None endpoint, and with no policy of
+ * its own the policy of the channel (None). It encrypts with the trusted certificate, because the session client has
+ * it as serverCertificate. Each None endpoint and each password policy of it must encrypt, so the choice of node-opcua
+ * does not matter. These are the endpoints that the session connection got last, and node-opcua uses them for the session.
+ * Sign and encrypt needs no check: the channel encrypts each message.
+ * Chatter does not use requireTrustedServerForUserName of node-opcua: it also refuses a password policy with no
+ * encryption with Sign and encrypt, and it checks the certificate in the store, which can refuse an expired control certificate.
+ */
+function refuseClearTextPassword(endpoints: EndpointDescription[], certificate: Buffer | null): void {
+  if (!certificate) {
+    throw new ClearTextPasswordError('The control shows no OPC UA certificate, so Chatter cannot encrypt the password.');
+  }
+  const passwordPolicies = endpoints
+    .filter(endpoint => endpoint.securityMode === MessageSecurityMode.None)
+    .flatMap(endpoint => endpoint.userIdentityTokens ?? [])
+    .filter(policy => policy.tokenType === UserTokenType.UserName);
+  if (passwordPolicies.some(policy => !ENCRYPTING_POLICIES.has(policy.securityPolicyUri ?? ''))) {
+    throw new ClearTextPasswordError('The control asks for the OPC UA password with no encryption.');
+  }
+}
+
 /**
  * Open a session on the OPC UA server of a SINUMERIK control. Nothing stays open when it fails.
  *
@@ -178,7 +214,11 @@ async function readServerCertificate(
  * Then the session connection uses that certificate (serverCertificate), so node-opcua does not get a new one:
  * - Sign and encrypt: the secure channel opens only with the control that has the private key of that certificate.
  * - No security: the control proves nothing. A device in the middle can show a copy of the certificate of the control.
- *   The pin finds a new control, but not that. When the control encrypts the password, it uses that certificate.
+ *   The pin finds a new control, but not that. Chatter (node-opcua) encrypts the password with the public key of the
+ *   trusted certificate, so only the holder of its private key can read the password. node-opcua uses that key because
+ *   it puts serverCertificate into the session before ActivateSession (#refreshSessionServerCertificate, node-opcua
+ *   2.187). The test with a proxy in sinumerikClient.pin.test.ts fails if a new version stops this.
+ *   A control that asks for the password with no encryption gets no password (ClearTextPasswordError).
  */
 export function sinumerikSessionOpener(createClient: CreateOpcUaClient): OpenSinumerikSession {
   return async options => {
@@ -201,6 +241,7 @@ export function sinumerikSessionOpener(createClient: CreateOpcUaClient): OpenSin
     });
     try {
       await client.connect(endpointUrl);
+      if (!secure && options.user) refuseClearTextPassword(await client.getEndpoints(), certificate);
       const session = await client.createSession(userIdentity(options));
       return new OpcUaSinumerikSession(client, session, thumbprint);
     } catch (error) {
