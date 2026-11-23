@@ -429,10 +429,10 @@ describe('auth routes behind a reverse proxy', () => {
   });
 
   /** A request that the proxy sends on for a user */
-  function postFor(user: string, path: string, body: object, protocol = 'http') {
+  function postFor(user: string, path: string, body: object, protocol = 'http', cookie?: string) {
     return app.request(path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': user, 'X-Forwarded-Proto': protocol },
+      headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': user, 'X-Forwarded-Proto': protocol, ...(cookie ? { Cookie: cookie } : {}) },
       body: JSON.stringify(body),
     }, fromProxy);
   }
@@ -624,20 +624,64 @@ describe('auth routes behind a reverse proxy', () => {
       expect(audit.lines.join('\n')).not.toContain(BOB.password);
     });
 
-    it('writes every try with an unknown username, also the tries that the server log leaves out', async () => {
+    it('writes only the first tries with unknown usernames from one address, then one line that it only counts the next tries', async () => {
+      audit = captureAudit();
+      for (let i = 0; i < MAX_LOGGED_UNKNOWN_USERS + 5; i++) {
+        await postFor('192.168.1.66', '/api/auth/login', { username: `random-${i}`, password: 'wrong-password' });
+      }
+      await postFor('192.168.1.67', '/api/auth/login', { username: 'other-computer', password: 'wrong-password' });
+      await wrongAdminPassword('192.168.1.66');
+
+      expect(auditLines('address=192.168.1.66 result=no-such-user')).toHaveLength(MAX_LOGGED_UNKNOWN_USERS);
+      expect(audit.lines.join('\n')).not.toContain(`username=random-${MAX_LOGGED_UNKNOWN_USERS} `);
+      expect(auditLines('not logged one by one')).toEqual([expect.stringMatching(/address=192\.168\.1\.66 minutes=15$/)]);
+      // Other computers and known usernames still get a line
+      expect(auditLines('username=other-computer')).toHaveLength(1);
+      expect(auditLines('result=wrong-password')).toEqual([expect.stringMatching(/username=admin address=192\.168\.1\.66/)]);
+    });
+
+    it('cuts a long username to 64 characters, so a try with a long name cannot fill the log', async () => {
       audit = captureAudit();
       const log = captureLog();
       try {
-        for (let i = 0; i < MAX_LOGGED_UNKNOWN_USERS + 5; i++) {
-          await postFor('192.168.1.66', '/api/auth/login', { username: `random-${i}`, password: 'wrong-password' });
-        }
-        expect(log.text()).not.toContain(`username=random-${MAX_LOGGED_UNKNOWN_USERS}`);
+        await postFor('192.168.1.66', '/api/auth/login', { username: `${'u'.repeat(64)}`, password: 'wrong-password' });
+        const res = await app.request('/api/status', {
+          headers: { ...basic(`${'a'.repeat(64)}${'b'.repeat(300)}`, 'x').headers, 'X-Forwarded-For': '192.168.1.66' },
+        }, fromProxy);
+        expect(res.status).toBe(401);
+        expect(log.text()).toMatch(/ username=a{64}… address=192\.168\.1\.66/);
       } finally {
         log.restore();
       }
 
-      expect(auditLines('result=no-such-user')).toHaveLength(MAX_LOGGED_UNKNOWN_USERS + 5);
-      expect(auditLines(`username=random-${MAX_LOGGED_UNKNOWN_USERS + 4} address=192.168.1.66`)).toHaveLength(1);
+      expect(auditLines('Password try')).toEqual([
+        expect.stringMatching(/ username=u{64} address=/),
+        expect.stringMatching(/ username=a{64}… address=192\.168\.1\.66 result=no-such-user$/),
+      ]);
+    });
+
+    describe('when the time of a flood of unknown usernames ends', () => {
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('writes one line with the count of the tries that had no line, so each try is counted', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        // A new app, so its login limiter reads the fake time
+        const { auth, accounts } = authParts();
+        app = createApp({ poller: new HardwarePoller(emptyDb), auth, accounts, history: noHistory(), proxySettings: ProxySettings.inMemory(PROXY) });
+        audit = captureAudit();
+        for (let i = 0; i < MAX_LOGGED_UNKNOWN_USERS + 7; i++) {
+          await postFor('192.168.1.66', '/api/auth/login', { username: `random-${i}`, password: 'wrong-password' });
+        }
+        expect(auditLines('had no line')).toEqual([]);
+
+        vi.advanceTimersByTime(15 * 60 * 1000 + 1);
+        // The next password try from any address writes the count
+        await postFor('192.168.1.20', '/api/auth/login', { username: 'nobody', password: 'wrong-password' });
+
+        expect(auditLines('had no line')).toEqual([expect.stringMatching(/address=192\.168\.1\.66 count=7$/)]);
+      });
     });
 
     it('keeps a Basic username with a new line and control characters in one escaped line', async () => {

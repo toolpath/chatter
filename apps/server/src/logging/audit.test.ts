@@ -225,6 +225,15 @@ describe('auditLog middleware', () => {
     expect(audit.lines).toEqual([]);
   });
 
+  it('cuts a long path parameter to 64 characters and marks the cut, so one request cannot fill the log', async () => {
+    const res = await send('POST', `/api/machine/${'a'.repeat(64)}${'b'.repeat(10_000)}/reconnect`, viewerCookie);
+
+    expect(res.status).toBe(403);
+    expect(changeLines()).toEqual([expect.stringMatching(new RegExp(` status=403 address=192\\.168\\.1\\.20 id=a{64}…$`))]);
+    const serverLine = log.lines.find(line => line.text.includes('[audit] Change'))?.text ?? '';
+    expect(serverLine).toMatch(/ id=a{64}…$/);
+  });
+
   it('escapes a control character in a path parameter, so the line stays one line', async () => {
     const res = await send('DELETE', '/api/machine/%0Aevil%1B', viewerCookie);
 
