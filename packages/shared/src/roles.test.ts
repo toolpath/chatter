@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PERMISSIONS, ROLES, roleCan, type Permission, type Role } from './roles.js';
+import { PERMISSIONS, ROLES, roleCan, uploadSenderFieldsFor, type Permission, type Role } from './roles.js';
 
 /** What each role can do, written out from the spec. A change to a role must change this table too. */
 const SPEC: Record<Role, Permission[]> = {
@@ -26,5 +26,15 @@ describe('roleCan', () => {
     for (const role of ROLES) {
       if (roleCan(role, 'send-files')) expect(roleCan(role, 'read-files'), role).toBe(true);
     }
+  });
+});
+
+describe('uploadSenderFieldsFor', () => {
+  it('lets an Operator and an Admin see who sent a program, and only an Admin the address (decision D4)', () => {
+    expect(ROLES.map(role => [role, uploadSenderFieldsFor(role)])).toEqual([
+      ['viewer', { uploaded_by: false, address: false }],
+      ['operator', { uploaded_by: true, address: false }],
+      ['admin', { uploaded_by: true, address: true }],
+    ]);
   });
 });
