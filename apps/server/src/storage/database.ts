@@ -126,10 +126,14 @@ export async function getUploadEvents(machineId: string, fileId: number): Promis
   `).all(fileId, machineId) as UploadEventRow[];
 }
 
-/** One upload to a machine with its decompressed content, or null when the machine has no upload with this ID. */
+/**
+ * One upload to a machine with its decompressed content, or null when the machine has no upload with this ID.
+ * The columns are listed, so a new column does not go to a reply until a person checks which roles may see it.
+ */
 export async function getUploadEventById(machineId: string, eventId: number): Promise<UploadEventRow | null> {
   const event = getDb().prepare(`
-    SELECT ue.*, uf.file_name, uf.machine_id
+    SELECT ue.id, ue.file_id, ue.target_name, ue.remote_path, ue.file_content, ue.uploaded_at, ue.action, ue.uploaded_by, ue.address,
+      uf.file_name, uf.machine_id
     FROM upload_events ue
     JOIN upload_files uf ON uf.id = ue.file_id
     WHERE ue.id = ? AND uf.machine_id = ?
