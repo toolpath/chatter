@@ -191,6 +191,22 @@ export type OpcUaSecurity = 'none' | 'signAndEncrypt';
 
 export const OPCUA_SECURITY_MODES: readonly OpcUaSecurity[] = ['none', 'signAndEncrypt'];
 
+/**
+ * The warning for a user login with Security None (F-11, D6). Chatter still connects. Chatter sends the password only
+ * encrypted with the certificate of the control, but the channel itself has no signature and no encryption.
+ */
+export const OPCUA_NO_ENCRYPTION_WARNING = 'Security is None. Chatter does not sign or encrypt the OPC UA connection. '
+  + 'A device on the network can read the data and use the session of this login. Set Security to Sign and encrypt.';
+
+/**
+ * The warning for these OPC UA settings, or null. Only a user login gets it: an anonymous login sends no username and
+ * no password, and Chatter sends no password without a username.
+ */
+export function opcuaSecurityWarning(settings: { opcuaSecurity?: OpcUaSecurity; opcuaUser?: string }): string | null {
+  const isUserLogin = (settings.opcuaUser ?? '').trim() !== '';
+  return settings.opcuaSecurity === 'none' && isUserLogin ? OPCUA_NO_ENCRYPTION_WARNING : null;
+}
+
 export interface SiemensMachineData extends MachineData {
   /** The program state: RUNNING, STOPPED, WAITING, INTERRUPTED or ABORTED */
   programStatus?: string;
@@ -235,6 +251,8 @@ export interface SiemensMachine extends BaseMachine {
   opcuaServerThumbprint?: string | null;
   /** Set while the control shows a different certificate. Chatter does not connect until an Admin trusts it. */
   opcuaCertificateChanged?: OpcUaCertificateChange;
+  /** Set while a user logs in with Security None (OPCUA_NO_ENCRYPTION_WARNING). Chatter still connects and saves. */
+  opcuaSecurityWarning?: string;
   data: SiemensMachineData;
 }
 
