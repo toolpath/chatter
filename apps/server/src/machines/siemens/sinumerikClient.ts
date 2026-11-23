@@ -10,10 +10,14 @@ import {
   TimestampsToReturn,
   UserTokenType,
   type ClientSession,
+  type EndpointDescription,
+  type OPCUAClientOptions,
   type UserIdentityInfo,
   type Variant,
 } from 'node-opcua-client';
 import { OPCUACertificateManager } from 'node-opcua-certificate-manager';
+import { certificateThumbprint, CertificateChangedError, checkPin } from './certificatePin.js';
+import { limitedTransportFactory, OPCUA_TRANSPORT_LIMITS } from './opcuaTransport.js';
 import type { AlarmEvent } from './sinumerikAlarms.js';
 import { sinumerikNodeId } from './sinumerikValues.js';
 
@@ -30,6 +34,11 @@ export interface SinumerikConnectOptions {
   password?: string;
   security: SinumerikSecurity;
   timeoutMs: number;
+  /**
+   * The thumbprint of the certificate of the control that Chatter trusts, or null before the first connect.
+   * When the control shows a different certificate, the session does not open and the login is not sent.
+   */
+  trustedThumbprint: string | null;
 }
 
 /** One value of a read. `value` is undefined when the control could not give it, and `status` tells why. */
@@ -40,6 +49,8 @@ export interface SinumerikValue {
 
 /** A connection to the OPC UA server of one control */
 export interface SinumerikSession {
+  /** The thumbprint of the certificate that the control showed, or null when it showed none (only with no security) */
+  readonly serverThumbprint: string | null;
   read(paths: string[]): Promise<SinumerikValue[]>;
   /**
    * Get the alarm events of the control, the alarms that are active already first.
@@ -81,11 +92,9 @@ export function useSinumerikCertificateFolder(folder: string): void {
 /** One certificate store for every Siemens machine, so they all use the same client certificate */
 function sharedCertificateManager(): OPCUACertificateManager | undefined {
   if (!certificateFolder) return undefined;
-  // A SINUMERIK server certificate is self-signed. automaticallyAcceptUnknownCertificate makes Chatter accept
-  // each new or changed server certificate with no check by a person. It does not pin a certificate to a host,
-  // and it moves even a certificate in rejected/ to trusted/. So signAndEncrypt hides the data from a device that
-  // only listens. But a device in the middle gets its own certificate accepted, so it can read the data, and
-  // nothing proves which control answers. For this risk, see docs/security.md#how-chatter-is-made-to-be-used.
+  // A SINUMERIK server certificate is self-signed, so the store of node-opcua would refuse it. The store accepts each
+  // certificate, and Chatter does its own check: the certificate must be the trusted one (certificatePin.ts), and
+  // Chatter checks it before it opens the session. See docs/security.md.
   certificateManager ??= new OPCUACertificateManager({
     rootFolder: certificateFolder,
     automaticallyAcceptUnknownCertificate: true,
@@ -98,38 +107,119 @@ function userIdentity(options: SinumerikConnectOptions): UserIdentityInfo {
   return { type: UserTokenType.UserName, userName: options.user, password: options.password ?? '' };
 }
 
-/** Open a session on the OPC UA server of a SINUMERIK control. Nothing stays open when it fails. */
-export const openSinumerikSession: OpenSinumerikSession = async options => {
-  const secure = options.security === 'signAndEncrypt';
-  const client = OPCUAClient.create({
+/** The parts of an OPCUAClient that Chatter uses. A test gives a fake one. */
+export interface OpcUaClientLike {
+  connect(endpointUrl: string): Promise<void>;
+  getEndpoints(): Promise<EndpointDescription[]>;
+  createSession(userIdentity: UserIdentityInfo): Promise<ClientSession>;
+  disconnect(): Promise<void>;
+}
+
+export type CreateOpcUaClient = (options: OPCUAClientOptions) => OpcUaClientLike;
+
+/** The settings of each connection to a control: the one that reads the certificate, and the one with the session */
+function clientOptions(options: SinumerikConnectOptions): OPCUAClientOptions {
+  return {
     applicationName: APPLICATION_NAME,
     applicationUri: APPLICATION_URI,
     clientCertificateManager: sharedCertificateManager(),
-    securityMode: secure ? MessageSecurityMode.SignAndEncrypt : MessageSecurityMode.None,
-    securityPolicy: secure ? SecurityPolicy.Basic256Sha256 : SecurityPolicy.None,
     endpointMustExist: false,
-    requestedSessionTimeout: SESSION_TIMEOUT_MS,
-    keepSessionAlive: true,
     transportTimeout: options.timeoutMs,
     defaultTransactionTimeout: options.timeoutMs,
-    // The poller tries again with its own back-off, so the client must not
+    transportFactory: limitedTransportFactory,
+    transportSettings: OPCUA_TRANSPORT_LIMITS,
+    // The poller tries again with its own back-off, so the client must not. It also keeps the pin: with a retry,
+    // node-opcua connects again by itself after a break, and it takes a new certificate of the control with no check.
     connectionStrategy: { maxRetry: 0, initialDelay: 100, maxDelay: 200 },
-  });
+  };
+}
 
-  try {
-    await client.connect(`opc.tcp://${options.host}:${options.port}`);
-    const session = await client.createSession(userIdentity(options));
-    return new OpcUaSinumerikSession(client, session);
-  } catch (error) {
-    await client.disconnect().catch(() => undefined);
-    throw error;
+function certificateOf(endpoint: EndpointDescription | undefined): Buffer | null {
+  const certificate = endpoint?.serverCertificate;
+  return certificate && certificate.length > 0 ? certificate : null;
+}
+
+/**
+ * The certificate that the control shows for the security that is set.
+ * Sign and encrypt uses the certificate of its endpoint, and the session cannot open without the private key of it.
+ * With no security, a control may give no certificate in its None endpoint, so the certificate of any endpoint counts.
+ */
+function serverCertificateFor(endpoints: EndpointDescription[], security: SinumerikSecurity): Buffer | null {
+  if (security === 'signAndEncrypt') {
+    const secure = endpoints.find(endpoint =>
+      endpoint.securityMode === MessageSecurityMode.SignAndEncrypt && endpoint.securityPolicyUri === SecurityPolicy.Basic256Sha256);
+    if (!secure) throw new Error('The control has no OPC UA endpoint for Sign and encrypt (Basic256Sha256). Turn it on at the control.');
+    const certificate = certificateOf(secure);
+    if (!certificate) throw new Error('The Sign and encrypt endpoint of the control has no certificate');
+    return certificate;
   }
-};
+  const plain = endpoints.find(endpoint => endpoint.securityMode === MessageSecurityMode.None);
+  return certificateOf(plain) ?? endpoints.map(certificateOf).find(certificate => certificate !== null) ?? null;
+}
+
+/** Ask the control for its endpoints on a connection with no security and no login, then close that connection */
+async function readServerCertificate(
+  createClient: CreateOpcUaClient, endpointUrl: string, options: SinumerikConnectOptions,
+): Promise<Buffer | null> {
+  const discovery = createClient({ ...clientOptions(options), securityMode: MessageSecurityMode.None, securityPolicy: SecurityPolicy.None });
+  try {
+    await discovery.connect(endpointUrl);
+    return serverCertificateFor(await discovery.getEndpoints(), options.security);
+  } finally {
+    await discovery.disconnect().catch(() => undefined);
+  }
+}
+
+/**
+ * Open a session on the OPC UA server of a SINUMERIK control. Nothing stays open when it fails.
+ *
+ * First, Chatter reads the certificate of the control, and compares it with the trusted one (F-11). When it is not the
+ * trusted one, Chatter throws CertificateChangedError: it does not open the session and does not send the login.
+ * Then the session connection uses that certificate (serverCertificate), so node-opcua does not get a new one:
+ * - Sign and encrypt: the secure channel opens only with the control that has the private key of that certificate.
+ * - No security: the control proves nothing. A device in the middle can show a copy of the certificate of the control.
+ *   The pin finds a new control, but not that. When the control encrypts the password, it uses that certificate.
+ */
+export function sinumerikSessionOpener(createClient: CreateOpcUaClient): OpenSinumerikSession {
+  return async options => {
+    const endpointUrl = `opc.tcp://${options.host}:${options.port}`;
+    const certificate = await readServerCertificate(createClient, endpointUrl, options);
+    const thumbprint = certificate ? certificateThumbprint(certificate) : null;
+    const pin = checkPin(options.trustedThumbprint, thumbprint);
+    if (pin.outcome === 'changed' && options.trustedThumbprint !== null) {
+      throw new CertificateChangedError(pin.presented, options.trustedThumbprint);
+    }
+
+    const secure = options.security === 'signAndEncrypt';
+    const client = createClient({
+      ...clientOptions(options),
+      securityMode: secure ? MessageSecurityMode.SignAndEncrypt : MessageSecurityMode.None,
+      securityPolicy: secure ? SecurityPolicy.Basic256Sha256 : SecurityPolicy.None,
+      serverCertificate: certificate ?? undefined,
+      requestedSessionTimeout: SESSION_TIMEOUT_MS,
+      keepSessionAlive: true,
+    });
+    try {
+      await client.connect(endpointUrl);
+      const session = await client.createSession(userIdentity(options));
+      return new OpcUaSinumerikSession(client, session, thumbprint);
+    } catch (error) {
+      await client.disconnect().catch(() => undefined);
+      throw error;
+    }
+  };
+}
+
+export const openSinumerikSession: OpenSinumerikSession = sinumerikSessionOpener(options => OPCUAClient.create(options));
 
 class OpcUaSinumerikSession implements SinumerikSession {
   private subscription: ClientSubscription | null = null;
 
-  constructor(private readonly client: OPCUAClient, private readonly session: ClientSession) {}
+  constructor(
+    private readonly client: OpcUaClientLike,
+    private readonly session: ClientSession,
+    readonly serverThumbprint: string | null,
+  ) {}
 
   async read(paths: string[]): Promise<SinumerikValue[]> {
     const results = await this.session.read(

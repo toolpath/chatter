@@ -352,7 +352,19 @@ export class HardwarePoller extends EventEmitter {
     connector.on('data', (dataItems: MachineDataItem[]) => {
       this.emit('machineData', { machineId: connector.id, machineType: connector.type, data: dataItems });
     });
+    if (connector instanceof SiemensConnector) {
+      connector.onTrustedThumbprintChange = thumbprint => this.saveServerThumbprint(connector.id, thumbprint);
+    }
     this.registry.add(connector);
+  }
+
+  /** A database that fails must not stop the connect. Then the next start trusts the certificate of its first connect again. */
+  private saveServerThumbprint(id: string, thumbprint: string | null): void {
+    try {
+      this.repository.setSiemensServerThumbprint(id, thumbprint);
+    } catch (error) {
+      log.error('Could not save the trusted OPC UA certificate', { machine: id, error });
+    }
   }
 
   /** Older databases may not have the table yet. Then skip that machine type. */

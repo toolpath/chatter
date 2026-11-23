@@ -6,6 +6,7 @@ import type {
   MachineUpdate,
   MacroConfig,
   MTConnectMachineData,
+  OpcUaCertificateChange,
   OpcUaSecurity,
   PollTimings,
   SiemensMachineData,
@@ -34,6 +35,7 @@ export type {
   MacroConfig,
   MTConnectMachineData,
   MTConnectMachineUpdate,
+  OpcUaCertificateChange,
   OpcUaSecurity,
   SiemensMachineData,
   SiemensMachineUpdate,
@@ -95,6 +97,8 @@ export interface SiemensMachineConfig extends BaseMachineConfig {
   opcuaUser?: string;
   opcuaPassword?: string;
   opcuaSecurity?: OpcUaSecurity;
+  /** The thumbprint of the OPC UA certificate of the control that Chatter trusts. Only the database sets it, never a request. */
+  opcuaServerThumbprint?: string;
   /** R parameters to read: location 5 is R5 */
   macros?: MacroConfig[];
 }
@@ -170,6 +174,10 @@ export interface SiemensMachineStatus extends BaseMachineStatus {
   /** Only whether an OPC UA password is saved. The password itself never leaves the server. */
   hasOpcuaPassword: boolean;
   opcuaSecurity: OpcUaSecurity;
+  /** The thumbprint of the trusted certificate of the control, or null before the first connect */
+  opcuaServerThumbprint: string | null;
+  /** Set while the control shows a different certificate, so Chatter does not connect */
+  opcuaCertificateChanged?: OpcUaCertificateChange;
   data: SiemensMachineData;
 }
 
@@ -282,6 +290,7 @@ export interface SiemensMachineRow {
   opcua_user: string;
   opcua_password: string;
   opcua_security: string;
+  opcua_server_thumbprint: string | null;
   ftp_port: number;
   ftp_user: string;
   ftp_password: string;

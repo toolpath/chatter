@@ -67,6 +67,7 @@ const CREATE_TABLE_STATEMENTS = [
     opcua_user TEXT DEFAULT '',
     opcua_password TEXT DEFAULT '',
     opcua_security TEXT DEFAULT 'none',
+    opcua_server_thumbprint TEXT,
     ftp_port INTEGER DEFAULT 21,
     ftp_user TEXT DEFAULT 'anonymous',
     ftp_password TEXT DEFAULT '',
@@ -115,6 +116,8 @@ const ADDED_COLUMNS: AddedColumn[] = [
   { table: 'mtconnect_machines', column: 'ftp_port', definition: 'INTEGER DEFAULT 21' },
   { table: 'mtconnect_machines', column: 'ftp_user', definition: "TEXT DEFAULT 'anonymous'" },
   { table: 'mtconnect_machines', column: 'ftp_password', definition: "TEXT DEFAULT ''" },
+  // The trusted OPC UA certificate of the control (F-11). An older row has none: its next connect trusts the certificate that it gets.
+  { table: 'siemens_machines', column: 'opcua_server_thumbprint', definition: 'TEXT' },
   { table: 'upload_events', column: 'target_name', definition: 'TEXT' },
   // Who sent the file, and from which computer (F-07). An older row keeps null: nobody knows who sent it.
   { table: 'upload_events', column: 'uploaded_by', definition: 'TEXT' },

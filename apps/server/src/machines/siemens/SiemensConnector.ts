@@ -1,14 +1,17 @@
 import { DEFAULT_OPCUA_PORT } from '@local-chatter/shared';
+import { createLogger } from '../../logging/logger.js';
 import { BaseMachineConnector, errorMessage } from '../BaseMachineConnector.js';
 import type {
   MachineDataSnapshot,
   MachineType,
   MacroConfig,
+  OpcUaCertificateChange,
   OpcUaSecurity,
   SiemensMachineConfig,
   SiemensMachineData,
   SiemensMachineStatus,
 } from '../../types/index.js';
+import { CertificateChangedError } from './certificatePin.js';
 import { ActiveAlarms } from './sinumerikAlarms.js';
 import { openSinumerikSession, type OpenSinumerikSession, type SinumerikSession, type SinumerikValue } from './sinumerikClient.js';
 import {
@@ -22,6 +25,16 @@ import {
 } from './sinumerikValues.js';
 
 const DEFAULT_TIMEOUT_MS = 5000;
+
+const log = createLogger('siemens');
+
+/** What an Admin's "trust the new certificate" did */
+export type TrustCertificateResult =
+  | 'trusted'
+  /** The control shows a different certificate from the one that the Admin saw */
+  | 'stale'
+  /** The control shows the trusted certificate, or no certificate: there is nothing to trust */
+  | 'nothing-to-trust';
 
 /** The values of each poll, read together in one request */
 const VALUE_NAMES = Object.keys(SINUMERIK_PATHS) as SinumerikValueName[];
@@ -59,6 +72,12 @@ export class SiemensConnector extends BaseMachineConnector {
   private data: SiemensMachineData = {};
   /** Counts the disconnects, so a connect that ends after a disconnect does not keep its session */
   private disconnects = 0;
+  /** The thumbprint of the certificate of the control that Chatter trusts, or null before the first connect */
+  private trustedThumbprint: string | null;
+  /** The certificate that the control showed in place of the trusted one, or null */
+  private certificateChange: OpcUaCertificateChange | null = null;
+  /** Saves the trusted thumbprint each time it changes (first connect, trust, forget). The poller sets it. */
+  onTrustedThumbprintChange: ((thumbprint: string | null) => void) | null = null;
 
   constructor(config: SiemensMachineConfig, private readonly openSession: OpenSinumerikSession = openSinumerikSession) {
     super({
@@ -77,6 +96,7 @@ export class SiemensConnector extends BaseMachineConnector {
     this.opcuaPassword = config.opcuaPassword || '';
     this.opcuaSecurity = config.opcuaSecurity || 'none';
     this.macros = config.macros || [];
+    this.trustedThumbprint = config.opcuaServerThumbprint || null;
   }
 
   async connect(): Promise<void> {
@@ -90,21 +110,66 @@ export class SiemensConnector extends BaseMachineConnector {
         password: this.opcuaPassword || undefined,
         security: this.opcuaSecurity,
         timeoutMs: this.timeout,
+        trustedThumbprint: this.trustedThumbprint,
       });
       if (disconnects !== this.disconnects) {
-        // The machine was disconnected while the session opened, for example at a poll timeout. It must not keep the session.
+        // The machine was disconnected while the session opened, for example at a poll timeout or a new IP address.
+        // It must not keep the session, nor trust its certificate.
         session.close().catch(() => undefined);
         throw new Error('Disconnected while connecting');
       }
       this.session = session;
       this.connected = true;
+      this.certificateChange = null;
+      if (this.trustedThumbprint === null && session.serverThumbprint !== null) {
+        log.info('Trusted the OPC UA certificate of the control on the first connect', { machine: this.id, thumbprint: session.serverThumbprint });
+        this.setTrustedThumbprint(session.serverThumbprint);
+      }
       this.clearErrors();
     } catch (error) {
       this.connected = false;
+      if (error instanceof CertificateChangedError) this.refusedCertificate(error);
       this.addError(`Connection failed: ${errorMessage(error, 'Unknown connection error')}`);
       throw error;
     }
     await this.watchAlarms(this.session);
+  }
+
+  /** Keep the refused certificate for the status, and log it once for each new certificate */
+  private refusedCertificate(error: CertificateChangedError): void {
+    if (this.certificateChange?.presentedThumbprint !== error.presentedThumbprint) {
+      log.warn('The OPC UA certificate of the control changed. Chatter did not send the login.', {
+        machine: this.id, trusted: error.trustedThumbprint, presented: error.presentedThumbprint ?? 'none',
+      });
+    }
+    this.certificateChange = { presentedThumbprint: error.presentedThumbprint };
+  }
+
+  private setTrustedThumbprint(thumbprint: string | null): void {
+    this.trustedThumbprint = thumbprint;
+    this.onTrustedThumbprintChange?.(thumbprint);
+  }
+
+  /**
+   * An Admin trusts the new certificate of the control. The thumbprint must be the one that the Admin saw in the
+   * status, so the Admin trusts only a certificate that they checked. The next poll connects with it.
+   */
+  trustCertificate(thumbprint: string): TrustCertificateResult {
+    const presented = this.certificateChange?.presentedThumbprint ?? null;
+    if (presented === null) return 'nothing-to-trust';
+    if (presented !== thumbprint) return 'stale';
+    log.info('An Admin trusted the new OPC UA certificate of the control', { machine: this.id, thumbprint });
+    this.certificateChange = null;
+    this.setTrustedThumbprint(thumbprint);
+    this.disconnect();
+    return 'trusted';
+  }
+
+  /** Forget the trusted certificate, for example at a new IP address. The next connect trusts the certificate that it gets. */
+  forgetServerCertificate(): void {
+    this.certificateChange = null;
+    this.setTrustedThumbprint(null);
+    this.disconnect();
   }
 
   /** The values still come when the alarms do not, so a failed alarm subscription is only a warning */
@@ -214,6 +279,8 @@ export class SiemensConnector extends BaseMachineConnector {
       opcuaUser: this.opcuaUser,
       hasOpcuaPassword: this.hasOpcuaPassword,
       opcuaSecurity: this.opcuaSecurity,
+      opcuaServerThumbprint: this.trustedThumbprint,
+      ...(this.certificateChange ? { opcuaCertificateChanged: { ...this.certificateChange } } : {}),
       ftpPort: this.ftpPort,
       ftpUser: this.ftpUser,
       hasFtpPassword: this.hasFtpPassword,
