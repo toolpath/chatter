@@ -128,7 +128,8 @@ export class SiemensConnector extends BaseMachineConnector {
       this.clearErrors();
     } catch (error) {
       this.connected = false;
-      if (error instanceof CertificateChangedError) this.refusedCertificate(error);
+      // A connect that ends after a disconnect (for example to the old IP address) must not show its certificate
+      if (error instanceof CertificateChangedError && disconnects === this.disconnects) this.refusedCertificate(error);
       this.addError(`Connection failed: ${errorMessage(error, 'Unknown connection error')}`);
       throw error;
     }
@@ -167,6 +168,9 @@ export class SiemensConnector extends BaseMachineConnector {
 
   /** Forget the trusted certificate, for example at a new IP address. The next connect trusts the certificate that it gets. */
   forgetServerCertificate(): void {
+    if (this.trustedThumbprint !== null) {
+      log.info('Forgot the trusted OPC UA certificate of the control', { machine: this.id, thumbprint: this.trustedThumbprint });
+    }
     this.certificateChange = null;
     this.setTrustedThumbprint(null);
     this.disconnect();
