@@ -714,6 +714,21 @@ describe('MachineDetailPage', () => {
       expect(fetchAlertRules).not.toHaveBeenCalled();
       expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument();
     });
+
+    it('shows no rules of the old machine when the user goes to another machine', async () => {
+      vi.mocked(fetchAlertRules).mockImplementation(id => (id === 'm1' ? Promise.resolve([OFFLINE_RULE]) : new Promise(() => {})));
+      renderPage({
+        address: '/machine/m1?tab=settings',
+        machines: [testMachine({ id: 'm1', name: 'Mill 1' }), testMachine({ id: 'm2', name: 'Mill 2' })],
+      });
+      expect(await screen.findByRole('switch', { name: 'Not connected' })).toBeInTheDocument();
+
+      go('/machine/m2?tab=settings');
+
+      expect(screen.getByText('Loading the alert rules…')).toBeInTheDocument();
+      expect(screen.queryByRole('switch', { name: 'Not connected' })).not.toBeInTheDocument();
+      expect(fetchAlertRules).toHaveBeenLastCalledWith('m2');
+    });
   });
 
   describe('deleting the machine', () => {
@@ -827,6 +842,19 @@ describe('MachineDetailPage', () => {
       expect(within(alerts).queryByRole('link')).not.toBeInTheDocument();
       expect(within(alerts).queryByText(/Alert rules/)).not.toBeInTheDocument();
     });
+
+    // Older links and bookmarks can open the rules as an Operator or a Viewer. The page then shows the connection.
+    it.each(['operator', 'viewer'] as const)('opens Settings with no error for %s, from an old link to the rules', role => {
+      renderPage({ role, address: '/machine/m1?tab=settings#settings-alert-rules' });
+
+      expect(screen.getByRole('tab', { name: 'Settings' })).toHaveAttribute('aria-selected', 'true');
+      const panel = screen.getByRole('tabpanel', { name: 'Settings' });
+      expect(within(panel).getAllByRole('region').map(region => region.id)).toEqual([SETTINGS_SECTION_IDS.connection]);
+      expect(scrolledTo).toEqual([]);
+      expect(fetchAlertRules).not.toHaveBeenCalled();
+    });
+
+    // These tests of an Admin also check that the link is there for an Admin. Keep them.
 
     it('opens Settings at the alert rules', async () => {
       renderPage();
