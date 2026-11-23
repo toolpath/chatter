@@ -64,7 +64,7 @@ Chatter uses FTP to show, send and download the program files on a machine. Do t
 
 Chatter never shows a saved password again. To keep it, leave the password box empty.
 
-When you change the IP address or the FTP port, type the FTP password again. Chatter does not send a saved password to a new address. If the password box is empty, Chatter saves nothing and shows an error. To use no password at the new address, click **Remove password**.
+When you change the IP address or the FTP port, type the FTP password again. Chatter does not send a saved password to a new address. Before you save, the text under the password box tells you to type it again. If the password box is empty, Chatter saves nothing and shows an error. To use no password at the new address, click **Remove password**.
 
 You can send at most 32 MB of program files at one time. A Raspberry Pi has little memory, and Chatter holds the files in memory while it sends them. To send more, send the files in smaller groups.
 
