@@ -466,6 +466,20 @@ export class HardwarePoller extends EventEmitter {
     return result;
   }
 
+  /**
+   * An Admin forgets the trusted OPC UA certificate of a Siemens control, for example when the control shows no
+   * certificate now. Chatter connects to the machine now, and that connect trusts the certificate that it gets.
+   */
+  forgetSiemensCertificate(id: string): 'forgotten' | 'not-found' | 'not-siemens' {
+    const connector = this.registry.get(id);
+    if (!connector) return 'not-found';
+    if (!(connector instanceof SiemensConnector)) return 'not-siemens';
+    connector.forgetServerCertificate();
+    this.scheduler.reconnect(connector);
+    this.emitStatusUpdate();
+    return 'forgotten';
+  }
+
   /** Disconnect the machine and poll it now. Null for an unknown machine. */
   reconnectMachine(id: string): ReconnectResult | null {
     const connector = this.registry.get(id);
