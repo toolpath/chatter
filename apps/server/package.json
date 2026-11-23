@@ -25,7 +25,7 @@
     "better-sqlite3": "^13.0.3",
     "dotenv": "^16.3.1",
     "hono": "^4.13.16",
-    "koffi": "^2.15.0",
+    "koffi": "^3.3.8",
     "node-opcua-certificate-manager": "^2.187.16",
     "node-opcua-client": "^2.187.16",
     "xml2js": "^0.6.2",
