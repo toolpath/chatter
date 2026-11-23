@@ -255,6 +255,7 @@ interface VersionLabelProps {
 
 /** The date and the path of one version, and who sent it when the role can see that */
 function VersionLabel({ file, event, isNewest, senderFields }: VersionLabelProps) {
+  const sender = senderText(event, senderFields);
   return (
     <>
       <span className="font-semibold">{formatDateTime(event.uploaded_at)}</span>
@@ -263,21 +264,23 @@ function VersionLabel({ file, event, isNewest, senderFields }: VersionLabelProps
         {event.remote_path}
         {isNewest ? ' · newest' : ''}
       </span>
-      {senderFields.uploaded_by && (
+      {sender !== null && (
         // A long name with no space breaks anywhere, so it stays in the box
-        <span className="text-xs text-zinc-300 [overflow-wrap:anywhere]">{senderText(event, senderFields.address)}</span>
+        <span className="text-xs text-zinc-300 [overflow-wrap:anywhere]">{sender}</span>
       )}
     </>
   );
 }
 
 /**
- * Who sent the version. The role decides if the user is shown, not the field: a send from an older version of Chatter
- * has no user, so it is "unknown".
+ * Who sent the version, or null when the screen shows no line. The role decides first. Then the field decides: the
+ * server leaves out a field that the role cannot see (no line), and a send from an older version of Chatter has no
+ * user (null or empty), so it is "unknown".
  */
-function senderText(event: UploadEvent, showAddress: boolean): string {
+function senderText(event: UploadEvent, senderFields: UploadSenderFields): string | null {
+  if (!senderFields.uploaded_by || event.uploaded_by === undefined) return null;
   if (!event.uploaded_by) return 'Sent by an unknown user';
-  const from = showAddress && event.address ? ` from ${event.address}` : '';
+  const from = senderFields.address && event.address ? ` from ${event.address}` : '';
   return `Sent by ${event.uploaded_by}${from}`;
 }
 
