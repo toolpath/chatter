@@ -1,5 +1,5 @@
 import { Hono, type Context } from 'hono';
-import { roleCan } from '@local-chatter/shared';
+import { uploadSenderFieldsFor } from '@local-chatter/shared';
 import { requirePermission, type LoggedInEnv } from '../auth/authRoutes.js';
 import type { UploadEventRow } from '../types/index.js';
 import { getUploadEventById, getUploadEvents, getUploadFiles } from '../storage/database.js';
@@ -9,17 +9,14 @@ import { uploadEventParams, uploadFileParams, uploadListQuery } from './schemas.
 
 const DEFAULT_FILE_LIMIT = 50;
 
-/**
- * The upload, without the details that the role of the user may not see. Decision D4: a Viewer does not see who sent
- * a file. An Operator sees who sent it (the history of the machine), but only an Admin sees the address of the computer.
- */
+/** The upload, without the details that the role of the user may not see (decision D4, in uploadSenderFieldsFor) */
 function forRoleOf(c: Context<LoggedInEnv>, row: UploadEventRow) {
-  const { role } = c.var.user;
+  const sees = uploadSenderFieldsFor(c.var.user.role);
   const { uploaded_by, address, ...rest } = row;
   return {
     ...rest,
-    ...(roleCan(role, 'read-files') ? { uploaded_by } : {}),
-    ...(roleCan(role, 'manage-chatter') ? { address } : {}),
+    ...(sees.uploaded_by ? { uploaded_by } : {}),
+    ...(sees.address ? { address } : {}),
   };
 }
 
