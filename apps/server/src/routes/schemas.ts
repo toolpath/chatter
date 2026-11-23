@@ -72,6 +72,12 @@ export const updateMachineSchema = z.object({
   ignoredMessageTypes: z.array(z.number().int(), { error: 'ignoredMessageTypes must be a list of numbers' }).optional(),
 }, NOT_AN_OBJECT);
 
+/** The thumbprint that the Admin saw: SHA-256, 64 hex digits */
+export const trustCertificateSchema = z.object({
+  thumbprint: z.string({ error: 'thumbprint is required' }).trim().toLowerCase()
+    .regex(/^[0-9a-f]{64}$/, 'thumbprint must be the SHA-256 thumbprint: 64 hex digits'),
+}, NOT_AN_OBJECT);
+
 export const scanPortSchema = z.object({
   host: z.string({ error: 'Host is required' }).trim().min(1, 'Host is required').pipe(ipv4),
 }, NOT_AN_OBJECT);
