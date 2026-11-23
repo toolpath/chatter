@@ -9,7 +9,7 @@ import {
   type UserTokenPolicy,
   UserTokenType,
 } from 'node-opcua-client';
-import { certificateThumbprint, CertificateChangedError } from './certificatePin.js';
+import { certificateSha1Thumbprint, certificateThumbprint, CertificateChangedError } from './certificatePin.js';
 import { limitedTransportFactory, OPCUA_TRANSPORT_LIMITS } from './opcuaTransport.js';
 import {
   ClearTextPasswordError, sinumerikSessionOpener, type OpcUaClientLike, type SinumerikConnectOptions,
@@ -137,7 +137,9 @@ describe('openSinumerikSession and the certificate of the control', () => {
 
     await expect(opening).rejects.toBeInstanceOf(CertificateChangedError);
     await expect(opening).rejects.toMatchObject({
-      presentedThumbprint: certificateThumbprint(OTHER_CERTIFICATE), trustedThumbprint: CONTROL_THUMBPRINT,
+      presentedThumbprint: certificateThumbprint(OTHER_CERTIFICATE),
+      presentedSha1Thumbprint: certificateSha1Thumbprint(OTHER_CERTIFICATE),
+      trustedThumbprint: CONTROL_THUMBPRINT,
     });
     expect(control.logins()).toEqual([]);
     expect(control.clients).toHaveLength(1);
@@ -147,7 +149,7 @@ describe('openSinumerikSession and the certificate of the control', () => {
   it('never sends the login when the control shows no certificate and a certificate is trusted', async () => {
     const control = fakeControl(endpointsWith(null));
     await expect(control.open({ ...LOGIN, trustedThumbprint: CONTROL_THUMBPRINT }))
-      .rejects.toMatchObject({ presentedThumbprint: null });
+      .rejects.toMatchObject({ presentedThumbprint: null, presentedSha1Thumbprint: null });
     expect(control.logins()).toEqual([]);
   });
 

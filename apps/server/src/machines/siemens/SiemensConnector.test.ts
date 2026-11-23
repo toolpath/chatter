@@ -24,6 +24,7 @@ const RUNNING: Record<string, unknown> = {
 
 const CONTROL_THUMBPRINT = 'c'.repeat(64);
 const NEW_THUMBPRINT = 'd'.repeat(64);
+const NEW_SHA1_THUMBPRINT = 'e'.repeat(40);
 
 class FakeSession implements SinumerikSession {
   values: Record<string, unknown> = { ...RUNNING };
@@ -118,7 +119,7 @@ describe('SiemensConnector', () => {
     function controlShowsNewCertificate(presented: string | null = NEW_THUMBPRINT) {
       openSession.mockImplementation(async options => {
         if (options.trustedThumbprint && options.trustedThumbprint !== presented) {
-          throw new CertificateChangedError(presented, options.trustedThumbprint);
+          throw new CertificateChangedError(presented, options.trustedThumbprint, presented && NEW_SHA1_THUMBPRINT);
         }
         return session;
       });
@@ -160,7 +161,7 @@ describe('SiemensConnector', () => {
 
       expect(status.connected).toBe(false);
       expect(status.opcuaServerThumbprint).toBe(CONTROL_THUMBPRINT);
-      expect(status.opcuaCertificateChanged).toEqual({ presentedThumbprint: NEW_THUMBPRINT });
+      expect(status.opcuaCertificateChanged).toEqual({ presentedThumbprint: NEW_THUMBPRINT, presentedSha1Thumbprint: NEW_SHA1_THUMBPRINT });
       expect(status.errors.join(' ')).toContain('certificate of the control changed');
       expect(saved).toEqual([CONTROL_THUMBPRINT]);
     });
@@ -196,7 +197,7 @@ describe('SiemensConnector', () => {
       connector = new SiemensConnector({ name: 'M', host: '10.0.0.5', opcuaServerThumbprint: CONTROL_THUMBPRINT }, openSession);
       controlShowsNewCertificate(null);
       const status = await connector.poll();
-      expect(status.opcuaCertificateChanged).toEqual({ presentedThumbprint: null });
+      expect(status.opcuaCertificateChanged).toEqual({ presentedThumbprint: null, presentedSha1Thumbprint: null });
       expect(connector.trustCertificate(NEW_THUMBPRINT)).toBe('nothing-to-trust');
     });
 

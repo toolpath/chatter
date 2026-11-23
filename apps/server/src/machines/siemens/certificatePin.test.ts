@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { certificateThumbprint, checkPin, CertificateChangedError } from './certificatePin.js';
+import { certificateSha1Thumbprint, certificateThumbprint, checkPin, CertificateChangedError } from './certificatePin.js';
 
 const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+const sha1 = (bytes: Buffer) => createHash('sha1').update(bytes).digest('hex');
 
 /** A DER SEQUENCE with the given content, as a certificate starts */
 function derSequence(content: Buffer): Buffer {
@@ -33,6 +34,19 @@ describe('certificateThumbprint', () => {
   });
 });
 
+describe('certificateSha1Thumbprint', () => {
+  it('is the SHA-1 of the DER bytes, as 40 lowercase hex digits, to compare with the screen of the control', () => {
+    const certificate = derSequence(Buffer.from('certificate of the control'));
+    expect(certificateSha1Thumbprint(certificate)).toBe(sha1(certificate));
+    expect(certificateSha1Thumbprint(certificate)).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it('uses only the first certificate of a chain', () => {
+    const leaf = derSequence(Buffer.alloc(300, 1));
+    expect(certificateSha1Thumbprint(Buffer.concat([leaf, derSequence(Buffer.from('issuer'))]))).toBe(sha1(leaf));
+  });
+});
+
 describe('checkPin', () => {
   it('saves the certificate on the first connect, when no certificate is trusted yet', () => {
     expect(checkPin(null, OTHER)).toEqual({ outcome: 'firstUse', thumbprint: OTHER });
@@ -57,8 +71,9 @@ describe('checkPin', () => {
 
 describe('CertificateChangedError', () => {
   it('tells the user that Chatter did not log in, and gives the two thumbprints', () => {
-    const error = new CertificateChangedError(OTHER, PINNED);
+    const error = new CertificateChangedError(OTHER, PINNED, 'f'.repeat(40));
     expect(error.presentedThumbprint).toBe(OTHER);
+    expect(error.presentedSha1Thumbprint).toBe('f'.repeat(40));
     expect(error.trustedThumbprint).toBe(PINNED);
     expect(error.message).toContain('certificate of the control changed');
     expect(error.message).toContain('did not send the login');

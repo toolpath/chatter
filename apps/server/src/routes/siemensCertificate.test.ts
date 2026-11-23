@@ -11,6 +11,9 @@ import { HardwarePoller } from '../polling/poller.js';
 import { applySchema } from '../storage/schema.js';
 import { errorOf, testApp } from './testSupport.js';
 
+/** A stand-in for the SHA-1 thumbprint of the certificate with this SHA-256 thumbprint */
+const sha1Of = vi.hoisted(() => (thumbprint: string) => thumbprint.slice(0, 40));
+
 /** The control: the certificate that it shows now, and each connect that Chatter makes */
 const control = vi.hoisted(() => ({
   thumbprint: 'c'.repeat(64) as string | null,
@@ -22,7 +25,7 @@ vi.mock('../machines/siemens/sinumerikClient.js', async importOriginal => ({
   ...(await importOriginal<typeof import('../machines/siemens/sinumerikClient.js')>()),
   openSinumerikSession: async (options: SinumerikConnectOptions): Promise<SinumerikSession> => {
     if (options.trustedThumbprint && options.trustedThumbprint !== control.thumbprint) {
-      throw new CertificateChangedError(control.thumbprint, options.trustedThumbprint);
+      throw new CertificateChangedError(control.thumbprint, options.trustedThumbprint, control.thumbprint && sha1Of(control.thumbprint));
     }
     control.connects.push({ trustedThumbprint: options.trustedThumbprint, password: options.password });
     return {
@@ -79,7 +82,7 @@ describe('the certificate of a Siemens control', () => {
     (db.prepare('SELECT opcua_server_thumbprint FROM siemens_machines WHERE id = ?').get(id) as { opcua_server_thumbprint: string | null })
       .opcua_server_thumbprint;
   const machine = async () => (await (await app().request(`/api/machine/${id}`, { headers: { Cookie: cookie } })).json()) as {
-    connected: boolean; opcuaServerThumbprint: string | null; opcuaCertificateChanged?: { presentedThumbprint: string | null };
+    connected: boolean; opcuaServerThumbprint: string | null; opcuaCertificateChanged?: { presentedThumbprint: string | null; presentedSha1Thumbprint: string | null };
   };
   const trust = (body: unknown, as = cookie, machineId = id) => app().request(`/api/machine/${machineId}/opcua/trust-certificate`, {
     method: 'POST',
@@ -109,7 +112,7 @@ describe('the certificate of a Siemens control', () => {
     await controlChangesItsCertificate();
 
     expect(await machine()).toMatchObject({
-      connected: false, opcuaServerThumbprint: FIRST, opcuaCertificateChanged: { presentedThumbprint: SECOND },
+      connected: false, opcuaServerThumbprint: FIRST, opcuaCertificateChanged: { presentedThumbprint: SECOND, presentedSha1Thumbprint: sha1Of(SECOND) },
     });
     expect(control.connects).toHaveLength(1);
     expect(savedThumbprint()).toBe(FIRST);
@@ -151,7 +154,7 @@ describe('the certificate of a Siemens control', () => {
 
       expect(res.status).toBe(403);
       expect(savedThumbprint()).toBe(FIRST);
-      expect((await machine()).opcuaCertificateChanged).toEqual({ presentedThumbprint: SECOND });
+      expect((await machine()).opcuaCertificateChanged).toEqual({ presentedThumbprint: SECOND, presentedSha1Thumbprint: sha1Of(SECOND) });
     });
 
     it('refuses a thumbprint that is not the certificate that the control shows now (it changed again)', async () => {
@@ -164,7 +167,7 @@ describe('the certificate of a Siemens control', () => {
       expect(res.status).toBe(409);
       expect(await errorOf(res)).toContain('changed again');
       expect(savedThumbprint()).toBe(FIRST);
-      expect((await machine()).opcuaCertificateChanged).toEqual({ presentedThumbprint: THIRD });
+      expect((await machine()).opcuaCertificateChanged).toEqual({ presentedThumbprint: THIRD, presentedSha1Thumbprint: sha1Of(THIRD) });
     });
 
     it('refuses when the control shows the trusted certificate, so there is nothing new to trust', async () => {
@@ -226,7 +229,7 @@ describe('the certificate of a Siemens control', () => {
       control.thumbprint = null;
       poller.getConnector(id)?.disconnect();
       await poller.poll();
-      expect((await machine()).opcuaCertificateChanged?.presentedThumbprint).toBeNull();
+      expect((await machine()).opcuaCertificateChanged).toEqual({ presentedThumbprint: null, presentedSha1Thumbprint: null });
 
       expect((await forget()).status).toBe(200);
       await poller.poll();
