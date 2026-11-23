@@ -1,7 +1,8 @@
+import { uploadSenderFieldsFor, type UploadSenderFields } from '@local-chatter/shared';
 import { cn, Dialog } from '@toolpath/ui';
 import { useEffect, useState } from 'react';
 import { fetchUploadEvent, sendUploadAgain, type UploadEventDetail } from '../../api/machineFiles';
-import { useCan } from '../../components/CurrentUser';
+import { useCan, useCurrentUser } from '../../components/CurrentUser';
 import { Button } from '../../components/ui/Button';
 import { RefreshIcon } from '../../components/ui/icons';
 import { SearchBox } from '../../components/ui/SearchBox';
@@ -22,6 +23,9 @@ interface UploadHistoryListProps {
   onUploaded: () => Promise<void>;
 }
 
+/** No user is logged in: the screen shows nobody */
+const NO_SENDER_FIELDS: UploadSenderFields = { uploaded_by: false, address: false };
+
 /** Every file sent to the machine from ChatterBox. Pick one to see its versions and send one again. */
 export function UploadHistoryList({ machineId, machineName, history, messages, onUploaded }: UploadHistoryListProps) {
   const [searchText, setSearchText] = useState('');
@@ -30,6 +34,9 @@ export function UploadHistoryList({ machineId, machineName, history, messages, o
   const canSendFiles = useCan('send-files');
   // A viewer sees the names and dates of the versions, but not their text
   const canReadFiles = useCan('read-files');
+  // Decision D4: the server and the screen use the same rule for who sent each version and the address
+  const role = useCurrentUser()?.role;
+  const senderFields = role ? uploadSenderFieldsFor(role) : NO_SENDER_FIELDS;
   const matchingFiles = filesMatching(history.historyFiles, searchText);
 
   const sendAgain = async (eventId: number) => {
@@ -92,6 +99,7 @@ export function UploadHistoryList({ machineId, machineName, history, messages, o
           file={selectedFile}
           events={history.selectedEvents}
           showText={canReadFiles}
+          senderFields={senderFields}
           onSendAgain={canSendFiles ? sendAgain : undefined}
         />
       )}
@@ -177,12 +185,14 @@ interface VersionsBoxProps {
   events: UploadEvent[] | undefined;
   /** False when the user may not read the text of a file. Then the box shows only the dates and paths. */
   showText: boolean;
+  /** Who sent each version and the address: the details that the role of the user can see */
+  senderFields: UploadSenderFields;
   /** Not there when the user may not send files */
   onSendAgain?: (eventId: number) => void;
 }
 
 /** The versions of one file, newest first, and the text of the picked version. Give it a new key for each file. */
-function VersionsBox({ machineId, file, events, showText, onSendAgain }: VersionsBoxProps) {
+function VersionsBox({ machineId, file, events, showText, senderFields, onSendAgain }: VersionsBoxProps) {
   const [pickedId, setPickedId] = useState<number | null>(null);
   // Until the user picks a version, the newest one is shown
   const shownId = pickedId ?? events?.[0]?.id ?? null;
@@ -194,7 +204,9 @@ function VersionsBox({ machineId, file, events, showText, onSendAgain }: Version
     <div className="mx-4 mb-4 flex flex-wrap overflow-hidden rounded-[0.625rem] border border-zinc-800">
       <ol aria-label={`Versions of ${file.file_name}`} className="m-0 flex flex-[1_1_16.25rem] list-none flex-col gap-0.5 border-r border-zinc-800 p-2">
         {events.map((event, index) => {
-          const label = <VersionLabel file={file} event={event} isNewest={index === 0} />;
+          const label = (
+            <VersionLabel file={file} event={event} isNewest={index === 0} senderFields={senderFields} />
+          );
           // Without the text, there is nothing to pick: the versions are plain items
           if (!showText) return <li key={event.id} className="flex flex-col gap-0.5 px-3 py-2.5 text-zinc-50">{label}</li>;
           const isShown = event.id === shownId;
@@ -234,8 +246,16 @@ function VersionsBox({ machineId, file, events, showText, onSendAgain }: Version
   );
 }
 
-/** The date and the path of one version */
-function VersionLabel({ file, event, isNewest }: { file: UploadFile; event: UploadEvent; isNewest: boolean }) {
+interface VersionLabelProps {
+  file: UploadFile;
+  event: UploadEvent;
+  isNewest: boolean;
+  senderFields: UploadSenderFields;
+}
+
+/** The date and the path of one version, and who sent it when the role can see that */
+function VersionLabel({ file, event, isNewest, senderFields }: VersionLabelProps) {
+  const sender = senderText(event, senderFields);
   return (
     <>
       <span className="font-semibold">{formatDateTime(event.uploaded_at)}</span>
@@ -244,8 +264,24 @@ function VersionLabel({ file, event, isNewest }: { file: UploadFile; event: Uplo
         {event.remote_path}
         {isNewest ? ' · newest' : ''}
       </span>
+      {sender !== null && (
+        // A long name with no space breaks anywhere, so it stays in the box
+        <span className="text-xs text-zinc-300 [overflow-wrap:anywhere]">{sender}</span>
+      )}
     </>
   );
+}
+
+/**
+ * Who sent the version, or null when the screen shows no line. The role decides first. Then the field decides: the
+ * server leaves out a field that the role cannot see (no line), and a send from an older version of Chatter has no
+ * user (null or empty), so it is "unknown".
+ */
+function senderText(event: UploadEvent, senderFields: UploadSenderFields): string | null {
+  if (!senderFields.uploaded_by || event.uploaded_by === undefined) return null;
+  if (!event.uploaded_by) return 'Sent by an unknown user';
+  const from = senderFields.address && event.address ? ` from ${event.address}` : '';
+  return `Sent by ${event.uploaded_by}${from}`;
 }
 
 type VersionLoad = { status: 'loading' } | { status: 'shown'; detail: UploadEventDetail } | { status: 'failed' };

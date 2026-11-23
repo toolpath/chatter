@@ -492,6 +492,23 @@ describe('MachineDetailPage', () => {
       await waitFor(() => expect(fetchUploadEvent).toHaveBeenCalledTimes(count));
     });
 
+    it.each([
+      ['an admin', 'admin' as Role, { uploaded_by: 'alice', address: '192.168.1.20' }, ['Sent by alice from 192.168.1.20']],
+      ['an operator', 'operator' as Role, { uploaded_by: 'alice' }, ['Sent by alice']],
+      ['a viewer', 'viewer' as Role, {}, []],
+    ])('shows %s who sent each version, as the server sends it for the role', async (_who, role, sender, lines) => {
+      vi.mocked(fetchUploadFiles).mockResolvedValue(SENT_FILES);
+      vi.mocked(fetchUploadEvents).mockResolvedValue([
+        { id: 21, uploaded_at: '2026-11-19T10:00:00.000Z', remote_path: '/', target_name: null, action: 'sent', ...sender },
+      ]);
+      renderPage({ role, address: '/machine/m1?tab=files' });
+      fireEvent.click(await within(viewSwitch()).findByRole('button', { name: 'Upload history 2' }));
+      fireEvent.click(within(screen.getByRole('cell', { name: 'O2000.nc' }).closest('tr') as HTMLElement).getByRole('button', { name: 'Versions' }));
+
+      const versions = await screen.findByRole('list', { name: 'Versions of O2000.nc' });
+      expect(within(versions).queryAllByText(/^Sent by/).map(line => line.textContent)).toEqual(lines);
+    });
+
     it('shows the versions to a viewer as plain items, and says why there is no text', async () => {
       vi.mocked(fetchUploadFiles).mockResolvedValue(SENT_FILES);
       renderPage({ role: 'viewer', address: '/machine/m1?tab=files' });

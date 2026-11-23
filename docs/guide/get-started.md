@@ -73,6 +73,17 @@ Some old machines do not tell Chatter that a download is complete. Chatter then 
 
 Chatter opens only one FTP connection to a machine at a time, because many machines accept only one. So Chatter does the file tasks of one machine one after the other: the file list, a download, a send and a delete. A task waits while another task runs, for example while Chatter reads a large file list. A task waits at most 3 minutes. When many tasks wait for one machine, a new task does not wait. In both cases, the task shows the error "The machine is busy with other file tasks". Try again later. Chatter sends at most 2 uploads at the same time, for all machines, and at most 1 upload to each machine. When 2 uploads run, a new upload shows the error "Chatter is busy with other uploads". When an upload to a machine runs, a new upload to that machine shows the error "The machine is busy with other file tasks". When you close the browser during an upload, Chatter completes the upload. Another program that uses FTP on the machine, for example a DNC program, can still block the connection of Chatter.
 
+### See who sent a program
+
+Chatter keeps each version of each program that it sends to a machine. To see the versions, open the **Files** tab of the machine, and click **Upload history**. Then click **Versions** next to a file.
+
+- An Operator and an Admin see who sent each version, for example "Sent by alice".
+- An Admin also sees the address of the computer that sent it, for example "Sent by alice from 192.168.1.20". This helps you find the computer when many people use one login.
+- A Viewer sees the date, the folder and the name of each version. A Viewer does not see who sent it.
+- A version that an older Chatter sent shows "Sent by an unknown user". Older versions of Chatter did not record the user.
+
+A delete is not in the upload history. The [audit log](./logs.md#audit-log) records each delete.
+
 ### Delete a machine
 
 An **Admin** can delete a machine from Chatter. Chatter then stops reading the machine and deletes its spindle speed history. You cannot undo this.
@@ -124,9 +135,9 @@ Go to **Settings > Users and roles**, and click **Add user**. Give each person a
 
 | Role | Can do |
 |------|--------|
-| **Viewer** | See the machines and their history. See the names of the files. A Viewer cannot download or read a program, and cannot click **Sync** in the tool table. |
-| **Operator** | All that a Viewer can do. Download and read files. Send files to the machines, and delete files on them. Click **Sync** to read the tool table now. |
-| **Admin** | All that an Operator can do. Add, change, and delete machines. See and change the alert rules. Manage the users and the settings. Update Chatter. |
+| **Viewer** | See the machines and their history. See the names of the files. A Viewer cannot download or read a program, cannot see who sent a program, and cannot click **Sync** in the tool table. |
+| **Operator** | All that a Viewer can do. Download and read files. Send files to the machines, and delete files on them. See who sent each program. Click **Sync** to read the tool table now. |
+| **Admin** | All that an Operator can do. Add, change, and delete machines. See and change the alert rules. Manage the users and the settings. Update Chatter. See the address of the computer that sent each program. |
 
 Give the username and the password to the person. They can change the password on **Settings > Your account**.
 
