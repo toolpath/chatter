@@ -16,7 +16,7 @@ import {
   type Variant,
 } from 'node-opcua-client';
 import { OPCUACertificateManager } from 'node-opcua-certificate-manager';
-import { certificateThumbprint, CertificateChangedError, checkPin } from './certificatePin.js';
+import { certificateSha1Thumbprint, certificateThumbprint, CertificateChangedError, checkPin } from './certificatePin.js';
 import { limitedTransportFactory, OPCUA_TRANSPORT_LIMITS } from './opcuaTransport.js';
 import type { AlarmEvent } from './sinumerikAlarms.js';
 import { sinumerikNodeId } from './sinumerikValues.js';
@@ -227,7 +227,7 @@ export function sinumerikSessionOpener(createClient: CreateOpcUaClient): OpenSin
     const thumbprint = certificate ? certificateThumbprint(certificate) : null;
     const pin = checkPin(options.trustedThumbprint, thumbprint);
     if (pin.outcome === 'changed' && options.trustedThumbprint !== null) {
-      throw new CertificateChangedError(pin.presented, options.trustedThumbprint);
+      throw new CertificateChangedError(pin.presented, options.trustedThumbprint, certificate && certificateSha1Thumbprint(certificate));
     }
 
     const secure = options.security === 'signAndEncrypt';

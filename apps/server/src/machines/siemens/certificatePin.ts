@@ -28,6 +28,14 @@ export function certificateThumbprint(der: Buffer): string {
   return createHash('sha256').update(firstCertificate(der)).digest('hex');
 }
 
+/**
+ * The SHA-1 thumbprint of a certificate, as 40 lowercase hex digits: `openssl x509 -fingerprint -sha1` with no colons.
+ * A control can show only this one on its screen. Chatter gives it only for that comparison, and never trusts by it.
+ */
+export function certificateSha1Thumbprint(der: Buffer): string {
+  return createHash('sha1').update(firstCertificate(der)).digest('hex');
+}
+
 export type PinCheck =
   /** The certificate is the trusted one */
   | { outcome: 'trusted' }
@@ -46,7 +54,12 @@ export function checkPin(trusted: string | null, presented: string | null): PinC
 
 /** The control showed a certificate that is not the trusted one. Chatter did not send the login. */
 export class CertificateChangedError extends Error {
-  constructor(readonly presentedThumbprint: string | null, readonly trustedThumbprint: string) {
+  constructor(
+    readonly presentedThumbprint: string | null,
+    readonly trustedThumbprint: string,
+    /** The SHA-1 thumbprint of the certificate that the control shows, to compare with its screen */
+    readonly presentedSha1Thumbprint: string | null = null,
+  ) {
     const shown = presentedThumbprint === null ? 'The control shows no certificate now' : `The control shows ${presentedThumbprint}`;
     super(`The OPC UA certificate of the control changed. Chatter did not send the login. ${shown}, `
       + `but Chatter trusts ${trustedThumbprint}. Check the control. If the control has a new certificate, an Admin must trust it.`);

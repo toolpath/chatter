@@ -142,7 +142,7 @@ export class SiemensConnector extends BaseMachineConnector {
         machine: this.id, trusted: error.trustedThumbprint, presented: error.presentedThumbprint ?? 'none',
       });
     }
-    this.certificateChange = { presentedThumbprint: error.presentedThumbprint };
+    this.certificateChange = { presentedThumbprint: error.presentedThumbprint, presentedSha1Thumbprint: error.presentedSha1Thumbprint };
   }
 
   private setTrustedThumbprint(thumbprint: string | null): void {
