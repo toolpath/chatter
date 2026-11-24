@@ -27,14 +27,20 @@ function loginsReport({ auth, limiter, loginLog }: LoginSettingsParts) {
     limits: { maxWrongPasswords: MAX_FAILURES, maxWrongPasswordsForUser: MAX_USER_FAILURES, lockMinutes: LOCK_MINUTES },
     locked: limiter.lockedAddresses().map(shown),
     lockedUsers: limiter.lockedUsers().map(shown),
-    // A row of an older version can have an unknown username in full
     tries: loginLog.recent().map(loginTry => ({
       ...loginTry,
-      username: loginTry.result === 'no-such-user' ? maskedOnce(loginTry.username) : loginTry.username,
+      username: unknownInRow(auth, loginTry) ? maskedOnce(loginTry.username) : loginTry.username,
       at: loginTry.at.toISOString(),
     })),
   };
 }
+
+/**
+ * True when the username of the row is not a user. An older version saved such a username in full, in a row with the
+ * result no-such-user or locked. Now the row has it masked, and maskedOnce keeps that as it is.
+ */
+const unknownInRow = (auth: LoginSettingsParts['auth'], loginTry: { username: string; result: string }): boolean =>
+  loginTry.result === 'no-such-user' || (loginTry.result === 'locked' && !auth.hasUser(loginTry.username));
 
 /** Read the last password tries, and unlock a computer or a user after too many wrong passwords. Only an admin can do this. */
 export function loginSettingsRoutes(parts: LoginSettingsParts) {
