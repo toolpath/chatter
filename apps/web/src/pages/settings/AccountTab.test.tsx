@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, waitForElementToBeRemoved, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { changePassword, fetchSessions, logOutOtherBrowsers, type SessionsReport } from '../../api/auth';
+import { CurrentUserContext } from '../../components/CurrentUser';
 import { ThemeProvider } from '../../theme/ThemeProvider';
 import { AccountTab } from './AccountTab';
 
@@ -22,7 +23,11 @@ const onlyThisBrowser: SessionsReport = { sessions: [browser('Chrome on Mac', tr
 
 async function renderTab(loaded: SessionsReport) {
   vi.mocked(fetchSessions).mockResolvedValue(loaded);
-  render(<ThemeProvider><AccountTab /></ThemeProvider>);
+  render(
+    <CurrentUserContext.Provider value={{ username: 'machinist', role: 'operator' }}>
+      <ThemeProvider><AccountTab /></ThemeProvider>
+    </CurrentUserContext.Provider>,
+  );
   await screen.findByText('Chrome on Mac');
 }
 
@@ -85,6 +90,19 @@ describe('AccountTab', () => {
     expect(await screen.findByText('The password is too common. Use a different password')).toBeInTheDocument();
     expect(changePassword).not.toHaveBeenCalled();
     expect(screen.getByText(/Do not use your username or a common password/)).toBeInTheDocument();
+  });
+
+  it('does not send the username of the user as the new password', async () => {
+    await renderTab(twoBrowsers);
+    vi.mocked(changePassword).mockReset();
+
+    fireEvent.change(screen.getByLabelText('Current password'), { target: { value: 'old-password' } });
+    fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'MACHINIST' } });
+    fireEvent.change(screen.getByLabelText('New password again'), { target: { value: 'MACHINIST' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Change password' }));
+
+    expect(await screen.findByText('The password cannot be the username')).toBeInTheDocument();
+    expect(changePassword).not.toHaveBeenCalled();
   });
 
   it('loads the list again after a new password, because the other browsers are logged out', async () => {

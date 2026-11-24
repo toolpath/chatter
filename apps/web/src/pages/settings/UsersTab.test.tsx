@@ -132,6 +132,19 @@ describe('UsersTab', () => {
     expect(setUserPassword).not.toHaveBeenCalled();
   });
 
+  it('does not send the username of that user as the new password', async () => {
+    vi.mocked(fetchUsersReport).mockResolvedValue(report(ADMIN, SAM, { ...SAM, id: 3, username: 'machinist' }));
+    await renderTab();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set a new password for machinist' }));
+    typeInto('Password', 'Machinist');
+    typeInto('Password again', 'Machinist');
+    fireEvent.click(screen.getByRole('button', { name: 'Set password' }));
+
+    expect(screen.getByText('The password cannot be the username')).toBeInTheDocument();
+    expect(setUserPassword).not.toHaveBeenCalled();
+  });
+
   it('sets a new password for a user', async () => {
     vi.mocked(setUserPassword).mockResolvedValue(report(ADMIN, SAM));
     await renderTab();
