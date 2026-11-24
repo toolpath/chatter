@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { OPCUA_NO_ENCRYPTION_WARNING } from '@local-chatter/shared';
 import { captureLog, type CapturedLog } from '../../logging/testSupport.js';
 import { CertificateChangedError } from './certificatePin.js';
 import { SiemensConnector } from './SiemensConnector.js';
@@ -105,6 +106,86 @@ describe('SiemensConnector', () => {
       expect(session.closed).toBe(true);
       await connector.poll();
       expect(openSession).toHaveBeenLastCalledWith(expect.objectContaining({ user: 'other', password: undefined }));
+    });
+  });
+
+  // F-11, D6: Security None with a login works, but the status warns, and the log tells once at each change
+  describe('the warning for a login with Security None', () => {
+    let log: CapturedLog;
+    beforeEach(() => {
+      log = captureLog();
+    });
+    afterEach(() => log.restore());
+
+    const warnings = () => log.lines.filter(line => line.level === 'warn' && line.text.includes('Security is None'));
+    const withLogin = (opcuaSecurity: 'none' | 'signAndEncrypt') => new SiemensConnector({
+      id: 'm1', name: 'M', host: '10.0.0.5', opcuaUser: 'OpcUaClient', opcuaPassword: 'secret', opcuaSecurity,
+    }, openSession);
+
+    it('warns in the status when a user logs in with Security None', () => {
+      expect(withLogin('none').getStatus().opcuaSecurityWarning).toBe(OPCUA_NO_ENCRYPTION_WARNING);
+    });
+
+    it('does not warn with Sign and encrypt', () => {
+      expect(withLogin('signAndEncrypt').getStatus()).not.toHaveProperty('opcuaSecurityWarning');
+    });
+
+    it('does not warn for an anonymous login with Security None', () => {
+      expect(connector.getStatus()).not.toHaveProperty('opcuaSecurityWarning');
+    });
+
+    it('still connects with Security None and a login', async () => {
+      connector = withLogin('none');
+      await connector.poll();
+      expect(connector.connected).toBe(true);
+      expect(connector.getStatus().opcuaSecurityWarning).toBe(OPCUA_NO_ENCRYPTION_WARNING);
+    });
+
+    it('warns after a change from Sign and encrypt to None, and stops after a change back', () => {
+      connector = withLogin('signAndEncrypt');
+      connector.updateOpcUaSettings({ security: 'none' });
+      expect(connector.getStatus().opcuaSecurityWarning).toBe(OPCUA_NO_ENCRYPTION_WARNING);
+
+      connector.updateOpcUaSettings({ security: 'signAndEncrypt' });
+      expect(connector.getStatus()).not.toHaveProperty('opcuaSecurityWarning');
+    });
+
+    it('warns when a user is added to an anonymous login with Security None, and stops when the user is removed', () => {
+      connector.updateOpcUaSettings({ user: 'OpcUaClient', password: 'secret' });
+      expect(connector.getStatus().opcuaSecurityWarning).toBe(OPCUA_NO_ENCRYPTION_WARNING);
+
+      connector.updateOpcUaSettings({ user: '', password: '' });
+      expect(connector.getStatus()).not.toHaveProperty('opcuaSecurityWarning');
+    });
+
+    it('writes one warning in the log when a change turns the warning on, not at each change or poll', async () => {
+      connector = withLogin('signAndEncrypt');
+      connector.updateOpcUaSettings({ security: 'none' });
+      expect(warnings()).toHaveLength(1);
+      expect(warnings()[0].text).toContain(OPCUA_NO_ENCRYPTION_WARNING);
+      expect(warnings()[0].text).toContain('m1');
+      expect(warnings()[0].text).toContain('10.0.0.5');
+      expect(warnings()[0].text).not.toContain('secret');
+      expect(warnings()[0].text).not.toContain('OpcUaClient');
+
+      connector.updateOpcUaSettings({ security: 'none', user: 'other' });
+      await connector.poll();
+      await connector.poll();
+      expect(warnings()).toHaveLength(1);
+
+      connector.updateOpcUaSettings({ security: 'signAndEncrypt' });
+      connector.updateOpcUaSettings({ security: 'none' });
+      expect(warnings()).toHaveLength(2);
+    });
+
+    it('writes the warning in the log only when it is asked to, for a new machine', () => {
+      connector = withLogin('none');
+      expect(warnings()).toHaveLength(0);
+      connector.logSecurityWarning();
+      expect(warnings()).toHaveLength(1);
+
+      withLogin('signAndEncrypt').logSecurityWarning();
+      expect(warnings()).toHaveLength(1);
     });
   });
 

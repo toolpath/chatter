@@ -301,17 +301,35 @@ describe('update routes', () => {
     });
 
     it('stops an upload that sends no bytes for the idle time, and deletes the half file', async () => {
-      const app = appWith({ idleMs: 30 });
-      const body = heldStream();
-      const reply = upload(app, body.stream, { 'Content-Length': '100' });
-      body.send('half');
+      // The idle timer runs on fake time, so a busy computer cannot pass the limit in a normal upload
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const app = appWith({ idleMs: 30_000 });
+        const body = heldStream();
+        const reply = upload(app, body.stream, { 'Content-Length': '100' });
+        body.send('half');
+        // The file has the bytes, so the idle timer started again after them. vi.waitFor moves the fake time, so this
+        // waits with setImmediate, which is real, and the fake time stays at the start of the idle time.
+        const fileHasTheBytes = () => inboxNames().some((name) => readFileSync(path.join(inbox, name), 'utf8') === 'half');
+        for (let turn = 0; turn < 10_000 && !fileHasTheBytes(); turn++) await new Promise((next) => setImmediate(next));
+        expect(fileHasTheBytes()).toBe(true);
 
-      const res = await reply;
+        // 1 ms before the limit, the idle timer has not stopped the upload: it is the one timer that still waits
+        expect(vi.getTimerCount()).toBe(1);
+        vi.advanceTimersByTime(29_999);
+        expect(vi.getTimerCount()).toBe(1);
 
-      expect(res.status).toBe(408);
-      expect(await errorOf(res)).toContain('The update file stopped coming in: no bytes came in for');
-      expect(inboxNames()).toEqual([]);
-      expect((await upload(app, 'update file')).status).toBe(200);
+        vi.advanceTimersByTime(1);
+        const res = await reply;
+
+        expect(res.status).toBe(408);
+        expect(await errorOf(res)).toContain('The update file stopped coming in: no bytes came in for 30 seconds');
+        expect(inboxNames()).toEqual([]);
+        // The next upload can start, with the same idle limit
+        expect((await upload(app, 'update file')).status).toBe(200);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

@@ -1,7 +1,7 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'fs';
 import os from 'os';
 import path from 'path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FileTooLargeError, StreamIdleError, streamToFile } from './streamToFile.js';
 
 const bytesOf = (text: string) => new TextEncoder().encode(text);
@@ -65,16 +65,28 @@ describe('streamToFile', () => {
   });
 
   it('does not stop a slow stream that keeps sending', async () => {
-    const pieces = ['a', 'b', 'c', 'd'];
-    const slow = new ReadableStream<Uint8Array>({
-      async pull(controller) {
-        await new Promise(resolve => setTimeout(resolve, 20));
-        const piece = pieces.shift();
-        if (piece) controller.enqueue(bytesOf(piece));
-        else controller.close();
-      },
-    });
+    // Fake time: each piece comes 30 ms after the last one was written, so the idle limit of 50 ms is never reached,
+    // but the whole stream takes longer than the limit. Real time on a busy computer cannot change the result.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const pieces = ['a', 'b', 'c', 'd'];
+      let sent = 0;
+      const writtenBytes = () => (existsSync(file) ? statSync(file).size : 0);
+      const slow = new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          // Wait until the last piece is written, so the idle timer started again (setImmediate is not faked)
+          while (writtenBytes() < sent) await new Promise(resolve => setImmediate(resolve));
+          const piece = pieces.shift();
+          if (!piece) return controller.close();
+          vi.advanceTimersByTime(30);
+          sent += piece.length;
+          controller.enqueue(bytesOf(piece));
+        },
+      });
 
-    expect(await streamToFile(slow, file, { ...LIMITS, idleMs: 50 })).toBe(4);
+      expect(await streamToFile(slow, file, { ...LIMITS, idleMs: 50 })).toBe(4);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

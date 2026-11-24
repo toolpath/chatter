@@ -98,10 +98,16 @@ describe('the certificate pin with a real OPC UA server', () => {
   let folder: string;
   const running: OPCUAServer[] = [];
 
-  beforeAll(() => {
+  beforeAll(async () => {
     folder = mkdtempSync(path.join(tmpdir(), 'chatter-opcua-pin-'));
     useSinumerikCertificateFolder(path.join(folder, 'chatter'));
-  });
+    // Make the key pair of Chatter (the client certificate) here, so that no key generation runs in a step of a test.
+    // The key pair stays in the folder, and each later session uses it.
+    const warmUp = await startControl('warm-up');
+    const session = await openSinumerikSession(options(warmUp, { security: 'signAndEncrypt' }));
+    await session.close();
+    await stopControl(warmUp);
+  }, 6 * STEP_TIMEOUT_MS);
 
   afterEach(async () => {
     await Promise.all(running.splice(0).map(server => server.shutdown()));
@@ -154,20 +160,23 @@ describe('the certificate pin with a real OPC UA server', () => {
     'with %s, trusts the certificate on the first connect, and sends no login to a new certificate at the same address',
     async security => {
       const first = await startControl(`control-${security}`);
+      // A different device, with a new certificate. Start it now, so that its key generation is not between the steps.
+      const impostor = await startControl(`impostor-${security}`);
+      expect(impostor.thumbprint).not.toBe(first.thumbprint);
+
       const session = await openSinumerikSession(options(first, { security }));
       expect(session.serverThumbprint).toBe(first.thumbprint);
       expect(first.logins).toEqual([USER]);
       await session.close();
       await stopControl(first);
 
-      // A different device answers: same address, new certificate
-      const impostor = await startControl(`impostor-${security}`);
-      expect(impostor.thumbprint).not.toBe(first.thumbprint);
+      // The different device answers in place of the control
+      const error = await openSinumerikSession(options(impostor, { security, trustedThumbprint: first.thumbprint }))
+        .then(() => null, (e: unknown) => e);
 
-      const opening = openSinumerikSession(options(impostor, { security, trustedThumbprint: first.thumbprint }));
-
-      await expect(opening).rejects.toBeInstanceOf(CertificateChangedError);
-      await expect(opening).rejects.toMatchObject({ presentedThumbprint: impostor.thumbprint });
+      // On a failure, show the real error and its stack, not only its class
+      expect(error, String((error as Error | null)?.stack ?? error)).toBeInstanceOf(CertificateChangedError);
+      expect(error).toMatchObject({ presentedThumbprint: impostor.thumbprint });
       expect(impostor.logins).toEqual([]);
       expect(impostor.sessions).toBe(0);
 
@@ -176,7 +185,8 @@ describe('the certificate pin with a real OPC UA server', () => {
       await trusted.close();
       expect(impostor.logins).toEqual([USER]);
     },
-    4 * STEP_TIMEOUT_MS,
+    // Three server starts with key generation and two secure sessions: more time for a slow CI runner
+    6 * STEP_TIMEOUT_MS,
   );
 
   it.each(['signAndEncrypt', 'none'] as const)(

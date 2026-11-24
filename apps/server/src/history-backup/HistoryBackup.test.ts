@@ -201,8 +201,9 @@ describe('HistoryBackup', () => {
       expect(filesLeft()).toHaveLength(1);
 
       await new Response(backups.download(prepared.id, source.id, 'admin').stream).arrayBuffer();
-      await new Promise(resolve => setTimeout(resolve, 20));
-      expect(filesLeft()).toEqual([]);
+      // The clean-up deletes the folder after the end of the stream, with no promise to wait on. So wait for the delete
+      // itself, not for a fixed time that a busy computer can pass.
+      await vi.waitFor(() => expect(filesLeft()).toEqual([]), { timeout: 5000 });
       expect(() => backups.download(prepared.id, source.id, 'admin')).toThrow(BackupRefusedError);
       await backups.prepareBackup(source, ALL, 'admin');
     });
