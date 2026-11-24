@@ -13,11 +13,13 @@ import { isIP } from 'node:net';
  * - a name with no dot (the name of a computer on the shop network, for example chatter)
  * The host can have a port and one dot at the end. Upper case and lower case are the same.
  * Behind a reverse proxy with a DNS name, do the setup at the IP address of Chatter. After the setup, all names work.
+ * The proxy must send the Host header of the browser on. A proxy that sends its own upstream name (for example 127.0.0.1)
+ * turns this check off. Chatter does not read X-Forwarded-Host here, because any computer can send it.
  */
 
 /** The reply to a setup at a host that is not local */
 export const LOCAL_SETUP_ONLY =
-  'Do the first-run setup at a local address: an IP address, localhost, or a name that ends with .local.';
+  'Do the first-run setup at a local address: an IP address, localhost, a name that ends with .local, or a name with no dot.';
 
 /** An IPv6 address in brackets, and a port if there is one */
 const BRACKETED_IPV6 = /^\[([0-9a-f:.]+)\](?::\d{1,5})?$/;
@@ -28,7 +30,7 @@ const LABEL = /^[a-z0-9_-]+$/;
 
 /** True when the Host header is an address that DNS rebinding cannot give */
 export function isLocalHost(host: string | undefined): boolean {
-  const lower = (host ?? '').trim().toLowerCase();
+  const lower = (host ?? '').toLowerCase();
   const ipv6 = BRACKETED_IPV6.exec(lower);
   if (ipv6) return isIP(ipv6[1]) === 6;
 
