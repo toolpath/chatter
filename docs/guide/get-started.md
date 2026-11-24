@@ -135,8 +135,8 @@ Go to **Settings > Users and roles**, and click **Add user**. Give each person a
 
 | Role | Can do |
 |------|--------|
-| **Viewer** | See the machines and their history. See the names of the files. A Viewer cannot download or read a program, cannot see who sent a program, and cannot click **Sync** in the tool table. |
-| **Operator** | All that a Viewer can do. Download and read files. Send files to the machines, and delete files on them. See who sent each program. Click **Sync** to read the tool table now. |
+| **Viewer** | See the machines and their history. See the names of the files. A Viewer cannot download or read a program, cannot see who sent a program, and cannot click **Sync** in the tool table. A Viewer does not see the connection settings of a machine: the IP address, the ports, the usernames, and the Security mode. |
+| **Operator** | All that a Viewer can do. See the connection settings of each machine. Download and read files. Send files to the machines, and delete files on them. See who sent each program. Click **Sync** to read the tool table now. |
 | **Admin** | All that an Operator can do. Add, change, and delete machines. See and change the alert rules. Manage the users and the settings. Update Chatter. See the address of the computer that sent each program. |
 
 Give the username and the password to the person. They can change the password on **Settings > Your account**.

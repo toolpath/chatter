@@ -19,7 +19,15 @@ Add the machine with the type **Siemens SINUMERIK**. Then, on the machine page, 
 - **Security**: **None**, or **Sign and encrypt (Basic256Sha256)**.
 - **OPC UA username** and **OPC UA password**: the login from the control. Leave the username empty for an anonymous login.
 
-If you set a username and Security **None**, Chatter saves the settings and connects. But the status of the machine gives a warning: `Security is None. Chatter does not sign or encrypt the OPC UA connection. A device on the network can read the data and use the session of this login. Set Security to Sign and encrypt.` The warning stays until you set Security to **Sign and encrypt**, or remove the username. The server log also gets a warning each time a change sets this mix. An anonymous login gets no warning, because Chatter sends no login. For the reason, see [What the check protects](#what-the-check-protects).
+If you set a username and Security **None**, Chatter saves the settings and does not refuse them. But Chatter gives a warning: `Security is None. Chatter does not sign or encrypt the OPC UA connection. A device on the network can read the data and use the session of this login. Set Security to Sign and encrypt.`
+
+- The reply of the API, when you add or change the machine, and the status of the machine in the API have the warning.
+- The server log gets a warning line with the same text each time a change sets this mix. A restart of Chatter does not write the line again.
+- The machine page does not show this warning yet.
+- The warning stays until you set Security to **Sign and encrypt**, or remove the username.
+- An anonymous login gets no warning, because Chatter sends no login.
+
+The machine can also stay offline with Security **None** and a username. If the control shows no certificate, or asks for the password with no encryption, Chatter does not send the password. For the reason, see [What the check protects](#what-the-check-protects).
 
 The server never sends the password back, the same as the FTP password. When you change the IP address or the OPC UA port, type the OPC UA password again. Chatter does not send a saved password to a new address. Before you save, the text under the password box tells you to type it again.
 

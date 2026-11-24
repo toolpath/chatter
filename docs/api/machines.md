@@ -17,6 +17,12 @@
 | PUT | `/api/machine/:id` | Update machine settings (Admin). Send only the fields to change |
 | DELETE | `/api/machine/:id` | Remove a machine (Admin) |
 
+### What a Viewer gets
+
+A Viewer does not get the connection settings of a machine. This is true for `/api/status`, `/api/machines`, `/api/machine/:id`, and the live events (`/api/events`). A Viewer gets only these fields: `id`, `name`, `type`, `connected`, `connecting`, `lastPollTime`, `errors`, `data`, `macros`, `pollTimings`, `agentType`, `opcuaCertificateChanged`, and `opcuaSecurityWarning`. So a Viewer gets no `host`, no ports, no usernames, no `opcuaSecurity`, no trusted thumbprint, and no `hasFtpPassword` or `hasOpcuaPassword`.
+
+In `errors`, in the texts of `/api/machine/:id/health`, and in the error of the file list, a Viewer gets "the machine address" in place of the IP address and its port, and "the user" in place of each username of the machine. An Operator and an Admin get all the fields and the full texts.
+
 ### Add machine request
 
 ```json
@@ -61,7 +67,7 @@ A Siemens machine also takes `opcuaUser`, `opcuaPassword`, and `opcuaSecurity` (
 - An empty `opcuaUser` means an anonymous login.
 - The password works like the FTP password: the server never sends it back (replies give only `hasOpcuaPassword`), an update with no `opcuaPassword` keeps it, and `""` removes it.
 - When an OPC UA password is saved and the update changes `host` or `opcuaPort`, send `opcuaPassword` again, or `""` to remove it. Else the reply is `400` and the server saves nothing. A new `host` needs each saved password: the FTP password and the OPC UA password.
-- With `opcuaSecurity` `none` and a username, the server saves the settings and connects. But the reply of the add and of the update, and the status of the machine, have `opcuaSecurityWarning`: `"Security is None. Chatter does not sign or encrypt the OPC UA connection. A device on the network can read the data and use the session of this login. Set Security to Sign and encrypt."` A machine with `signAndEncrypt`, or with an anonymous login, has no `opcuaSecurityWarning`.
+- With `opcuaSecurity` `none` and a username, the server saves the settings and does not refuse them. The machine can stay offline: when the control shows no certificate, or asks for the password with no encryption, the server does not send the password (see [What the check protects](../guide/siemens.md#what-the-check-protects)). The reply of the add and of the update, and the status of the machine, have `opcuaSecurityWarning`: `"Security is None. Chatter does not sign or encrypt the OPC UA connection. A device on the network can read the data and use the session of this login. Set Security to Sign and encrypt."` A machine with `signAndEncrypt`, or with an anonymous login, has no `opcuaSecurityWarning`. The server log gets a warning line with the same text when a change sets this mix.
 - `macros` are R parameters: `{ "location": 5 }` reads `R5`.
 
 See [Siemens machines](../guide/siemens.md).
