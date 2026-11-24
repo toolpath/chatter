@@ -77,8 +77,7 @@ export function editFormFromMachine(machine: Machine): EditFormState {
   const common: EditFormState = {
     ...EMPTY_EDIT_FORM,
     name: machine.name,
-    // Only a user who can manage machines sees this form, and gets the address
-    host: machine.host ?? '',
+    host: machine.host,
     ftpPort: machine.ftpPort || DEFAULT_PORTS.ftp,
     ftpUser: machine.ftpUser || DEFAULT_FTP_USER,
     macros: machine.macros || [],

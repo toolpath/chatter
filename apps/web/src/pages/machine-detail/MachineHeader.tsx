@@ -16,7 +16,6 @@ interface MachineHeaderProps {
 
 /** The maker, the machine name, its state, the firing alerts, and how to reach it */
 export function MachineHeader({ machine, state, now, firingCount }: MachineHeaderProps) {
-  const address = machineAddress(machine);
   return (
     <div>
       <div className="flex flex-wrap items-center gap-3">
@@ -26,7 +25,7 @@ export function MachineHeader({ machine, state, now, firingCount }: MachineHeade
         {firingCount > 0 && <FiringBadge count={firingCount} />}
       </div>
       <p className="mt-1 mb-0 text-zinc-300">
-        {machineTypeLabel(machine.type)} · {address && <><span className="font-mono">{address}</span> · </>}polled {formatAgo(machine.lastPollTime, now)}
+        {machineTypeLabel(machine.type)} · <span className="font-mono">{machineAddress(machine)}</span> · polled {formatAgo(machine.lastPollTime, now)}
       </p>
     </div>
   );

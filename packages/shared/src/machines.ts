@@ -10,14 +10,10 @@ import type { PollTimings } from './pollTimings.js';
 export type MachineType = string;
 
 // Base machine interface - all machine types have these properties
-/**
- * A Viewer gets no connection settings (D4, machineStatusFor in roles.ts): no `host`, no ports, no usernames, no
- * security mode and no saved-password flags. So these fields are optional here, and a screen must work without them.
- */
 export interface BaseMachine {
   id: string;
   name: string;
-  host?: string;
+  host: string;
   type: MachineType;
   connected: boolean;
   /** True while Chatter tries to reach the machine for the first time, for at most 30 seconds */
@@ -73,8 +69,8 @@ export interface BrotherMachineData extends MachineData {
 
 export interface BrotherMachine extends BaseMachine {
   type: 'brother';
-  dataPort?: number;
-  ftpPort?: number;
+  dataPort: number;
+  ftpPort: number;
   defaultUnit?: string;
   data: BrotherMachineData;
 }
@@ -99,8 +95,8 @@ export interface HaasMachineData extends MachineData {
 
 export interface HaasMachine extends BaseMachine {
   type: 'haas';
-  dataPort?: number;
-  queryPort?: number;
+  dataPort: number;
+  queryPort: number;
   ftpPort?: number;
   data: HaasMachineData;
 }
@@ -125,7 +121,7 @@ export type MTConnectMachineData = MachineData;
 
 export interface MTConnectMachine extends BaseMachine {
   type: 'mtconnect';
-  mtConnectPort?: number;
+  mtConnectPort: number;
   mtConnectDeviceId?: string;  // Optional filter for multi-device agents
   agentType?: string;          // e.g., 'dmg_mori', 'hurco', 'okuma', 'mazak', 'generic'
   ftpPort?: number;
@@ -165,7 +161,7 @@ export interface FanucMachineData extends MachineData {
 
 export interface FanucMachine extends BaseMachine {
   type: 'fanuc';
-  focasPort?: number;         // FOCAS port (default 8193)
+  focasPort: number;         // FOCAS port (default 8193)
   ftpPort?: number;
   toolNumberVariable?: number;   // Macro variable for current tool number
   partCounterVariable?: number;  // Macro variable for part counter
@@ -241,12 +237,12 @@ export interface OpcUaCertificateChange {
 
 export interface SiemensMachine extends BaseMachine {
   type: 'siemens';
-  opcuaPort?: number;
+  opcuaPort: number;
   /** Empty for an anonymous login */
   opcuaUser?: string;
   /** Only whether an OPC UA password is saved. The server never sends the password itself. */
   hasOpcuaPassword?: boolean;
-  opcuaSecurity?: OpcUaSecurity;
+  opcuaSecurity: OpcUaSecurity;
   /**
    * The thumbprint (SHA-256 of the DER certificate, 64 lowercase hex digits) of the OPC UA certificate of the control
    * that Chatter trusts. Chatter trusts the certificate of the first connect. Null before that, and after a change of
