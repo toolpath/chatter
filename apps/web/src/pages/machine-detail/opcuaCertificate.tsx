@@ -62,6 +62,8 @@ export function useConfirmedAction() {
   const [result, setResult] = useState<ActionResult | null>(null);
   // The dialog provider keeps the last box. A new key for each opening starts the box again.
   const openings = useRef(0);
+  // The provider has one box. A second confirm while a box is open would replace it, and the first one never ends.
+  const isAsking = useRef(false);
 
   const run = async (
     box: ReactElement,
@@ -69,8 +71,14 @@ export function useConfirmedAction() {
     doneText: string,
     onError?: () => Promise<void>,
   ): Promise<Machine | null> => {
+    if (isAsking.current) return null;
+    isAsking.current = true;
     openings.current += 1;
-    if (!await confirm(<Fragment key={openings.current}>{box}</Fragment>)) return null;
+    try {
+      if (!await confirm(<Fragment key={openings.current}>{box}</Fragment>)) return null;
+    } finally {
+      isAsking.current = false;
+    }
     setIsBusy(true);
     setResult(null);
     try {
@@ -103,10 +111,10 @@ export function TrustCertificateDialog({ sha256, sha1 }: { sha256: string; sha1:
       <Dialog.Message>
         Compare these thumbprints with the certificate on the control: Commissioning &gt; Network &gt; OPC UA &gt; Certificates.
         Trust it only when a thumbprint is the same. Then Chatter sends the OPC UA login to the device that shows this certificate.
+        <div className="pt-3">
+          <ThumbprintList sha256={sha256} sha1={sha1} />
+        </div>
       </Dialog.Message>
-      <div className="px-2 pb-2">
-        <ThumbprintList sha256={sha256} sha1={sha1} />
-      </div>
       <Dialog.Actions>
         <Dialog.Dismiss>Cancel</Dialog.Dismiss>
         <Dialog.Confirm>Trust this certificate</Dialog.Confirm>
@@ -121,8 +129,9 @@ function ForgetCertificateDialog({ host }: { host: string }) {
     <Dialog variant="danger">
       <Dialog.Title>Forget the saved certificate?</Dialog.Title>
       <Dialog.Message>
-        Chatter connects to the control again at once. That connect trusts the certificate that the control shows then,
-        as the first connect does. First make sure that the device at {host} is your control.
+        Chatter connects to the control again at once. If the control shows a certificate then, Chatter trusts it, as the first
+        connect does. If the control shows no certificate, Chatter trusts nothing. Then a login with a username and Security
+        None stays offline. First make sure that the device at {host} is your control.
       </Dialog.Message>
       <Dialog.Actions>
         <Dialog.Dismiss>Cancel</Dialog.Dismiss>
@@ -150,12 +159,17 @@ export function ForgetCertificateButton({ machine, run, isBusy, onStatus }: Forg
 
 /**
  * The status of the machine with the reply of the last action, until the server sends a newer status.
- * A new machine prop (a new object) always wins over the reply.
+ * A reply replaces the status that is shown when the reply comes, also when a new status came while the confirm box
+ * was open. A new machine prop (a new object) that comes after the reply wins over the reply.
  */
 export function useStatusWithReply(machine: Machine): [Machine, (status: Machine) => void] {
-  const [reply, setReply] = useState<{ basedOn: Machine; status: Machine } | null>(null);
-  const shown = reply && reply.basedOn === machine ? reply.status : machine;
-  return [shown, status => setReply({ basedOn: machine, status })];
+  const [reply, setReply] = useState<Machine | null>(null);
+  const [replyBasedOn, setReplyBasedOn] = useState(machine);
+  if (replyBasedOn !== machine) {
+    setReplyBasedOn(machine);
+    setReply(null);
+  }
+  return [reply ?? machine, setReply];
 }
 
 /** The trusted certificate of the control in the settings, with the Admin button to forget it */

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useCan } from '../../components/CurrentUser';
 import { Button } from '../../components/ui/Button';
 import { DocsLink } from '../../components/ui/DocsLink';
@@ -21,8 +22,16 @@ import {
 export function SiemensNotices({ machine }: { machine: Machine }) {
   const [shown, showStatus] = useStatusWithReply(machine);
   const action = useConfirmedAction();
+  const change = shown.type === 'siemens' ? shown.opcuaCertificateChanged : undefined;
+  // A success notice is about the last certificate. When a different change comes later, remove the notice, so that it
+  // does not stand next to the new box. An error notice stays: after a 409 it tells why the box shows a new thumbprint.
+  const changeKey = change ? String(change.presentedThumbprint) : null;
+  const [lastChangeKey, setLastChangeKey] = useState(changeKey);
+  if (changeKey !== lastChangeKey) {
+    setLastChangeKey(changeKey);
+    if (changeKey !== null && action.result?.isDone) action.clearResult();
+  }
   if (shown.type !== 'siemens') return null;
-  const change = shown.opcuaCertificateChanged;
 
   return (
     <>
@@ -87,8 +96,8 @@ function NoCertificate({ machine, action, onStatus }: CertificateProps) {
   return (
     <>
       <p className="m-0">
-        The control shows no certificate now, so there is nothing to trust. Chatter does not send the login. Check the OPC UA
-        settings of the control. If the control must show no certificate, an Admin can forget the saved certificate.{' '}
+        The control shows no certificate now, so there is nothing to trust. Chatter does not send the login. A login with a
+        username needs a certificate of the control. Check the OPC UA settings of the control. If the control must show no certificate, an Admin can forget the saved certificate.{' '}
         <DocsLink page="guide/siemens#forget-the-trusted-certificate">How to forget the certificate</DocsLink>
       </p>
       {canManage && (
