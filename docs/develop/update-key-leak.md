@@ -18,27 +18,54 @@ So a card trusts the leaked key until the user puts a new card image on it. Chat
 
 ## Steps
 
-1. **Stop the old key on GitHub.** In the repo, go to **Settings > Environments > release**. Delete the secret `UPDATE_SIGNING_KEY`. Then the sign job cannot sign with the old key. Until step 5, the sign job of each release tag fails.
+1. **Stop the old key on GitHub.** In the repo, go to **Settings > Environments > release**. Delete the secret `UPDATE_SIGNING_KEY`. You can also run `gh secret delete UPDATE_SIGNING_KEY --env release`. Then the sign job cannot sign with the old key. Until step 5, the sign job of each release tag fails.
 2. **Look for bad files.** On the **Releases** page, look at each `chatter-update-*.tar` file and each `v*` tag. Delete each file or release that you did not make.
-3. **Make a new key.** Do this on a computer that you trust. Give the key a new name, for example `chatter-2027`. The name can have only lowercase letters, digits and `-`, with at most 64 characters. From the repo root, run:
+3. **Make a new key.** Do this on a computer that you trust. Give the key a new name, for example `chatter-2027`. The name can have only lowercase letters, digits and `-`, with at most 64 characters. These commands need OpenSSL 3. To see the version, run `openssl version`. On a Mac, `/usr/bin/openssl` is LibreSSL, which cannot make the key. Install OpenSSL 3 with `brew install openssl`, and use `/opt/homebrew/bin/openssl`. From the repo root, run:
    ```bash
-   openssl genpkey -algorithm ed25519 -out chatter-2027.pem
-   openssl pkey -in chatter-2027.pem -pubout -out tools/pi-image/in-pi/update-keys/chatter-2027.pub
+   openssl genpkey -algorithm ed25519 -out ~/chatter-2027.pem
+   openssl pkey -in ~/chatter-2027.pem -pubout -out tools/pi-image/in-pi/update-keys/chatter-2027.pub
    ```
-   Do not commit `chatter-2027.pem`. It is the private key.
+   `~/chatter-2027.pem` is the private key. Keep it outside the repo, and do not commit it. `.gitignore` also ignores each `.pem` file.
 4. **Remove the old public key from the repo.** Delete `tools/pi-image/in-pi/update-keys/chatter-2026.pub`, so that a new card does not trust the leaked key. In [Pi card image](./pi-image.md), change the name of the release key. Merge this change into `main` in a pull request.
 5. **Give the new key to the sign job.** Put the private key in the `release` environment, and set the key name:
    ```bash
-   gh secret set UPDATE_SIGNING_KEY --env release < chatter-2027.pem
+   gh secret set UPDATE_SIGNING_KEY --env release < ~/chatter-2027.pem
    gh variable set UPDATE_KEY_ID --env release --body chatter-2027
    ```
-   Without `UPDATE_KEY_ID`, the sign job uses the name `chatter-2026`. Then delete `chatter-2027.pem` from the computer, or keep it only on an offline disk.
+   After a new key, the variable `UPDATE_KEY_ID` is necessary. Without it, the sign job uses the old name `chatter-2026`, and the job stops. The comments in `.github/workflows/docker.yml` and `tools/release/make-update-file.sh` still give `chatter-2026` as the default name. Do not delete the variable. Then delete `~/chatter-2027.pem` from the computer, or keep it only on an offline disk.
 6. **Make a new release.** Tag a commit of `main` that has the change of step 4. The sign job checks the signature with the public key of the tagged commit. So a wrong secret or a wrong key name stops the job. The release then has an update file that is signed with the new key, and a card image that has only the new public key.
 7. **Tell the users.** Write a security advisory on GitHub, and put the same text in the notes of the new release. Tell the users these facts:
    - Each Pi card from an older card image trusts the leaked key.
    - That card refuses each update file that is signed with the new key. **Settings > Updates** shows "The update file is signed with a key that this Pi does not know."
-   - To fix both, put the new card image on the card. To keep the data, first [back up the Pi card by hand](../guide/update.md#back-up-the-pi-card-by-hand), and copy the two backup files off the Pi. These commands need SSH on the Pi. After the new card image starts, copy the two files into `/opt/chatter` on the Pi, and [restore the backup](../guide/update.md#restore-a-backup) there, with `sudo` before each `docker`.
+   - To fix both, use one of the two options in [Fix a Pi card](#fix-a-pi-card).
+   - If a Pi installed an update file that you did not make, treat that Pi as compromised. Use option B. After the restore, look at the users in **Settings > Users**, and remove each Admin that you do not know. Change the password of each user, and the FTP password of each machine. `chatter.db` holds these passwords, and the backup has `chatter.db`.
    - Until then, do not upload an update file that you did not download from the Chatter releases.
 8. **Warn about the old card images.** Each card image of an older release has the leaked key. In the notes of each older release, tell the users to use the card image of the new release.
+
+## Fix a Pi card
+
+### Option A: replace the key file (with SSH)
+
+Use this option when SSH is on, and the Pi installed no update file that you did not make. The data stays on the card.
+
+1. Copy the new public key to the Pi, for example with `scp tools/pi-image/in-pi/update-keys/chatter-2027.pub <user>@<Pi address>:`.
+2. On the Pi, run:
+   ```bash
+   sudo cp ~/chatter-2027.pub /etc/chatter/update-keys/
+   sudo chmod 644 /etc/chatter/update-keys/chatter-2027.pub
+   sudo rm /etc/chatter/update-keys/chatter-2026.pub
+   ```
+
+The helper reads the keys at each check, so you do not have to restart the Pi. The Pi now refuses a file that is signed with the leaked key, and accepts a file that is signed with the new key.
+
+### Option B: put the new card image on the card
+
+Use this option when SSH is off, or when the Pi can be compromised. A new card image deletes all the data on the card.
+
+1. To keep the data, first [back up the Pi card by hand](../guide/update.md#back-up-the-pi-card-by-hand). These commands need SSH on the Pi. Without SSH, connect a keyboard and a screen to the Pi, and log in there. If you cannot do this, the data is lost. The backup commands use the Docker image `alpine`, and the card image does not have it. So the Pi must have internet access to download it.
+2. Copy the two backup files off the Pi.
+3. Put the new card image on the card with Raspberry Pi Imager. The new card does not keep the old settings, for example the Wi-Fi, SSH and the host name. Give these settings again in Raspberry Pi Imager. Also add the `DOCKER-USER` rule again, if you used one (see [Limit who can reach Chatter](../security.md#limit-who-can-reach-chatter)).
+4. Copy the two backup files to the home folder of your user on the Pi. Only root can write to `/opt/chatter`. So on the Pi, run `sudo cp ~/chatterbox-data.tar.gz ~/victoriametrics-data.tar.gz /opt/chatter/`.
+5. [Restore the backup](../guide/update.md#restore-a-backup) in `/opt/chatter`, with `sudo` before each `docker`. The new card also needs internet access to download `alpine`.
 
 A computer with Docker has no update helper and no update key. These steps do not apply to it.
