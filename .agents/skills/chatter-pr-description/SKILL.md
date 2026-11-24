@@ -1,6 +1,6 @@
 ---
 name: chatter-pr-description
-description: Writes or updates the pull request description of a Chatter branch - summary, what changed and why, tests, docs, risks and follow-ups, the line-count table of `npm run loc`, and the stack and base note. Use when the user says "write the PR description", "/chatter-pr-description", "open a PR", or after a fix adds commits to an open PR ("update the PR body").
+description: Writes or updates the pull request description of a Chatter branch - the line-count table of `npm run loc` at the top, then the summary, what changed and why, tests, docs, risks and follow-ups, and the stack and base note. Use when the user says "write the PR description", "/chatter-pr-description", "open a PR", or after a fix adds commits to an open PR ("update the PR body").
 ---
 
 # Write the pull request description
@@ -58,6 +58,12 @@ Run each command by itself:
 Use ASD-STE100 Simplified Technical English: short sentences, active voice, one idea in each sentence. Use this template:
 
 ```markdown
+## Size
+
+<!-- loc:start base=<merge base sha> head=<head sha> -->
+<output of npm run -s loc -- --base <base ref> --head <head ref>>
+<!-- loc:end -->
+
 ## Summary
 
 <One to three sentences: what the change does for the user, and why.>
@@ -88,17 +94,12 @@ Base: `<base branch>`. <"Targets main." or "Merge after #N.">
 
 - <A risk, a data migration, or an AGENTS.md guardrail that the change touches (kept or changed).>
 - <A follow-up, with its plan item.>
-
-## Size
-
-<!-- loc:start base=<merge base sha> head=<head sha> -->
-<output of npm run -s loc -- --base <base ref> --head <head ref>>
-<!-- loc:end -->
 ```
 
 The rules:
 
-- Leave out a section only when it has nothing true to say. Keep `## Size` always.
+- Put `## Size` at the very top of the body, before `## Summary` and before all other text. Keep `## Size` always.
+- Leave out each other section only when it has nothing true to say.
 - Group the bullets in "What changed and why" by area. One line for each change. One line for each fix.
 - In "Risks and follow-ups", check the guardrails in `AGENTS.md`. Name each one that the diff touches.
 - Use the full shas of `git merge-base <base ref> <head ref>` and `git rev-parse <head ref>` in the `loc:start` marker.
@@ -127,7 +128,7 @@ Use it after a review fix adds commits to an open pull request. Run each command
 5. List the new commits:
    - The old head is in the branch: `git log --format=%s <old head>..<head ref>`.
    - After a rebase: `git log --format=%s M..<head ref>` (M from [step 1 of Collect](#1-collect-the-evidence)). Keep only the subjects that the old body does not tell about. If you cannot tell, ask the user.
-6. `npm run -s loc -- --base <base ref> --head <head ref>`. Replace only the text between `<!-- loc:start ... -->` and `<!-- loc:end -->`. Put the full shas of the new merge base and the new head in the marker.
+6. `npm run -s loc -- --base <base ref> --head <head ref>`. Replace only the text between `<!-- loc:start ... -->` and `<!-- loc:end -->`. Put the full shas of the new merge base and the new head in the marker. Keep `## Size` at the very top of the body. If it is in a different position, move it to the top.
 7. Add a section `## Changes after review`, or add to it. Write one line for each new commit subject. If the body already has a detailed section about the fixes (for example "Review fixes" or "Fixes per finding"), keep that detail below the list, and add to it in the same layout.
 8. Keep the sections that a person wrote. Change a sentence only when a new commit makes it wrong. Then say in "Changes after review" which sentence you changed.
 9. If the base changed (the branch below merged, or the pull request has a new base), write the Stack section again.
@@ -137,9 +138,9 @@ Use it after a review fix adds commits to an open pull request. Run each command
 
 An older body can have other section names. Do not rewrite it to the template. Change only these items:
 
-- "Line count", "Lines", "Diff size" or a similar table: replace it with `## Size` and the markers. Write the new table of `npm run loc` in it.
+- "Line count", "Lines", "Diff size" or a similar table: replace it with `## Size` and the markers. Write the new table of `npm run loc` in it. Move `## Size` to the very top of the body.
 - "Fixes per finding", "Review fixes" and other sections with one part for each finding: keep the layout. Add new fixes in the same layout. Do not change them to bullets for each area.
-- A section that the template has and the body does not have (for example `## Size` or `## Stack`): add it.
+- A section that the template has and the body does not have (for example `## Size` or `## Stack`): add it. Add `## Size` at the very top of the body.
 
 ### Checks that an older body tells about
 
