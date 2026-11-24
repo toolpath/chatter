@@ -102,7 +102,7 @@ export function machineRoutes(poller: HardwarePoller) {
         case 'nothing-to-trust':
           return c.json({
             error: 'The control shows no new certificate now, so there is nothing to trust. If the control shows no certificate, '
-              + 'an Admin can forget the trusted certificate with POST /api/machine/:id/opcua/forget-certificate.',
+              + 'an Admin can click Forget the saved certificate on the machine page.',
           }, 409);
       }
     })
