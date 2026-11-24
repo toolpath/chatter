@@ -163,11 +163,15 @@ Only an Admin can read and change the alert rules. A custom alert query can only
 
 `docker-compose.yml` gives each container only the rights that it uses. So a program that takes control of a container gets fewer rights. For example, a bad FOCAS library or a bug in node-opcua can start such a program.
 
-- **No Linux capabilities.** Each container drops all capabilities (`cap_drop: [ALL]`). So a program in a container cannot send raw network packets, for example to read the FTP or OPC UA logins of a machine. Chatter runs as the user `node`, so it used no capability before either. VictoriaMetrics and vmalert run as `root`, but they need no capability. VictoriaMetrics made each file in its volume, so it can still write them, also in an old volume. vmalert only reads files that all users can read.
+- **No Linux capabilities.** Each container drops all capabilities (`cap_drop: [ALL]`). No container needs one: each one opens only ports above 1024, and writes only files that it owns.
+  - Chatter runs as the user `node`, so it used no capability before either. Now a setuid program (for example `su` or `mount`) cannot give it the rights of `root`.
+  - VictoriaMetrics and vmalert run as `root`. Without capabilities, `root` in these containers cannot ignore the rights of a file. It also cannot send false network packets on the internal network `history`, for example to change the alerts to Chatter or the machine history that Chatter writes.
+  - VictoriaMetrics made each file in its volume, so it can still write them, also in an old volume.
+  - vmalert reads `vmalert/rules.yml` from the `chatter` folder. All users must be able to read that file, and open the `vmalert` folder. If vmalert restarts again and again, run `chmod a+rX vmalert` and `chmod a+r vmalert/rules.yml` in the `chatter` folder. For example, a copy of the repository with `umask 077` gives files that only their owner can read.
 - **No new rights.** With `no-new-privileges:true`, a program in a container cannot get more rights from a setuid file or a file capability.
-- **A process limit.** `pids_limit` sets the most processes and threads of each container: 256 for Chatter and vmalert, 512 for VictoriaMetrics. Each one uses far fewer. So a program in a container cannot use up the processes of the computer. When the Linux kernel has no `pids` cgroup, Docker does not use the limit and shows a warning.
+- **A process limit.** `pids_limit` sets the most processes and threads of each container: 256 for Chatter and vmalert, 512 for VictoriaMetrics. So a program in a container cannot use up the processes of the computer. Each container usually uses far fewer. Chatter uses at least one more thread for each FANUC machine. On a computer with more than about 100 processors, VictoriaMetrics can come near its limit. When the Linux kernel has no `pids` cgroup, Docker does not use the limit and shows a warning.
 - **No memory limit.** On a Pi with 512 MB, a memory limit can stop Chatter. So the containers have no memory limit.
-- **Keep these settings.** Do not add `cap_add` or `privileged` to `docker-compose.yml`. Do not change these settings in a second compose file.
+- **Keep these settings.** Do not add `cap_add` or `privileged` to `docker-compose.yml`. Do not change these settings or `user` in a second compose file.
 - **Restore a backup of the machine history as root.** VictoriaMetrics must own the files in its volume. The restore commands in [Update Chatter](./guide/update.md#restore-a-backup) run as `root`, so `root` owns the files.
 
 ## Limit who can reach Chatter
