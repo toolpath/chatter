@@ -100,8 +100,9 @@ export function dataPortOf(machine: Machine): number | undefined {
   }
 }
 
-/** "192.168.1.50:10000" */
-export function machineAddress(machine: Machine): string {
+/** "192.168.1.50:10000", or null for a Viewer, who gets no address (D4) */
+export function machineAddress(machine: Machine): string | null {
+  if (!machine.host) return null;
   const port = dataPortOf(machine);
   return port ? `${machine.host}:${port}` : machine.host;
 }

@@ -25,7 +25,8 @@ function matchesSearch(machine: Machine, search: string): boolean {
   const text = search.trim().toLowerCase();
   if (!text) return true;
   const program = (machine.data.program ?? '').toLowerCase();
-  return [machine.name, machine.host].some(value => value.toLowerCase().includes(text))
+  // A Viewer gets no IP address (D4)
+  return [machine.name, machine.host ?? ''].some(value => value.toLowerCase().includes(text))
     || sameOAndZero(program).includes(sameOAndZero(text));
 }
 

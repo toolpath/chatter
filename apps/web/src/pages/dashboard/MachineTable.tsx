@@ -45,6 +45,16 @@ export function MachineTable({ machines, now }: { machines: Machine[]; now: numb
   );
 }
 
+/** "Brother CNC · 192.168.1.50". A Viewer gets no address (D4), so only the type. */
+function TypeAndAddress({ machine }: { machine: Machine }) {
+  return (
+    <div className="text-xs text-zinc-300">
+      {machineTypeLabel(machine.type)}
+      {machine.host && <> · <span className="font-mono">{machine.host}</span></>}
+    </div>
+  );
+}
+
 function MachineRow({ machine, now }: { machine: Machine; now: number }) {
   const state = machineStateOf(machine);
   const isOnline = isReachable(state);
@@ -56,9 +66,7 @@ function MachineRow({ machine, now }: { machine: Machine; now: number }) {
         <Link to={`/machine/${machine.id}`} className="font-bold text-zinc-50 no-underline hover:text-primary-text hover:underline">
           {machine.name}
         </Link>
-        <div className="text-xs text-zinc-300">
-          {machineTypeLabel(machine.type)} · <span className="font-mono">{machine.host}</span>
-        </div>
+        <TypeAndAddress machine={machine} />
       </td>
       <td className={cn(CELL, 'py-3.5')}><StateLabel state={state} /></td>
       <td className={cn(CELL, 'font-mono')}>{(isOnline && machine.data.program) || NO_VALUE}</td>
