@@ -15,6 +15,7 @@ import { LoginLog } from './loginLog.js';
 import { ProxySettings } from './proxySettings.js';
 import { SEEN_INTERVAL_MS, SESSION_IDLE_MS, SESSION_LIFETIME_SECONDS } from './sessionStore.js';
 import { authParts } from './testSupport.js';
+import { LOCAL_SETUP_ONLY } from './localHost.js';
 import { resetAdmins } from './adminReset.js';
 import { hashPassword } from './passwords.js';
 import { captureAudit, captureLog, type CapturedAudit, type CapturedLog } from '../logging/testSupport.js';
@@ -142,6 +143,40 @@ describe('auth routes', () => {
     });
     expect(res.status).toBe(409);
     expect(users.findByName('intruder')).toBeNull();
+  });
+
+  it('refuses the setup at a name in DNS, because a page from the internet can use DNS rebinding', async () => {
+    const log = captureLog();
+    try {
+      const res = await post('/api/auth/setup', ADMIN, { Host: 'evil.example:3001' });
+
+      expect(res.status).toBe(421);
+      expect(await res.json()).toEqual({ error: LOCAL_SETUP_ONLY });
+      expect(res.headers.get('Set-Cookie')).toBeNull();
+      expect(log.text()).not.toContain('made a new Admin');
+      expect(log.text()).toContain('host=evil.example:3001');
+    } finally {
+      log.restore();
+    }
+    expect(await (await app.request('/api/auth/status')).json()).toMatchObject({ setupNeeded: true });
+  });
+
+  it('refuses the setup at a name in DNS also when the URL has the name and no Host header', async () => {
+    const res = await post('http://chatter.shop.example.com/api/auth/setup', ADMIN);
+    expect(res.status).toBe(421);
+  });
+
+  it.each(['192.168.1.20:3001', '[::1]:3001', 'localhost:5173', 'chatter.local', 'CHATTER.LOCAL.', 'chatter'])(
+    'accepts the setup at the local address %s',
+    async host => {
+      const res = await post('/api/auth/setup', ADMIN, { Host: host });
+      expect(res.status).toBe(200);
+    },
+  );
+
+  it('does not use the Host check for a login', async () => {
+    await setUp();
+    expect((await post('/api/auth/login', ADMIN, { Host: 'chatter.shop.example.com' })).status).toBe(200);
   });
 
   it('refuses a short password', async () => {
