@@ -657,20 +657,22 @@ describe('test runs', () => {
     expect(projects).toContain(`'tools/${name}'`);
   });
 
-  // npm test does not run the shell tests of the Pi card and of the release scripts (some need Linux or Docker).
+  // npm test does not run the shell tests of the Pi card, of the release scripts and of VictoriaMetrics (some need Linux
+  // or Docker).
   // Only a workflow runs them, so a test script that no workflow runs never runs. The *.lib.sh files and
   // in-linux.sh are helpers, not tests. Only the run text of the steps counts, not a comment.
-  const shellTests = ['tools/pi-image/test', 'tools/release/test'].flatMap(dir =>
+  const shellTests = ['tools/pi-image/test', 'tools/release/test', 'tools/victoria-test'].flatMap(dir =>
     readdirSync(join(ROOT, dir)).filter(file => file.endsWith('.test.sh')).map(file => `${dir}/${file}`),
   );
   const runText = workflowFiles
     .flatMap(file => Object.values(workflow(file).jobs).flatMap(job => (job.steps ?? []).map(step => step.run ?? '')))
     .join('\n');
 
-  it('finds the shell tests of the Pi card and of the release scripts', () => {
+  it('finds the shell tests of the Pi card, of the release scripts and of VictoriaMetrics', () => {
     expect(shellTests).toEqual(expect.arrayContaining([
       'tools/pi-image/test/update-chatter-check.test.sh',
       'tools/release/test/check-tag-on-main.test.sh',
+      'tools/victoria-test/old-volume.test.sh',
     ]));
   });
 
