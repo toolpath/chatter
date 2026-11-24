@@ -397,6 +397,31 @@ describe('Brother tool sync: the tool table and the tool data, read apart from t
     await sync;
     expect(machine.sent.indexOf('ATCTL')).toBeGreaterThan(machine.sent.indexOf('MCRNI1'));
   });
+
+  it.each([
+    ['a feed hold', MEM_FEED_HOLD],
+    ['a program that runs', MEM_RUNNING],
+  ])('refuses a Sync when the state poll that it waited for found %s, and sends no tool command', async (_, mem) => {
+    const machine = machineThatTakes(100);
+    await machine.fake.poll();
+    const panel = machine.fake.hold('PANEL');
+    const poll = machine.poll();
+    await vi.waitFor(() => expect(panel.waiting).toBe(true));
+    const sync = machine.connector.requestToolSync();
+
+    machine.replies.MEM = mem;
+    panel.release();
+    await poll;
+
+    expect(await sync).toEqual({ outcome: 'program-running' });
+    expect(machine.sent).not.toContain('ATCTL');
+    expect(machine.sent).not.toContain('TOLNI1');
+    expect(machine.connector.getStatus().data.toolSync).toEqual({ lastSyncAt: null, lastAttemptAt: null, error: null, running: false });
+    // The refused Sync does not count in the limit of 30 seconds
+    machine.replies.MEM = MOCK_RESPONSES.MEM;
+    await machine.pollAndSync();
+    expect((await machine.connector.requestToolSync()).outcome).toBe('synced');
+  });
 });
 
 describe('Brother tool sync that does not end', () => {
@@ -495,6 +520,22 @@ describe('Brother tool sync that does not end', () => {
     await newPoll;
     expect((await sync).outcome).toBe('synced');
     expect(fake.sent.indexOf('ATCTL')).toBeGreaterThan(fake.sent.lastIndexOf('ALARM'));
+  });
+
+  it('does not take the run state of a poll that the scheduler left behind and that ends after a newer poll', async () => {
+    const fake = connectedBrother();
+    await fake.poll();
+    const leftBehindPdsp = fake.hold('PDSP');
+    const leftBehindPoll = fake.connector.poll();
+    await vi.waitFor(() => expect(leftBehindPdsp.waiting).toBe(true));
+    fake.replies.MEM = MEM_FEED_HOLD;
+    await fake.connector.poll();
+
+    leftBehindPdsp.release();
+    await leftBehindPoll;
+
+    expect(await fake.connector.requestToolSync()).toEqual({ outcome: 'program-running' });
+    expect(fake.sent).not.toContain('ATCTL');
   });
 });
 

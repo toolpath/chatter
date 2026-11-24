@@ -70,8 +70,9 @@ export class ToolSyncTracker {
   }
 
   /**
-   * The read ended, but its result is not kept (the address changed during it). The state of the last read stays.
-   * A Sync whose read was abandoned does not count in the limit of 30 seconds, so the user can press Sync again.
+   * The read ended with no result to keep: the address changed during it, or the poll that it waited for found that
+   * a program runs, so it sent no tool command. The state of the last read stays. A Sync whose read was abandoned
+   * does not count in the limit of 30 seconds, so the user can press Sync again.
    */
   abandoned(trigger: 'auto' | 'manual'): void {
     this.runningNow = false;
