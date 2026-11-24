@@ -97,8 +97,21 @@ describe('ToolTableTab sync', () => {
   it('tells when Chatter reads the tool table', () => {
     renderTab(NOT_SYNCED, {});
 
-    expect(screen.getByText('Chatter reads the tool table when the machine runs no program and the last read is more than 10 minutes old.'))
-      .toBeInTheDocument();
+    expect(screen.getByText(
+      'Chatter reads the tool table only when no program runs. '
+      + 'It reads it automatically after 2 minutes with no program, when the last read is more than 10 minutes old.',
+    )).toBeInTheDocument();
+  });
+
+  it('tells why the server refused a Sync while a program runs, and keeps the button', async () => {
+    refuseSync('Chatter reads the tools only when no program runs. Press Sync again when the program ends.', { outcome: 'program-running' });
+    renderTab(SYNCED);
+
+    await pressSync();
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Chatter reads the tools only when no program runs.');
+    expect(screen.getByRole('button', { name: 'Sync' })).toBeEnabled();
+    expect(screen.getByText(SYNCED_TEXT)).toBeInTheDocument();
   });
 
   it('gives the time of the last good read', () => {

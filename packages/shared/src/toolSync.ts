@@ -7,6 +7,7 @@ import type { ToolSyncState } from './machineData.js';
  * - 'too-soon': a Sync came less than 30 seconds after the last one.
  * - 'busy': a read of the tools runs now.
  * - 'not-connected': the machine is offline.
+ * - 'program-running': the last poll did not say that the machine runs no program (READY), so Chatter does not read.
  * - 'address-changed': the address changed during the read, so Chatter did not keep its result.
  * - 'not-supported': the machine type has no tool table to read.
  * - 'not-found': there is no machine with this id.
@@ -17,6 +18,7 @@ export type ToolSyncOutcome =
   | { outcome: 'too-soon'; retryAfterSeconds: number }
   | { outcome: 'busy' }
   | { outcome: 'not-connected' }
+  | { outcome: 'program-running' }
   | { outcome: 'address-changed' }
   | { outcome: 'not-supported' }
   | { outcome: 'not-found' };

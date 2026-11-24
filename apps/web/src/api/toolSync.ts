@@ -37,6 +37,7 @@ function problemOf(body: ToolSyncErrorBody): SyncProblem {
     case 'too-soon': return { outcome: body.outcome, retryAfterSeconds: body.retryAfterSeconds };
     case 'busy':
     case 'not-connected':
+    case 'program-running':
     case 'address-changed':
     case 'not-supported':
       return { outcome: body.outcome };

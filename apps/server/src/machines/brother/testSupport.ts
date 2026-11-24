@@ -34,6 +34,8 @@ export const D00_ATCTLD = MOCK_RESPONSES.ATCTL.replace('ATCTL ', 'ATCTLD');
 
 /** A MEM reply while a program runs (operation status 1) */
 export const MEM_RUNNING = "RLOD    MEM     00\r\nA01,'/       ',1001,1,0,0,0,0\r\n\r\n00%";
+/** A MEM reply in a feed hold (operation status 2), for example after the operator opened the door */
+export const MEM_FEED_HOLD = "RLOD    MEM     00\r\nA01,'/       ',1001,2,0,0,0,0\r\n\r\n00%";
 /** A MEM reply of an older control, with no operation status */
 export const MEM_NO_RUN_STATE = "RLOD    MEM     00\r\nA01,'/       ',1001\r\n\r\n00%";
 
@@ -205,6 +207,15 @@ export class FakeConnection {
   /** The next send of `command` fails with this error. The default is "No reply for <command>". */
   fail(command: string, error: () => Error = () => new Error(`No reply for ${command}`)): void {
     this.failures.set(command, error);
+  }
+
+  /**
+   * A good poll, so the last poll tells the run state, and a Sync can start when it is READY. A single READY poll
+   * starts no automatic tool read. Then the list of sent commands is cleared.
+   */
+  async poll(): Promise<void> {
+    await this.connector.poll();
+    this.sent.length = 0;
   }
 
   /** The machine closed the connection: the connector sees it as closed, as after the close event of a socket */

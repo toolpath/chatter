@@ -4,7 +4,7 @@ import { PollTimingRecorder } from '../pollTimings.js';
 import { tuneMachineSocket } from '../machineSocket.js';
 import { createLogger } from '../../logging/logger.js';
 import { ReplyTooLargeError, warnReplyTooLarge } from '../replyLimit.js';
-import { TOOL_SYNC_TIMEOUT_MS, ToolSyncTracker, isIdle } from './toolSync.js';
+import { TOOL_SYNC_TIMEOUT_MS, ToolSyncTracker } from './toolSync.js';
 import {
   ATC_COMMANDS,
   DATA_ITEMS,
@@ -126,7 +126,7 @@ export class BrotherConnector extends BaseMachineConnector {
   private readonly timings: PollTimingRecorder;
   private readonly toolSync = new ToolSyncTracker();
   /** The state poll that runs now, so a tool read waits for it. One operation at a time uses the connection. */
-  private runningPoll: Promise<void> | null = null;
+  private runningPoll: Promise<boolean> | null = null;
   /**
    * The last tool read that started, for toolSyncEnded() only. Whether a tool read runs is in the tracker
    * (toolSync.running): a state poll does not use the connection while one runs.
@@ -346,8 +346,9 @@ export class BrotherConnector extends BaseMachineConnector {
   }
 
   /**
-   * Forget what Chatter found about the control: the ATC command, the control type and the tool table. The next
-   * idle poll reads the tools again. Use it when the address changes, because a different control can be there.
+   * Forget what Chatter found about the control: the ATC command, the control type and the tool table. Chatter reads
+   * the tools again when the control at the address has said READY for the hold time. Use it when the address
+   * changes, because a different control can be there.
    */
   forgetControl(): void {
     this.controlGeneration++;
@@ -363,7 +364,8 @@ export class BrotherConnector extends BaseMachineConnector {
 
   /**
    * Read the machine state. While a tool read runs, the poll does not use the connection: it gives the last values,
-   * and is a good poll. After a good poll that finds the machine idle, it can start a tool read (see ToolSyncTracker).
+   * and is a good poll. After a good poll, when the control has said READY for some time, it can start a tool read
+   * (see ToolSyncTracker and TOOL_SYNC_READY_HOLD_MS).
    */
   async poll(): Promise<BrotherMachineStatus> {
     if (this.toolSync.running) return this.getStatus();
@@ -371,14 +373,19 @@ export class BrotherConnector extends BaseMachineConnector {
     this.timings.startPoll();
     const run = this.pollMachine();
     this.runningPoll = run;
+    let good = false;
     try {
-      await run;
+      good = await run;
     } finally {
       // A poll that the scheduler left behind must not clear the promise of the poll that came after it
       if (this.runningPoll === run) this.runningPoll = null;
       this.timings.endPoll(this.pollTimeLimitMs);
+      // A failed poll breaks the READY time, as a program that runs does
+      this.toolSync.polled(Date.now(), good ? this.data.execution : null);
     }
-    if (this.connected && this.lastPollTime && isIdle(this.data) && this.toolSync.autoSyncDue(Date.now())) {
+    // Only READY, held for some time, starts a read. A tool read while the C00 went into feed hold after a door
+    // open kept the control from the feed hold. A stopped spindle does not tell that no program runs.
+    if (this.connected && good && this.toolSync.autoSyncDue(Date.now())) {
       // Not awaited: the tool read runs between the state polls, with its own time limit
       void this.startToolSync('auto');
     }
@@ -386,13 +393,15 @@ export class BrotherConnector extends BaseMachineConnector {
   }
 
   /**
-   * A user pressed Sync: read the tools now, also while a program runs. During the planned reconnect, the read
-   * waits for the poll that reconnects. If that connect fails, the read fails with the reason.
+   * A user pressed Sync: read the tools now, but only when the last poll said READY (no program runs). During the
+   * planned reconnect, the read waits for the poll that reconnects. If that connect fails, the read fails with the
+   * reason.
    */
   async requestToolSync(): Promise<ToolSyncResult> {
     const refusal = this.toolSync.manualRefusal(Date.now());
     if (refusal) return refusal;
     if (!this.connected && !this.reconnecting) return { outcome: 'not-connected' };
+    if (!this.toolSync.lastPollReady) return { outcome: 'program-running' };
     return this.startToolSync('manual');
   }
 
@@ -465,20 +474,27 @@ export class BrotherConnector extends BaseMachineConnector {
     this.hasPocketInfo = Object.keys(this.toolTable).length > 0;
   }
 
-  /** Connect when needed, read the machine, and keep the values */
-  private async pollMachine(): Promise<void> {
+  /** Connect when needed, read the machine, and keep the values. True when the poll read the machine. */
+  private async pollMachine(): Promise<boolean> {
     // With an open connection and no planned reconnect, the first command goes out at once, with no await before it
-    if (this.mustConnect() && !(await this.connectForPoll())) return;
+    if (this.mustConnect()) {
+      const newConnection = !this.connected;
+      if (!(await this.connectForPoll())) return false;
+      // The connection was lost since the last poll, so Chatter does not know what the machine did. The READY time
+      // starts again. The planned reconnect is not a lost connection.
+      if (newConnection) this.toolSync.polled(Date.now(), null);
+    }
 
     this.prevData = { ...this.data };
 
     const responses = await this.readMachine();
-    if (!responses) return;
+    if (!responses) return false;
 
     Object.assign(this.data, machineValuesOf(responses, this.dataItems));
 
     this.updatePollTime();
     this.emitDataChanges(this.prevData, this.data);
+    return true;
   }
 
   /**

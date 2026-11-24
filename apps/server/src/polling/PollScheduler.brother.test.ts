@@ -86,7 +86,10 @@ describe('a slow Brother tool read in the scheduler', () => {
     connector = null;
   });
 
-  /** Poll the fake Brother with a real scheduler until `count` polls ended, and give the result of each poll */
+  /**
+   * Poll the fake Brother with a real scheduler until `count` polls ended, and give the result of each poll.
+   * After the first poll, a user presses Sync, so the tool read runs between the polls of the scheduler.
+   */
   async function pollSlowBrother(replyDelayMs: number, count: number, toolDelayMs?: number) {
     fake = await startSlowBrother(replyDelayMs, replyDelayMs, toolDelayMs);
     const { port } = fake;
@@ -96,6 +99,7 @@ describe('a slow Brother tool read in the scheduler', () => {
       afterPoll: (machine: BaseMachineConnector) => {
         const { connected, errors } = machine.getStatus();
         results.push({ connected, errors: [...errors] });
+        if (results.length === 1) void connector!.requestToolSync();
       },
       connectingEnded: () => {},
     }, SCALED);

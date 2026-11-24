@@ -341,7 +341,7 @@ describe('Brother planned reconnect every 60 seconds, with a real TCP connection
     const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
     fake.hold = command => (command === 'TOLNI1' ? never() : null);
     const sync = brother.requestToolSync();
-    await vi.waitFor(() => expect(fake.commands.filter(command => command === 'TOLNI1')).toHaveLength(2));
+    await vi.waitFor(() => expect(fake.commands.filter(command => command === 'TOLNI1')).toHaveLength(1));
 
     close(brother);
     const result = await sync;
