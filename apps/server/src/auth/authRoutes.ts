@@ -9,6 +9,7 @@ import { LOCK_MINUTES, MAX_LOGGED_UNKNOWN_USERS, type LoginLimiter } from './Log
 import type { LoginLog, LoginResult } from './loginLog.js';
 import type { ProxySettings } from './proxySettings.js';
 import type { RequestOrigin } from './proxyTrust.js';
+import { hostOfRequest, isLocalHost, LOCAL_SETUP_ONLY } from './localHost.js';
 import { originOf } from './requestOrigin.js';
 import { SESSION_LIFETIME_SECONDS, type SessionClient } from './sessionStore.js';
 import { UsernameTakenError } from './userStore.js';
@@ -147,6 +148,22 @@ function setUpClosed(c: Context, origin: RequestOrigin) {
   writeAudit('First-run setup refused', { address: origin.address });
   return c.json({ error: SETUP_CLOSED }, 409);
 }
+
+/**
+ * Stops a first-run setup at a host that is not local, before Chatter reads the body. See localHost.ts.
+ * 421 (Misdirected Request): this name is the wrong address for the setup.
+ */
+function setUpAtLocalHostOnly(proxySettings: ProxySettings) {
+  return createMiddleware(async (c, next) => {
+    const host = hostOfRequest(c.req.header('Host'), c.req.url);
+    if (isLocalHost(host)) return next();
+    writeAuditAndLog('First-run setup refused at a host that is not local', {
+      address: originOf(c, proxySettings).address, host: cutValue(host),
+    });
+    return c.json({ error: LOCAL_SETUP_ONLY }, 421);
+  });
+}
+
 const wrongLogin = (c: Context) => c.json({ error: 'Wrong username or password' }, 401);
 
 type Checked<Value> = { ok: true; value: Value } | { ok: false; reply: Response };
@@ -333,7 +350,7 @@ export function authRoutes(guard: LoginGuard) {
     })
 
     // Only the first visitor can do this: when an admin exists, the reply is 409
-    .post('/auth/setup', checkedJson(setUpSchema), async c => {
+    .post('/auth/setup', setUpAtLocalHostOnly(proxySettings), checkedJson(setUpSchema), async c => {
       const origin = originOf(c, proxySettings);
       try {
         const setUp = c.req.valid('json');
