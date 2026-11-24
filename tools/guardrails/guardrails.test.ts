@@ -15,11 +15,16 @@ const trackedFiles = () =>
   execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).split('\n').filter(Boolean);
 
 interface ComposeService {
+  cap_add?: string[];
+  cap_drop?: string[];
   command?: string[];
   container_name?: string;
   networks?: ComposeServiceNetworks | null;
   network_mode?: string;
+  pids_limit?: number;
   ports?: ComposePort[];
+  privileged?: boolean;
+  security_opt?: string[];
   volumes?: string[];
 }
 interface ComposeFile {
@@ -30,6 +35,9 @@ interface ComposeFile {
 }
 const compose = (path: string) => parse(read(path)) as ComposeFile;
 const composeFiles = trackedFiles().filter(file => /(^|\/)docker-compose[^/]*\.ya?ml$/.test(file));
+// The files that Docker Compose merges with docker-compose.yml. docker-compose.dev.yml is a different project
+// (chatter-dev), so it is not in this list.
+const mergedFiles = composeFiles.filter(file => !['docker-compose.yml', 'docker-compose.dev.yml'].includes(file));
 
 describe('FANUC files', () => {
   it('are not in git, because the FOCAS2 library belongs to FANUC', () => {
@@ -172,8 +180,7 @@ describe('history network', () => {
   });
 
   // Docker Compose adds the "networks:" of a file that it merges with docker-compose.yml to the networks of
-  // docker-compose.yml. docker-compose.dev.yml is a different project (chatter-dev), so it is not in this list.
-  const mergedFiles = composeFiles.filter(file => !['docker-compose.yml', 'docker-compose.dev.yml'].includes(file));
+  // docker-compose.yml.
 
   it('finds the files that Docker Compose merges with docker-compose.yml', () => {
     expect(mergedFiles).toEqual(
@@ -188,6 +195,54 @@ describe('history network', () => {
       .map(([service]) => service);
     expect(withNetworks).toEqual([]);
     expect(merged.networks).toBeUndefined();
+  });
+});
+
+describe('container privileges', () => {
+  // A program that takes control of a container (for example through a bad FOCAS library or a bug in node-opcua)
+  // must not get more rights than Chatter uses. Chatter, VictoriaMetrics and vmalert need no Linux capability:
+  // they open only ports above 1024. Each one writes only files that it owns, and reads only files that it owns or that
+  // all users can read. VictoriaMetrics runs as root and made each file in its volume, also in an old volume.
+  // Without NET_RAW, the program cannot send false network packets (for example to read FTP or OPC UA logins).
+  const main = compose('docker-compose.yml');
+  const services = Object.entries(main.services);
+  // The lowest and the highest pids_limit. Below the lowest, a busy Chatter could not start a thread.
+  // "0" and "-1" mean no limit.
+  const fewestPids = 64;
+  const mostPids = 1024;
+
+  it('finds the three services', () => {
+    expect(Object.keys(main.services)).toEqual(expect.arrayContaining(['chatterbox', 'victoriametrics', 'vmalert']));
+  });
+
+  it.each(services)('drops all the capabilities of %s', (_, service) => {
+    expect(service.cap_drop).toEqual(['ALL']);
+  });
+
+  it.each(services)('gives %s no capability back and no privileged mode', (_, service) => {
+    expect(service.cap_add).toBeUndefined();
+    expect(service.privileged).toBeUndefined();
+  });
+
+  it.each(services)('stops a program in %s from getting more rights through setuid or file capabilities', (_, service) => {
+    expect(service.security_opt).toContain('no-new-privileges:true');
+  });
+
+  it.each(services)('limits the number of processes and threads of %s', (_, service) => {
+    expect(Number.isInteger(service.pids_limit)).toBe(true);
+    expect(service.pids_limit).toBeGreaterThanOrEqual(fewestPids);
+    expect(service.pids_limit).toBeLessThanOrEqual(mostPids);
+  });
+
+  // Docker Compose adds the cap_add and security_opt of a merged file to those of docker-compose.yml,
+  // and the pids_limit and privileged of a merged file replace those of docker-compose.yml.
+  const privilegeKeys = ['cap_add', 'cap_drop', 'pids_limit', 'privileged', 'security_opt', 'user'];
+
+  it.each(mergedFiles)('changes no privilege in %s, so the settings of docker-compose.yml apply', file => {
+    const changed = Object.entries(compose(file).services ?? {}).flatMap(([name, service]) =>
+      privilegeKeys.filter(key => key in service).map(key => `${name}: ${key}`),
+    );
+    expect(changed).toEqual([]);
   });
 });
 
