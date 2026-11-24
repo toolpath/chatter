@@ -1,7 +1,7 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AuthGate from './AuthGate';
-import { getAuthStatus } from '../api/auth';
+import { getAuthStatus, setUpAccount } from '../api/auth';
 import { requestLoginCheck } from '../api/client';
 
 vi.mock('../api/auth', () => ({
@@ -28,6 +28,20 @@ describe('AuthGate', () => {
     renderGate();
     expect(await screen.findByText('Welcome to Chatter')).toBeInTheDocument();
     expect(screen.getByLabelText('Username')).toBeInTheDocument();
+  });
+
+  it('does not send a first-run password that is the username', async () => {
+    mockedGetAuthStatus.mockResolvedValue(FIRST_RUN);
+    renderGate();
+    await screen.findByText('Welcome to Chatter');
+
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'machinist' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'Machinist' } });
+    fireEvent.change(screen.getByLabelText('Password again'), { target: { value: 'Machinist' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+
+    expect(await screen.findByText('The password cannot be the username')).toBeInTheDocument();
+    expect(setUpAccount).not.toHaveBeenCalled();
   });
 
   it('asks for the password when not logged in', async () => {

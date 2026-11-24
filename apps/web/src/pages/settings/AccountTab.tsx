@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { changePassword, fetchSessions, logOut, logOutOtherBrowsers, type BrowserSession } from '../../api/auth';
 import { useCurrentUser } from '../../components/CurrentUser';
-import { newPasswordProblem, PasswordField, useSubmitState } from '../../components/PasswordForm';
+import { newPasswordFormProblem, PasswordField, useSubmitState } from '../../components/PasswordForm';
 import { Button } from '../../components/ui/Button';
 import { LogOutIcon } from '../../components/ui/icons';
 import { Notice } from '../../components/ui/Notice';
@@ -47,6 +47,7 @@ function AccountCard() {
 }
 
 function ChangePasswordPanel({ onChanged }: { onChanged: () => void }) {
+  const username = useCurrentUser()?.username ?? '';
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
@@ -61,7 +62,7 @@ function ChangePasswordPanel({ onChanged }: { onChanged: () => void }) {
 
   const handleSubmit = async (event: FormEvent) => {
     setIsChanged(false);
-    const problem = newPasswordProblem(newPassword, confirmation);
+    const problem = newPasswordFormProblem(newPassword, confirmation, username);
     if (problem) {
       event.preventDefault();
       setError(problem);
@@ -75,7 +76,7 @@ function ChangePasswordPanel({ onChanged }: { onChanged: () => void }) {
   };
 
   return (
-    <Panel title="Change the password" description="Use 8 characters or more. After this, other browsers and programs must use the new password.">
+    <Panel title="Change the password" description="Use 8 characters or more. Do not use your username or a common password. After this, other browsers and programs must use the new password.">
       <form onSubmit={handleSubmit} className="flex flex-col gap-4 px-5 py-4">
         <div className="grid grid-cols-[repeat(auto-fit,minmax(13.75rem,1fr))] gap-3.5">
           <PasswordField id="current-password" label="Current password" value={currentPassword} onChange={setCurrentPassword} autoComplete="current-password" />

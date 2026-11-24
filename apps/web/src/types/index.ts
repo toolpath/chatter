@@ -29,6 +29,5 @@ export {
   opcuaSecurityWarning,
   MACHINE_EVENTS,
   isValidIPv4,
-  MIN_PASSWORD_LENGTH,
   SUPPORTED_MACHINE_TYPES,
 } from '@local-chatter/shared';

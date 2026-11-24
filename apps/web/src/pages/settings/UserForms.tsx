@@ -1,7 +1,7 @@
 import { ROLES, type Role, type UserToAdd } from '@local-chatter/shared';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import type { ChatterUser } from '../../api/settings';
-import { newPasswordProblem, PasswordField } from '../../components/PasswordForm';
+import { newPasswordFormProblem, PasswordField } from '../../components/PasswordForm';
 import { Button } from '../../components/ui/Button';
 import { CloseButton } from '../../components/ui/CloseButton';
 import { Field, SelectInput, TextInput } from '../../components/ui/fields';
@@ -67,8 +67,8 @@ function RoleField({ id, value, onChange }: { id: string; value: Role; onChange:
   );
 }
 
-/** A new password, typed two times */
-function useNewPassword() {
+/** A new password, typed two times. It cannot be the username. */
+function useNewPassword(username: string) {
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const fields = (
@@ -77,14 +77,14 @@ function useNewPassword() {
       <PasswordField id="user-password-again" label="Password again" value={confirmation} onChange={setConfirmation} autoComplete="new-password" />
     </>
   );
-  return { password, problem: newPasswordProblem(password, confirmation), fields };
+  return { password, problem: newPasswordFormProblem(password, confirmation, username), fields };
 }
 
 export function AddUserForm({ onAdd, ...state }: FormState & { onAdd: (user: UserToAdd) => void }) {
   const [username, setUsername] = useState('');
   const [role, setRole] = useState<Role>('operator');
-  const newPassword = useNewPassword();
   const trimmedUsername = username.trim();
+  const newPassword = useNewPassword(trimmedUsername);
 
   return (
     <UserForm
@@ -138,7 +138,7 @@ interface SetPasswordFormProps extends FormState {
 }
 
 export function SetPasswordForm({ user, onSet, ...state }: SetPasswordFormProps) {
-  const newPassword = useNewPassword();
+  const newPassword = useNewPassword(user.username);
   return (
     <UserForm
       title={`Set a new password for ${user.username}`}

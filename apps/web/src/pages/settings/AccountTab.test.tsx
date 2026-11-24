@@ -73,6 +73,20 @@ describe('AccountTab', () => {
     expect(within(description).getByText('Log out all other browsers').tagName).toBe('STRONG');
   });
 
+  it('does not send a common password, and tells the rule', async () => {
+    await renderTab(twoBrowsers);
+    vi.mocked(changePassword).mockReset();
+
+    fireEvent.change(screen.getByLabelText('Current password'), { target: { value: 'old-password' } });
+    fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'iloveyou' } });
+    fireEvent.change(screen.getByLabelText('New password again'), { target: { value: 'iloveyou' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Change password' }));
+
+    expect(await screen.findByText('The password is too common. Use a different password')).toBeInTheDocument();
+    expect(changePassword).not.toHaveBeenCalled();
+    expect(screen.getByText(/Do not use your username or a common password/)).toBeInTheDocument();
+  });
+
   it('loads the list again after a new password, because the other browsers are logged out', async () => {
     await renderTab(twoBrowsers);
     vi.mocked(changePassword).mockResolvedValue({ ok: true });

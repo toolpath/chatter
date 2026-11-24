@@ -3,7 +3,7 @@ import { getAuthStatus, logIn, setUpAccount } from '../api/auth';
 import { onLoginCheckNeeded } from '../api/client';
 import { CurrentUserContext, type CurrentUser } from './CurrentUser';
 import { Wordmark } from './layout/Logo';
-import { newPasswordProblem, PasswordField, UsernameField, useSubmitState } from './PasswordForm';
+import { newPasswordFormProblem, PasswordField, UsernameField, useSubmitState } from './PasswordForm';
 import { Button } from './ui/Button';
 import { Notice } from './ui/Notice';
 
@@ -124,7 +124,7 @@ function SetupPage({ onSuccess }: { onSuccess: () => void }) {
   const { error, isSubmitting, submit, setError } = useSubmitState();
 
   const handleSubmit = async (event: FormEvent) => {
-    const problem = newPasswordProblem(password, confirmation);
+    const problem = newPasswordFormProblem(password, confirmation, username);
     if (problem) {
       event.preventDefault();
       setError(problem);
