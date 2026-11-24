@@ -356,7 +356,7 @@ describe('auth routes', () => {
     await post('/api/auth/password', { currentPassword: ADMIN.password, newPassword: 'second-password' }, { Cookie: cookie });
 
     expect(loggedResults()).toEqual([
-      'sam: no-such-user',
+      's… (3 characters): no-such-user',
       'admin: wrong-password',
       'admin: logged-in',
       'admin: password-changed',
@@ -522,7 +522,7 @@ describe('auth routes behind a reverse proxy', () => {
         expect.stringMatching(/username=admin.*address=192\.168\.1\.66/),
       ]);
       expect(linesWith('warn', 'result=no-such-user')).toEqual([
-        expect.stringMatching(/username=sam.*address=192\.168\.1\.66/),
+        expect.stringMatching(/username="s… \(3 characters\)".*address=192\.168\.1\.66/),
       ]);
       expect(log.text()).not.toContain('secret-wrong');
     });
@@ -536,10 +536,9 @@ describe('auth routes behind a reverse proxy', () => {
       await wrongAdminPassword('192.168.1.66');
 
       expect(linesWith('warn', 'address=192.168.1.66 result=no-such-user')).toHaveLength(MAX_LOGGED_UNKNOWN_USERS);
-      expect(log.text()).not.toContain(`username=random-${MAX_LOGGED_UNKNOWN_USERS}`);
       expect(linesWith('warn', 'not logged')).toEqual([expect.stringMatching(/address=192\.168\.1\.66/)]);
       // Other computers and known usernames still get a line
-      expect(linesWith('warn', 'username=other-computer')).toHaveLength(1);
+      expect(linesWith('warn', 'address=192.168.1.67 result=no-such-user')).toHaveLength(1);
       expect(linesWith('warn', 'result=wrong-password')).toEqual([expect.stringMatching(/username=admin.*address=192\.168\.1\.66/)]);
     });
 
@@ -633,30 +632,27 @@ describe('auth routes behind a reverse proxy', () => {
       await wrongAdminPassword('192.168.1.66');
 
       expect(auditLines('address=192.168.1.66 result=no-such-user')).toHaveLength(MAX_LOGGED_UNKNOWN_USERS);
-      expect(audit.lines.join('\n')).not.toContain(`username=random-${MAX_LOGGED_UNKNOWN_USERS} `);
       expect(auditLines('not logged one by one')).toEqual([expect.stringMatching(/address=192\.168\.1\.66 minutes=15$/)]);
       // Other computers and known usernames still get a line
-      expect(auditLines('username=other-computer')).toHaveLength(1);
+      expect(auditLines('address=192.168.1.67 result=no-such-user')).toHaveLength(1);
       expect(auditLines('result=wrong-password')).toEqual([expect.stringMatching(/username=admin address=192\.168\.1\.66/)]);
     });
 
-    it('cuts a long username to 64 characters, so a try with a long name cannot fill the log', async () => {
+    it('writes a long unknown username as 2 characters and the length, so a try with a long name cannot fill the log', async () => {
       audit = captureAudit();
       const log = captureLog();
       try {
-        await postFor('192.168.1.66', '/api/auth/login', { username: `${'u'.repeat(64)}`, password: 'wrong-password' });
         const res = await app.request('/api/status', {
           headers: { ...basic(`${'a'.repeat(64)}${'b'.repeat(300)}`, 'x').headers, 'X-Forwarded-For': '192.168.1.66' },
         }, fromProxy);
         expect(res.status).toBe(401);
-        expect(log.text()).toMatch(/ username=a{64}… address=192\.168\.1\.66/);
+        expect(log.text()).toMatch(/ username="aa… \(364 characters\)" address=192\.168\.1\.66/);
       } finally {
         log.restore();
       }
 
       expect(auditLines('Password try')).toEqual([
-        expect.stringMatching(/ username=u{64} address=/),
-        expect.stringMatching(/ username=a{64}… address=192\.168\.1\.66 result=no-such-user$/),
+        expect.stringMatching(/ username="aa… \(364 characters\)" address=192\.168\.1\.66 result=no-such-user$/),
       ]);
     });
 
@@ -687,12 +683,12 @@ describe('auth routes behind a reverse proxy', () => {
     it('keeps a Basic username with a new line and control characters in one escaped line', async () => {
       audit = captureAudit();
       // Basic ends the username at the first colon, so the false line has no time
-      const username = 'eve\r\nINFO  [audit] Change user=admin\u001b[2J';
+      const username = '\r\nINFO  [audit] Change user=admin\u001b[2J';
 
       const res = await app.request('/api/status', { headers: { ...basic(username, 'x').headers, 'X-Forwarded-For': '192.168.1.66' } }, fromProxy);
 
       expect(res.status).toBe(401);
-      expect(audit.lines).toEqual([expect.stringContaining('Password try username="eve\\r\\nINFO  [audit] Change user=admin\\u001b[2J" address=192.168.1.66 result=no-such-user')]);
+      expect(audit.lines).toEqual([expect.stringContaining('Password try username="\\r\\n… (37 characters)" address=192.168.1.66 result=no-such-user')]);
       expect(audit.lines[0]).not.toMatch(/\p{Cc}/u);
     });
 
@@ -972,5 +968,108 @@ describe('isStillLoggedIn', () => {
 
     expect(result).toBe(true);
     expect(log.text('error')).toContain('database is locked');
+  });
+});
+
+describe('an unknown username, which can be a password that a person typed in the wrong field', () => {
+  const PROXY = '127.0.0.1';
+  const fromProxy = { incoming: { socket: { remoteAddress: PROXY } } };
+  const TYPED_PASSWORD = 'My-Secret-Pa55';
+  let app: ReturnType<typeof createApp>;
+  let loginLog: LoginLog;
+  let log: CapturedLog | undefined;
+  let audit: CapturedAudit | undefined;
+
+  beforeEach(async () => {
+    const { auth, accounts } = authParts();
+    loginLog = LoginLog.inMemory();
+    app = createApp({ poller: new HardwarePoller(emptyDb), auth, accounts, history: noHistory(), loginLog, proxySettings: ProxySettings.inMemory(PROXY) });
+    await logIn('192.168.1.20', '/api/auth/setup', ADMIN);
+  });
+
+  afterEach(() => {
+    log?.restore();
+    audit?.restore();
+    log = undefined;
+    audit = undefined;
+  });
+
+  function logIn(address: string, path: string, body: object) {
+    return app.request(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': address },
+      body: JSON.stringify(body),
+    }, fromProxy);
+  }
+
+  const tryTypedPassword = (address: string, username = TYPED_PASSWORD) =>
+    logIn(address, '/api/auth/login', { username, password: 'admin' });
+
+  /** The username and the result of each row in the login log, the newest first */
+  const loginLogRows = () => loginLog.recent().map(({ username, result }) => `${username}: ${result}`);
+
+  /** The text of each place that keeps a password try */
+  const everyLog = () => [log!.text(), audit!.lines.join('\n'), loginLogRows().join('\n')];
+
+  it('keeps only the first 2 characters and the length in the login log, the server log and the audit log', async () => {
+    log = captureLog();
+    audit = captureAudit();
+    await tryTypedPassword('192.168.1.66');
+
+    expect(loginLogRows()[0]).toBe('My… (14 characters): no-such-user');
+    expect(log.text()).toMatch(/Password try failed username="My… \(14 characters\)" address=192\.168\.1\.66 result=no-such-user/);
+    expect(audit.lines).toEqual([expect.stringMatching(/Password try username="My… \(14 characters\)" address=192\.168\.1\.66 result=no-such-user$/)]);
+    for (const text of everyLog()) expect(text).not.toContain('Secret');
+  });
+
+  it('keeps a known username in full, also when its password is wrong', async () => {
+    log = captureLog();
+    audit = captureAudit();
+    await logIn('192.168.1.66', '/api/auth/login', { ...ADMIN, password: 'wrong-password' });
+    await logIn('192.168.1.66', '/api/auth/login', ADMIN);
+
+    expect(loginLogRows().slice(0, 2)).toEqual(['admin: logged-in', 'admin: wrong-password']);
+    expect(log.text()).toMatch(/Password try failed username=admin address=192\.168\.1\.66 result=wrong-password/);
+    expect(audit.lines).toEqual([
+      expect.stringMatching(/username=admin address=192\.168\.1\.66 result=wrong-password$/),
+      expect.stringMatching(/username=admin address=192\.168\.1\.66 result=logged-in$/),
+    ]);
+  });
+
+  it('cuts a text with characters outside the BMP on whole characters', async () => {
+    audit = captureAudit();
+    await tryTypedPassword('192.168.1.66', '🔑🔑Secret');
+
+    expect(loginLogRows()[0]).toBe('🔑🔑… (8 characters): no-such-user');
+    expect(audit.lines).toEqual([expect.stringContaining('username="🔑🔑… (8 characters)"')]);
+  });
+
+  it('masks the first try of a locked computer, and the limit still counts the full text', async () => {
+    for (let i = 0; i < 10; i++) await tryTypedPassword('192.168.1.66');
+    log = captureLog();
+    audit = captureAudit();
+
+    const locked = await tryTypedPassword('192.168.1.66');
+    // The same 2 first characters and the same length, but a different username for the limit
+    const other = await tryTypedPassword('192.168.1.66', 'My-Other-Pa55!');
+
+    expect(locked.status).toBe(429);
+    expect(other.status).toBe(401);
+    expect(loginLogRows().slice(0, 2)).toEqual(['My… (14 characters): no-such-user', 'My… (14 characters): locked']);
+    expect(log.text()).toMatch(/username="My… \(14 characters\)" address=192\.168\.1\.66 result=locked/);
+    for (const text of everyLog()) expect(text).not.toContain('Secret');
+  });
+
+  it('masks the username in the warning when a lock on all addresses starts', async () => {
+    for (let computer = 0; computer < 3; computer++) {
+      for (let i = 0; i < 9; i++) await tryTypedPassword(`192.168.1.${70 + computer}`);
+    }
+    log = captureLog();
+    for (let i = 0; i < 3; i++) await tryTypedPassword('192.168.1.80');
+
+    expect(log.lines.filter(line => line.text.includes('User locked on all addresses')).map(line => line.text)).toEqual([
+      expect.stringMatching(/username="my… \(14 characters\)" address=192\.168\.1\.80 count=30$/),
+    ]);
+    expect(log.text().toLowerCase()).not.toContain('secret');
   });
 });

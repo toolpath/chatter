@@ -64,7 +64,7 @@ describe('login settings routes', () => {
     const report = (await (await asAdmin('/api/settings/logins')).json()) as LoginsReport;
     expect(report.tries).toEqual([
       { at: expect.any(String), username: TEST_LOGIN.username, address: ATTACKER, result: 'logged-in' },
-      { at: expect.any(String), username: 'sam', address: ATTACKER, result: 'no-such-user' },
+      { at: expect.any(String), username: 's… (3 characters)', address: ATTACKER, result: 'no-such-user' },
     ]);
     expect(report.locked).toEqual([]);
     expect(report.lockedUsers).toEqual([]);
@@ -74,13 +74,21 @@ describe('login settings routes', () => {
   it('lists a locked computer, and unlocks it', async () => {
     await lockOut(ATTACKER);
     const before = (await (await asAdmin('/api/settings/logins')).json()) as LoginsReport;
-    expect(before.locked).toEqual([{ address: ATTACKER, username: 'sam', until: expect.any(String) }]);
+    // No user has the username "sam", and an unknown username can be a password, so the list masks it
+    expect(before.locked).toEqual([{ address: ATTACKER, username: 's… (3 characters)', until: expect.any(String) }]);
 
     const res = await asAdmin('/api/settings/logins/unlock', { address: ATTACKER });
 
     expect(res.status).toBe(200);
     expect(((await res.json()) as LoginsReport).locked).toEqual([]);
     expect((await logIn('sam', 'wrong-password')).status).toBe(401);
+  });
+
+  it('lists a locked computer with the full name of a user that exists', async () => {
+    for (let i = 0; i < 10; i++) await logIn(TEST_LOGIN.username, 'wrong-password');
+    const report = (await (await asAdmin('/api/settings/logins')).json()) as LoginsReport;
+    expect(report.locked).toEqual([{ address: ATTACKER, username: TEST_LOGIN.username, until: expect.any(String) }]);
+    await asAdmin('/api/settings/logins/unlock', { address: ATTACKER });
   });
 
   it('unlocks only the IPv4 address that the admin gives', async () => {
@@ -96,13 +104,25 @@ describe('login settings routes', () => {
   it('lists a user that is locked on all addresses, and unlocks it', async () => {
     for (let i = 0; i < 30; i++) await logIn('sam', 'wrong-password', `192.168.2.${Math.floor(i / 5)}`);
     const before = (await (await asAdmin('/api/settings/logins')).json()) as LoginsReport;
-    expect(before.lockedUsers).toEqual([{ username: 'sam', until: expect.any(String) }]);
+    expect(before.lockedUsers).toEqual([{ username: 's… (3 characters)', until: expect.any(String) }]);
 
     const res = await asAdmin('/api/settings/logins/unlock', { username: 'Sam' });
 
     expect(res.status).toBe(200);
     expect(((await res.json()) as LoginsReport).lockedUsers).toEqual([]);
     expect((await logIn('sam', 'wrong-password', '192.168.3.1')).status).toBe(401);
+  });
+
+  it('unlocks a user with an unknown username by the masked name that the list shows', async () => {
+    // The limiter keeps the username in lower case, as the login reads it
+    for (let i = 0; i < 30; i++) await logIn('My-Secret-Pa55', 'wrong-password', `192.168.2.${Math.floor(i / 5)}`);
+    const before = (await (await asAdmin('/api/settings/logins')).json()) as LoginsReport;
+    expect(before.lockedUsers).toEqual([{ username: 'my… (14 characters)', until: expect.any(String) }]);
+
+    const res = await asAdmin('/api/settings/logins/unlock', { username: 'my… (14 characters)' });
+
+    expect(((await res.json()) as LoginsReport).lockedUsers).toEqual([]);
+    expect((await logIn('My-Secret-Pa55', 'wrong-password', '192.168.3.1')).status).toBe(401);
   });
 
   describe('log', () => {
