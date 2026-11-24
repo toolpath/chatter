@@ -10,13 +10,13 @@ import { errorMessageOf } from '../../utils/errorMessage';
 /** The OPC UA certificate of a Siemens control: its thumbprints, and the confirm boxes to trust or forget it (F-11) */
 
 export const TRUSTED_TEXT = 'Chatter trusts the new certificate. It connects to the control again now.';
-export const FORGOTTEN_TEXT = 'Chatter forgot the saved certificate. It connects to the control again now.';
+const FORGOTTEN_TEXT = 'Chatter forgot the saved certificate. It connects to the control again now.';
 
 /**
  * A thumbprint as openssl and most screens write it: upper case pairs with colons, for example "AB:CD:EF".
  * The line can wrap after each colon, so a long thumbprint fits on a phone.
  */
-export function Thumbprint({ hex }: { hex: string }) {
+function Thumbprint({ hex }: { hex: string }) {
   const pairs = hex.toUpperCase().match(/.{1,2}/g) ?? [];
   return (
     <code className="font-mono text-[0.8125rem] text-zinc-50">
@@ -47,7 +47,7 @@ export function ThumbprintList({ sha256, sha1 }: { sha256: string; sha1: string 
 }
 
 /** The result of the last action, for the Notice under the button */
-export interface ActionResult {
+interface ActionResult {
   isDone: boolean;
   text: string;
 }
@@ -116,7 +116,7 @@ export function TrustCertificateDialog({ sha256, sha1 }: { sha256: string; sha1:
 }
 
 /** The confirm box before an Admin forgets the trusted certificate */
-export function ForgetCertificateDialog({ host }: { host: string }) {
+function ForgetCertificateDialog({ host }: { host: string }) {
   return (
     <Dialog variant="danger">
       <Dialog.Title>Forget the saved certificate?</Dialog.Title>

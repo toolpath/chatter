@@ -7,7 +7,6 @@ export type {
   MachineData,
   MachinePath,
   MachineSpindle,
-  MachineType,
   Machine,
   MachineUpdate,
   FileTree,
