@@ -94,10 +94,11 @@ describe('the machine status that a Viewer gets', () => {
   afterEach(() => poller.stop());
 
   const connections = {
-    health: (): ConnectionHealth => ({
+    // The connection log of each machine tells its own address and username
+    health: (id: string): ConnectionHealth => ({
       offlineSince: null,
       lastError: { text: `connect ECONNREFUSED ${HOST}:${port}`, time: '2026-11-23T10:00:00.000Z' },
-      events: [{ time: '2026-11-23T10:00:00.000Z', text: `Machine went offline: login of ${OPCUA_USER} at ${HOST}`, tone: 'bad' }],
+      events: [{ time: '2026-11-23T10:00:00.000Z', text: `Machine went offline: login of ${id === siemensId ? OPCUA_USER : FTP_USER} at ${HOST}`, tone: 'bad' }],
     }),
   };
   const app = (): TestApp => testApp({ auth, accounts, poller, connections });
