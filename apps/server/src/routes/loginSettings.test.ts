@@ -24,13 +24,15 @@ describe('login settings routes', () => {
   let accounts: UserAccounts;
   let cookie: string;
   let app: TestApp;
+  let loginLog: LoginLog;
 
   beforeAll(async () => {
     ({ auth, accounts, cookie } = await loggedInAuth());
   });
 
   beforeEach(() => {
-    app = testApp({ auth, accounts, loginLog: LoginLog.inMemory() });
+    loginLog = LoginLog.inMemory();
+    app = testApp({ auth, accounts, loginLog });
   });
 
   function logIn(username: string, password: string, address = ATTACKER) {
@@ -69,6 +71,21 @@ describe('login settings routes', () => {
     expect(report.locked).toEqual([]);
     expect(report.lockedUsers).toEqual([]);
     expect(report.limits).toEqual({ maxWrongPasswords: 10, maxWrongPasswordsForUser: 30, lockMinutes: 15 });
+  });
+
+  it('masks an unknown username in a row that an older version saved in full', async () => {
+    // An older version saved the text in full, and it can be a password
+    loginLog.record({ username: 'My-Secret-Pa55', address: ATTACKER, result: 'no-such-user' });
+    await logIn('john-secret1', 'wrong-password');
+
+    const report = (await (await asAdmin('/api/settings/logins')).json()) as LoginsReport;
+    expect(report.tries.map(loginTry => loginTry.username)).toEqual(['jo… (12 characters)', 'My… (14 characters)']);
+  });
+
+  it('shows the username of an old row in full when the result is not no-such-user', async () => {
+    loginLog.record({ username: 'sam', address: ATTACKER, result: 'wrong-password' });
+    const report = (await (await asAdmin('/api/settings/logins')).json()) as LoginsReport;
+    expect(report.tries.map(loginTry => loginTry.username)).toEqual(['sam']);
   });
 
   it('lists a locked computer, and unlocks it', async () => {

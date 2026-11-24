@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { maskUnknownUsername } from './unknownUsername.js';
+import { maskUnknownUsername, maskedOnce } from './unknownUsername.js';
 
 describe('maskUnknownUsername', () => {
   it('keeps the first 2 characters and the length of a long text', () => {
@@ -23,5 +23,16 @@ describe('maskUnknownUsername', () => {
 
   it('keeps a control character in the prefix as it is, so the log escapes it as before', () => {
     expect(maskUnknownUsername('\r\nINFO fake line')).toBe('\r\n… (16 characters)');
+  });
+});
+
+describe('maskedOnce', () => {
+  it('masks a text in full', () => {
+    expect(maskedOnce('My-Secret-Pa55')).toBe('My… (14 characters)');
+  });
+
+  it('keeps a text that is already masked, so a new row is not masked again', () => {
+    expect(maskedOnce('jo… (12 characters)')).toBe('jo… (12 characters)');
+    expect(maskedOnce('… (1 character)')).toBe('… (1 character)');
   });
 });
