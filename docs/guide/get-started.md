@@ -2,7 +2,7 @@
 
 ## 1. Create the Admin login
 
-Open Chatter in a browser. On the first visit, Chatter asks for a username and a password. This first account is an **Admin**.
+Open Chatter in a browser. On the first visit, Chatter asks for a username and a password. This first account is an **Admin**. The password must have at least 8 characters. It cannot be the username or a common password.
 
 Open Chatter at a local address for this step: the IP address (for example `http://192.168.1.20:3001`), `localhost`, a name that ends with `.local`, or a name with no dot (for example `chatter`). At a different name, Chatter refuses the setup (see [Security](../security.md)).
 
