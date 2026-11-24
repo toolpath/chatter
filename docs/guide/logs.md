@@ -80,12 +80,14 @@ A `Change` line has the user, the role, the method, the route, the status of the
 
 ```
 2026-11-23T10:00:00.000Z INFO  [audit] Change user=sam role=operator method=DELETE route=/api/machine/:id/files status=200 address=192.168.1.20 id=brother_1 file=O1000.NC
-2026-11-23T10:02:00.000Z INFO  [audit] Password try username=bob address=192.168.1.66 result=no-such-user
+2026-11-23T10:02:00.000Z INFO  [audit] Password try username=bob address=192.168.1.66 result=wrong-password
+2026-11-23T10:03:00.000Z INFO  [audit] Password try username="My… (14 characters)" address=192.168.1.66 result=no-such-user
 ```
 
 - The route is the pattern, for example `/api/machine/:id/files`, and the IDs come after it.
 - The line of a program delete has the name of the file after the IDs (`file=`), without the folder. Chatter adds the name before it deletes the file, so the line of a delete that the machine refused has it too. Chatter refuses some deletes before it reads the path: a delete by a Viewer (`403`), or a path that is not valid (`400`). The line of such a delete has no file name. A send has no file name in its line: the upload history of the machine tells who sent each file.
-- A person can type any text in the place of an ID or a file name. So Chatter cuts each ID and each file name to 64 characters, and puts `…` at the end. A long username in a `Password try` line is cut the same way. A value with a space, a quote or `=` gets quotes, so it stays one value.
+- A person can type any text in the place of an ID or a file name. So Chatter cuts each ID and each file name to 64 characters, and puts `…` at the end. A long username in a `Password try` line is cut the same way.
+- A person can type a password in the username field by mistake. So for an unknown username, the line has only the first 2 characters and the length, for example `"My… (14 characters)"`. A text of 3 to 5 characters shows 1 character. A text of 1 or 2 characters shows no character. The server log and **Settings > Logins** do the same. A known username is complete. A value with a space, a quote or `=` gets quotes, so it stays one value.
 - The line never has a value from the body of the request, a password, a token, or a cookie. From the query, it has only the file name of a delete. Chatter hides secrets as in the server log.
 - A request that failed with an unexpected error has the status `500`. Other errors keep their status, for example `413` for a body that is too large.
 - A request with no login does not get a `Change` line. Chatter refuses it before it can change something.
