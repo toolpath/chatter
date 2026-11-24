@@ -46,14 +46,15 @@ A Pi on the network cannot see which other program is connected to the machine. 
 
 ### The tool table of a Brother
 
-The tool table of a Brother is a large read, so Chatter does not read it in each poll. Chatter reads it:
+The tool table of a Brother is a large read, so Chatter does not read it in each poll. Chatter reads it only when you click **Sync** in the **Tool table** tab of the machine. Chatter never reads it by itself.
 
-- When the control has shown no program run (READY) for 2 minutes, and the last read is more than 10 minutes old. A feed hold, an open door, a program that runs, or a run state that Chatter does not know starts the 2 minutes again. A stopped spindle is not enough.
-- When you click **Sync** in the **Tool table** tab of the machine. An Operator and an Admin have this button. A Viewer does not. **Sync** works only when the control shows that no program runs. Otherwise, the tab shows **Chatter reads the tools only when the control reports that no program runs.** Chatter accepts one **Sync** in 30 seconds for each machine. This limit is for all users together, not for each user.
+- An Operator and an Admin have the **Sync** button. A Viewer does not.
+- **Sync** works only when the control reports that no program runs. Otherwise, the tab shows **Chatter reads the tools only when the control reports that no program runs.**
+- Chatter accepts one **Sync** in 30 seconds for each machine. This limit is for all users together, not for each user.
 
-Chatter does not read the tool table while a program runs. On a Brother C00, a tool read at the time when an open door stopped the program kept the control from going into feed hold.
+Click **Sync** only when no program runs. Do not click **Sync** while the door is open during a program. On a Brother C00, a tool read at the time when an open door stopped the program kept the control from going into feed hold. Some Brother controls report that no program runs while an open door holds a program, so Chatter cannot always see that a program is held.
 
-Some older controls do not report their run state. Chatter does not read the tool table of such a control, automatically or with **Sync**.
+Some older controls do not report their run state. Chatter does not read the tool table of such a control.
 
 The tab shows the time of the last read, for example **Synced 10:42 AM**, or **Not synced yet** before the first read. The format of the time follows the language settings of your browser. Until the next read, the tab shows the last values. If a read fails, the tab shows why.
 
