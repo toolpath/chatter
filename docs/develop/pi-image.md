@@ -93,7 +93,7 @@ CHATTER_VERSION=1.4.0 tools/pi-image/build.sh
 
 A release build (with `CHATTER_IMAGE_URL` or `CHATTER_USE_RELEASE_IMAGE`) stops without `CHATTER_VERSION`. A local build without it makes a card of version `0.0.0`. That is older than every release, so the card can install any signed update file. The build stops if `CHATTER_VERSION` is not a release version such as `1.4.0`.
 
-The update helper accepts only an update file signed with a key that it knows. Put the public key (`<keyId>.pub`, never the private key) in `in-pi/update-keys/`. `customize.sh` copies each `.pub` file to `/etc/chatter/update-keys/` on the card. Without a public key, the build shows a warning and the card refuses every update file.
+The update helper accepts only an update file signed with a key that it knows. Put the public key (`<keyId>.pub`, never the private key) in `in-pi/update-keys/`. `customize.sh` copies each `.pub` file to `/etc/chatter/update-keys/` on the card. Without a public key, the build shows a warning and the card refuses every update file. An update file never changes these keys. If the private key leaks, see [If the update key leaks](./update-key-leak.md).
 
 ### FANUC files
 
