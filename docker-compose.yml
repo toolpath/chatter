@@ -12,6 +12,13 @@ x-logging: &logging
     max-size: "10m"
     max-file: "3"
 
+# Each container gets only the rights that it uses (see docs/security.md, "Container rights"):
+# - cap_drop ALL: no container needs a Linux capability. They open only ports above 1024. Each one writes only
+#   files that it owns, and reads only files that it owns or that all users can read. VictoriaMetrics runs as root
+#   and made each file in its volume, so it can still use an old volume.
+# - no-new-privileges: a program in the container cannot get more rights from a setuid file or a file capability.
+# - pids_limit: the most processes and threads. It stops a program in the container from using up those of the computer.
+
 services:
   chatterbox:
     # The image is published for Intel/AMD (linux/amd64), 64-bit ARM (linux/arm64), and 32-bit ARM (linux/arm/v7).
@@ -54,6 +61,12 @@ services:
       - history
     restart: unless-stopped
     logging: *logging
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # Chatter (Node.js) uses about 15 threads. The health check and "docker compose exec" start some more processes.
+    pids_limit: 256
 
   # The machine history database (a time series database: it keeps numbers with a time).
   # It has no login, so its port is not published. It is only on the internal network "history",
@@ -79,6 +92,13 @@ services:
       - history
     restart: unless-stopped
     logging: *logging
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # VictoriaMetrics (Go) uses some threads for each processor, and more while it reads the disk.
+    # The limit is high, so that a computer with many processors is not near it.
+    pids_limit: 512
 
   # Runs the rules every 15 seconds: it saves averages (vmalert/rules.yml) and sends the alerts
   # of the Alert rules tab to ChatterBox. It has no login, so its port is not published.
@@ -115,6 +135,12 @@ services:
       - history
     restart: unless-stopped
     logging: *logging
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # vmalert (Go) uses some threads for each processor.
+    pids_limit: 256
 
 networks:
   # Docker Compose makes "default" by itself. ChatterBox uses it for port 3001 and to reach the machines.
