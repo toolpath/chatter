@@ -12,7 +12,7 @@
 import type { ToolSyncOutcome, ToolSyncState } from '../../types/index.js';
 
 /** The shortest time between two Sync requests for the same machine, so many clicks do not keep the control busy */
-export const TOOL_SYNC_MIN_GAP_MS = 30_000;
+const TOOL_SYNC_MIN_GAP_MS = 30_000;
 
 /**
  * The time limit of a tool read. The read sends 2 or 3 commands with big replies. On a slow Brother, each reply can
