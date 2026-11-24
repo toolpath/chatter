@@ -220,7 +220,9 @@ describe('the certificate of a Siemens control', () => {
       const res = await trust({ thumbprint: SECOND });
 
       expect(res.status).toBe(409);
-      expect(await errorOf(res)).toContain('/opcua/forget-certificate');
+      const error = await errorOf(res);
+      expect(error).toContain('click Forget the saved certificate');
+      expect(error).not.toContain(':id');
     });
 
     it.each([{}, { thumbprint: 'abc' }, { thumbprint: 'g'.repeat(64) }, { thumbprint: 42 }, []])('refuses the body %j with 400', async body => {
