@@ -74,7 +74,8 @@ export function machineRoutes(poller: HardwarePoller) {
           } satisfies ToolSyncErrorBody, 409);
         case 'program-running':
           return c.json({
-            error: 'Chatter reads the tools only when no program runs. Press Sync again when the program ends.',
+            error: 'Chatter reads the tools only when the control reports that no program runs. '
+              + 'Press Sync again when the program ends.',
             ...result,
           } satisfies ToolSyncErrorBody, 409);
         case 'address-changed':

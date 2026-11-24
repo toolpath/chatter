@@ -374,18 +374,21 @@ export class BrotherConnector extends BaseMachineConnector {
     const run = this.pollMachine();
     this.runningPoll = run;
     let good = false;
+    // A poll that the scheduler left behind is no longer the current poll. It can end after a newer poll, so its run
+    // state is old: it must not clear the promise of the newer poll, change the READY time, or start a tool read.
+    let current: boolean;
     try {
       good = await run;
     } finally {
-      // A poll that the scheduler left behind must not clear the promise of the poll that came after it
-      if (this.runningPoll === run) this.runningPoll = null;
+      current = this.runningPoll === run;
+      if (current) this.runningPoll = null;
       this.timings.endPoll(this.pollTimeLimitMs);
       // A failed poll breaks the READY time, as a program that runs does
-      this.toolSync.polled(Date.now(), good ? this.data.execution : null);
+      if (current) this.toolSync.polled(Date.now(), good ? this.data.execution : null);
     }
     // Only READY, held for some time, starts a read. A tool read while the C00 went into feed hold after a door
     // open kept the control from the feed hold. A stopped spindle does not tell that no program runs.
-    if (this.connected && good && this.toolSync.autoSyncDue(Date.now())) {
+    if (current && this.connected && good && this.toolSync.autoSyncDue(Date.now())) {
       // Not awaited: the tool read runs between the state polls, with its own time limit
       void this.startToolSync('auto');
     }
@@ -422,6 +425,7 @@ export class BrotherConnector extends BaseMachineConnector {
   /**
    * Read the tools after the state poll that runs now, in TOOL_SYNC_TIMEOUT_MS at most. The time limit includes the
    * wait for that poll, so a poll that does not end cannot keep the tool read, and with it each later poll, waiting.
+   * After the wait, the read starts only when that poll said READY too. Otherwise it gives 'program-running'.
    */
   private async syncTools(trigger: 'auto' | 'manual'): Promise<ToolSyncResult> {
     const generation = this.controlGeneration;
@@ -435,6 +439,7 @@ export class BrotherConnector extends BaseMachineConnector {
       }, TOOL_SYNC_TIMEOUT_MS);
     });
     let error: string | null = null;
+    let programRuns = false;
     try {
       const read = (async () => {
         await this.runningPoll?.catch(() => {});
@@ -443,6 +448,11 @@ export class BrotherConnector extends BaseMachineConnector {
         // poll before the read can have lost the connection, for example when a reconnect failed. The read fails
         // with the reason of that poll. The planned reconnect is not a disconnect, so a Sync can wait for it.
         if (disconnects !== this.disconnects || !this.connected) throw new Error(this.errors.at(-1) ?? 'Not connected');
+        // The poll that the read waited for can have found that a program runs now. Then no tool command goes out.
+        if (!this.toolSync.lastPollReady) {
+          programRuns = true;
+          return;
+        }
         await this.readTools(generation);
       })();
       await Promise.race([read, timeout]);
@@ -455,6 +465,12 @@ export class BrotherConnector extends BaseMachineConnector {
       this.toolSync.abandoned(trigger);
       log.debug('Tool read of the old address ignored', { machine: this.id, trigger });
       return { outcome: 'address-changed' };
+    }
+    if (programRuns && error === null) {
+      // Not a read and not a failure: the state of the last read stays, and a later READY time can start a read
+      this.toolSync.abandoned(trigger);
+      log.debug('Tool read not started, because a program runs', { machine: this.id, trigger });
+      return { outcome: 'program-running' };
     }
     this.toolSync.ended(Date.now(), error);
     log.debug('Tool read', { machine: this.id, trigger, error: error ?? undefined });

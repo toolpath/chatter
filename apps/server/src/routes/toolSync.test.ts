@@ -97,14 +97,14 @@ describe('POST /api/machine/:id/tools/sync', () => {
     expect(await offline.json()).toEqual({ error: expect.stringContaining('not connected'), outcome: 'not-connected' });
   });
 
-  it('refuses a request when the machine runs a program, and tells why', async () => {
+  it('refuses a request when the control does not report that no program runs, and tells why', async () => {
     vi.spyOn(poller, 'syncTools').mockResolvedValue({ outcome: 'program-running' });
 
     const res = await sync();
 
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({
-      error: 'Chatter reads the tools only when no program runs. Press Sync again when the program ends.',
+      error: 'Chatter reads the tools only when the control reports that no program runs. Press Sync again when the program ends.',
       outcome: 'program-running',
     });
   });

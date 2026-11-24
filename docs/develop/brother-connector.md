@@ -40,6 +40,9 @@ The rules between the two jobs:
 - The tool read has its own limit of 20 seconds. After that, Chatter disconnects, and the next poll connects again.
 - An automatic tool read starts only after each poll of 2 minutes said READY (`TOOL_SYNC_READY_HOLD_MS`). Another run state, an unknown run state, a failed poll or a new connection starts the 2 minutes again. A **Sync** needs only a last poll that said READY (the `program-running` outcome).
   Why: at a shop, a tool read at the time when an open door stopped the program kept a C00 from going into feed hold. The spindle had stopped, so the old rule "no run state and spindle 0" started the read.
+- The READY check of a **Sync** uses the last poll, so its run state can be one poll interval old. After the wait for a state poll that runs (also the poll of the planned reconnect), the tool read checks READY again. If that poll did not say READY, the read sends no tool command and gives `program-running`.
+- Only the current poll changes the READY time. A poll that the scheduler left behind can end after a newer poll, so its run state is old. It does not change the READY time and does not start a tool read.
+- Known limit: some controls can report READY during a door-open hold. If the door stays open for more than 2 minutes, an automatic tool read can still start.
 
 The life of the connection:
 
