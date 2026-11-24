@@ -139,7 +139,10 @@ function ToolSyncBar({ machineId, link, toolSync }: { machineId: string; link: M
     <div className="flex flex-wrap items-center gap-3 border-b border-zinc-800 px-4 py-3 text-zinc-200">
       <span>{running ? 'Syncing…' : state.lastSyncAt ? `Synced ${timeOf(state.lastSyncAt)}` : 'Not synced yet'}</span>
       {canSync && <Button size="sm" onClick={() => void sync()} disabled={running}>Sync</Button>}
-      <span className="text-xs">Chatter reads the tool table when the machine runs no program and the last read is more than 10 minutes old.</span>
+      <span className="text-xs">
+        Chatter reads the tool table only when no program runs. It reads it automatically after 2 minutes with no program,
+        when the last read is more than 10 minutes old.
+      </span>
       {shownError && !running && <span role="alert" className="w-full text-alarm-soft">{shownError}</span>}
     </div>
   );
