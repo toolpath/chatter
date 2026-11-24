@@ -77,13 +77,15 @@ function newerGoodPollCame(link: MachineLink, pollTimeAt: string | null): boolea
 
 /**
  * True while the error of a refused Sync still applies. A newer read of the server removes each such error.
- * "Not connected" goes when the machine is connected again, or after a newer good poll. "Busy" goes when the read
+ * "Not connected" goes when the machine is connected again, or after a newer good poll. "Program running" goes after
+ * a newer good poll, because the program can have ended and the user can press Sync again. "Busy" goes when the read
  * that ran ends. "Too soon" goes after its seconds (see the timer in useRefusalError). Another error, for example
  * "address changed", stays until the newer read or the next Sync.
  */
 function stillApplies(error: RefusalError, link: MachineLink, toolSync: ToolSyncState): boolean {
   if (newerReadCame(toolSync, error.serverAttemptAt)) return false;
-  if (error.refusal.outcome === 'not-connected' && newerGoodPollCame(link, error.pollTimeAt)) return false;
+  const goesAfterGoodPoll = error.refusal.outcome === 'not-connected' || error.refusal.outcome === 'program-running';
+  if (goesAfterGoodPoll && newerGoodPollCame(link, error.pollTimeAt)) return false;
   if (error.refusal.outcome === 'not-connected' || error.refusal.outcome === 'busy') {
     return !error.causeSeen || causeShows(error.refusal, link, toolSync);
   }

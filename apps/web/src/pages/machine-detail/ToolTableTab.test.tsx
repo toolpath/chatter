@@ -43,6 +43,9 @@ const tabWith = (toolSync: ToolSyncState, connected = true, lastPollTime: string
     machineId="m1" connected={connected} lastPollTime={lastPollTime} toolTable={TOOLS} hasPocketInfo spindleTool={undefined} toolSync={toolSync}
   />;
 
+/** The text of the server for the outcome 'program-running'. The tab shows the text that the server gives. */
+const PROGRAM_RUNNING = 'The server text for a refused Sync while the control does not report READY.';
+
 /** The next Sync fails with this text and reason */
 const refuseSync = (text: string, problem: SyncProblem) => syncTools.mockRejectedValue(new ToolSyncError(text, problem));
 
@@ -103,13 +106,13 @@ describe('ToolTableTab sync', () => {
     )).toBeInTheDocument();
   });
 
-  it('tells why the server refused a Sync while a program runs, and keeps the button', async () => {
-    refuseSync('Chatter reads the tools only when no program runs. Press Sync again when the program ends.', { outcome: 'program-running' });
+  it('shows the reason of the server when it refused a Sync because a program can run, and keeps the button', async () => {
+    refuseSync(PROGRAM_RUNNING, { outcome: 'program-running' });
     renderTab(SYNCED);
 
     await pressSync();
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Chatter reads the tools only when no program runs.');
+    expect(screen.getByRole('alert')).toHaveTextContent(PROGRAM_RUNNING);
     expect(screen.getByRole('button', { name: 'Sync' })).toBeEnabled();
     expect(screen.getByText(SYNCED_TEXT)).toBeInTheDocument();
   });
@@ -301,6 +304,18 @@ describe('ToolTableTab sync', () => {
       // The control closed the connection between two polls, and the next poll connected again
       rerender(tabWith(SYNCED, true, POLLED_AT));
       expect(screen.getByRole('alert')).toHaveTextContent('The machine is not connected.');
+      rerender(tabWith(SYNCED, true, '2026-11-21T08:06:02.000Z'));
+
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('"program running" goes when a newer good poll comes', async () => {
+      refuseSync(PROGRAM_RUNNING, { outcome: 'program-running' });
+      const { rerender } = renderTab(SYNCED, TOOLS, true);
+      await pressSync();
+
+      rerender(tabWith(SYNCED, true, POLLED_AT));
+      expect(screen.getByRole('alert')).toHaveTextContent(PROGRAM_RUNNING);
       rerender(tabWith(SYNCED, true, '2026-11-21T08:06:02.000Z'));
 
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
