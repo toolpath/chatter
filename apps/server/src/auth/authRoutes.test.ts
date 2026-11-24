@@ -537,7 +537,7 @@ describe('auth routes behind a reverse proxy', () => {
 
       expect(linesWith('warn', 'address=192.168.1.66 result=no-such-user')).toHaveLength(MAX_LOGGED_UNKNOWN_USERS);
       expect(linesWith('warn', 'not logged')).toEqual([expect.stringMatching(/address=192\.168\.1\.66/)]);
-      // Other computers and known usernames still get a line
+      // Other computers still get a line, and a wrong password for a user that exists too
       expect(linesWith('warn', 'address=192.168.1.67 result=no-such-user')).toHaveLength(1);
       expect(linesWith('warn', 'result=wrong-password')).toEqual([expect.stringMatching(/username=admin.*address=192\.168\.1\.66/)]);
     });
@@ -633,7 +633,7 @@ describe('auth routes behind a reverse proxy', () => {
 
       expect(auditLines('address=192.168.1.66 result=no-such-user')).toHaveLength(MAX_LOGGED_UNKNOWN_USERS);
       expect(auditLines('not logged one by one')).toEqual([expect.stringMatching(/address=192\.168\.1\.66 minutes=15$/)]);
-      // Other computers and known usernames still get a line
+      // Other computers still get a line, and a wrong password for a user that exists too
       expect(auditLines('address=192.168.1.67 result=no-such-user')).toHaveLength(1);
       expect(auditLines('result=wrong-password')).toEqual([expect.stringMatching(/username=admin address=192\.168\.1\.66/)]);
     });
@@ -1034,6 +1034,22 @@ describe('an unknown username, which can be a password that a person typed in th
       expect.stringMatching(/username=admin address=192\.168\.1\.66 result=wrong-password$/),
       expect.stringMatching(/username=admin address=192\.168\.1\.66 result=logged-in$/),
     ]);
+  });
+
+  it('keeps a known username in full when it has other upper and lower case, or spaces around it', async () => {
+    log = captureLog();
+    audit = captureAudit();
+    await logIn('192.168.1.66', '/api/auth/login', { username: 'ADMIN', password: 'wrong-password' });
+    // The login form trims the username
+    await logIn('192.168.1.67', '/api/auth/login', { username: ' Admin ', password: 'wrong-password' });
+
+    for (const text of everyLog()) expect(text).not.toContain('characters)');
+    expect(loginLogRows().slice(0, 2)).toEqual(['Admin: wrong-password', 'ADMIN: wrong-password']);
+  });
+
+  it('masks a typed username that looks like a masked name, so its true length shows', async () => {
+    await tryTypedPassword('192.168.1.66', 'x… (3 characters)');
+    expect(loginLogRows()[0]).toBe('x…… (17 characters): no-such-user');
   });
 
   it('cuts a text with characters outside the BMP on whole characters', async () => {

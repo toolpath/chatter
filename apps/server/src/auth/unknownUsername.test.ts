@@ -34,5 +34,14 @@ describe('maskedOnce', () => {
   it('keeps a text that is already masked, so a new row is not masked again', () => {
     expect(maskedOnce('jo… (12 characters)')).toBe('jo… (12 characters)');
     expect(maskedOnce('… (1 character)')).toBe('… (1 character)');
+    // So an old row with a username in this form shows as it is. It is not a password that a person types.
+    expect(maskedOnce('x… (3 characters)')).toBe('x… (3 characters)');
+  });
+
+  it('masks an old row that the log cut to 64 code units, also when the cut ends in half an emoji', () => {
+    expect(maskedOnce('a'.repeat(64))).toBe('aa… (64 characters)');
+    const cutEmoji = `${'a'.repeat(63)}😀`.slice(0, 64);
+    expect(maskedOnce(cutEmoji)).toBe('aa… (64 characters)');
+    expect(maskedOnce(`😀😀${'a'.repeat(59)}😀`.slice(0, 64))).toBe('😀😀… (62 characters)');
   });
 });
