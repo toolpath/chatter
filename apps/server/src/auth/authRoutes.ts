@@ -1,4 +1,4 @@
-import { roleCan, type Permission } from '@local-chatter/shared';
+import { newPasswordProblem, roleCan, type Permission } from '@local-chatter/shared';
 import { Hono, type Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { createMiddleware } from 'hono/factory';
@@ -399,6 +399,9 @@ export function authRoutes(guard: LoginGuard) {
     .post('/auth/password', requireBrowserLogin(auth), checkedJson(changePasswordSchema), async c => {
       const { user } = c.var;
       const passwordChange = c.req.valid('json');
+      // The rule needs the username, which is not in the body. The current password is not checked yet.
+      const problem = newPasswordProblem(passwordChange.newPassword, user.username);
+      if (problem) return c.json({ error: problem }, 400);
       const origin = originOf(c, proxySettings);
       const checked = await withPasswordCheck(c, guard, origin, {
         username: user.username,

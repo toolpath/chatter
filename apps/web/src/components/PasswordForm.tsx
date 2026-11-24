@@ -1,6 +1,6 @@
+import { MIN_PASSWORD_LENGTH, newPasswordProblem } from '@local-chatter/shared';
 import { useState, type FormEvent } from 'react';
 import type { AuthResult } from '../api/auth';
-import { MIN_PASSWORD_LENGTH } from '../types';
 import { Field, TextInput } from './ui/fields';
 
 interface PasswordFieldProps {
@@ -50,11 +50,15 @@ export function UsernameField({ value, onChange }: UsernameFieldProps) {
   );
 }
 
-/** Returns the problem with a new password and its second copy, or null when both are good */
-export function newPasswordProblem(password: string, confirmation: string): string | null {
-  if (password.length < MIN_PASSWORD_LENGTH) return `The password must have at least ${MIN_PASSWORD_LENGTH} characters`;
-  if (password !== confirmation) return 'The two passwords are not the same';
-  return null;
+/** The password rule for the user, before they send a form with a new password */
+export const PASSWORD_RULE_TEXT = `Use ${MIN_PASSWORD_LENGTH} characters or more for the password. Do not use the username or a common password.`;
+
+/**
+ * Returns the problem with a new password and its second copy, or null when both are good.
+ * The password rule is the rule of the server: 8 characters or more, not the username, and not a common password.
+ */
+export function newPasswordFormProblem(password: string, confirmation: string, username: string): string | null {
+  return newPasswordProblem(password, username) ?? (password !== confirmation ? 'The two passwords are not the same' : null);
 }
 
 interface SubmitState {

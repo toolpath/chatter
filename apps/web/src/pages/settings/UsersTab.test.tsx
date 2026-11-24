@@ -81,6 +81,31 @@ describe('UsersTab', () => {
     expect(addUser).not.toHaveBeenCalled();
   });
 
+  it('does not send a password that is the username', async () => {
+    await renderTab();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add user' }));
+    typeInto('Username', 'machinist');
+    typeInto('Password', 'MACHINIST');
+    typeInto('Password again', 'MACHINIST');
+    submitAddUserForm();
+
+    expect(screen.getByText('The password cannot be the username')).toBeInTheDocument();
+    expect(addUser).not.toHaveBeenCalled();
+  });
+
+  it('tells the password rule in the forms that set a password, before the user sends the form', async () => {
+    await renderTab();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add user' }));
+    expect(within(addUserForm()).getByText(/Use 8 characters or more for the password\. Do not use the username or a common password\./)).toBeInTheDocument();
+    fireEvent.click(within(addUserForm()).getByRole('button', { name: 'Cancel' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set a new password for sam' }));
+    const setPasswordForm = screen.getByRole('dialog', { name: 'Set a new password for sam' });
+    expect(within(setPasswordForm).getByText(/Use 8 characters or more for the password\. Do not use the username or a common password\./)).toBeInTheDocument();
+  });
+
   it('shows the reason of the server, and keeps the form open', async () => {
     vi.mocked(addUser).mockRejectedValue(new Error('A user with this username exists already'));
     await renderTab();
@@ -105,6 +130,31 @@ describe('UsersTab', () => {
 
     await waitFor(() => expect(rowOf('sam')).toHaveTextContent('Viewer'));
     expect(changeRole).toHaveBeenCalledWith(2, 'viewer');
+  });
+
+  it('does not send a common password for a user', async () => {
+    await renderTab();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set a new password for sam' }));
+    typeInto('Password', 'password1');
+    typeInto('Password again', 'password1');
+    fireEvent.click(screen.getByRole('button', { name: 'Set password' }));
+
+    expect(screen.getByText('The password is too common. Use a different password')).toBeInTheDocument();
+    expect(setUserPassword).not.toHaveBeenCalled();
+  });
+
+  it('does not send the username of that user as the new password', async () => {
+    vi.mocked(fetchUsersReport).mockResolvedValue(report(ADMIN, SAM, { ...SAM, id: 3, username: 'machinist' }));
+    await renderTab();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set a new password for machinist' }));
+    typeInto('Password', 'Machinist');
+    typeInto('Password again', 'Machinist');
+    fireEvent.click(screen.getByRole('button', { name: 'Set password' }));
+
+    expect(screen.getByText('The password cannot be the username')).toBeInTheDocument();
+    expect(setUserPassword).not.toHaveBeenCalled();
   });
 
   it('sets a new password for a user', async () => {

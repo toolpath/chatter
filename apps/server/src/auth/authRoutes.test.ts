@@ -203,6 +203,37 @@ describe('auth routes', () => {
     expect(await res.json()).toEqual({ error: 'The password must have at least 8 characters' });
   });
 
+  it('refuses a setup with the username as the password, in any case', async () => {
+    const res = await post('/api/auth/setup', { username: 'machinist', password: 'MACHINIST' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'The password cannot be the username' });
+    expect(await (await app.request('/api/auth/status')).json()).toMatchObject({ setupNeeded: true });
+  });
+
+  it('refuses a setup with a common password', async () => {
+    const res = await post('/api/auth/setup', { username: 'admin', password: 'password1' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'The password is too common. Use a different password' });
+  });
+
+  it('refuses a setup password that is too short without the spaces at the two ends', async () => {
+    for (const password of [' 1234567 ', ' '.repeat(8)]) {
+      const res = await post('/api/auth/setup', { username: 'admin', password });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'The password must have at least 8 characters' });
+    }
+  });
+
+  it('compares the setup password with the username without its spaces at the two ends', async () => {
+    const sameAsName = await post('/api/auth/setup', { username: '  machinist  ', password: 'Machinist' });
+    expect(sameAsName.status).toBe(400);
+    expect(await sameAsName.json()).toEqual({ error: 'The password cannot be the username' });
+
+    const res = await post('/api/auth/setup', { username: '  machinist  ', password: 'machinist1' });
+    expect(res.status).toBe(200);
+    expect((await post('/api/auth/login', { username: 'machinist', password: 'machinist1' })).status).toBe(200);
+  });
+
   it('refuses a setup without a username', async () => {
     const res = await post('/api/auth/setup', { username: '  ', password: 'long-enough' });
     expect(res.status).toBe(400);
@@ -297,6 +328,47 @@ describe('auth routes', () => {
     const newCookie = sessionCookie(res);
     expect((await app.request('/api/machines', { headers: { Cookie: oldCookie } })).status).toBe(401);
     expect((await app.request('/api/machines', { headers: { Cookie: newCookie } })).status).toBe(200);
+  });
+
+  it('refuses a new password that is the username or a common password, and keeps the old password', async () => {
+    const machinist = { username: 'machinist', password: 'first-password' };
+    const cookie = sessionCookie(await post('/api/auth/setup', machinist));
+    for (const [newPassword, error] of [
+      [' Machinist ', 'The password cannot be the username'],
+      ['12345678', 'The password is too common. Use a different password'],
+    ]) {
+      const res = await post('/api/auth/password', { currentPassword: machinist.password, newPassword }, { Cookie: cookie });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error });
+    }
+    expect((await post('/api/auth/login', machinist)).status).toBe(200);
+  });
+
+  it('does not count a new password that the rule refuses as a wrong password', async () => {
+    const cookie = await setUp();
+    // More tries than the 10 wrong passwords that start a wait. The rule refuses each before the current password is checked.
+    for (let i = 0; i < 11; i++) {
+      const currentPassword = i % 2 === 0 ? 'wrong-password' : ADMIN.password;
+      const res = await post('/api/auth/password', { currentPassword, newPassword: ' PassWord1 ' }, { Cookie: cookie });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'The password is too common. Use a different password' });
+    }
+    expect(loggedResults()).toEqual([]);
+    expect((await post('/api/auth/login', ADMIN)).status).toBe(200);
+    expect(loggedResults()).toEqual(['admin: logged-in']);
+  });
+
+  it('lets a user log in with an old password that the new rule refuses', async () => {
+    // A user of an older version can have a common password. The rule is only for a new password.
+    const { auth, accounts } = authParts();
+    await accounts.add({ username: 'pat', password: 'password1', role: 'admin' });
+    const oldApp = createApp({ poller: new HardwarePoller(emptyDb), auth, accounts, history: noHistory(), loginLog });
+    const res = await oldApp.request('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'pat', password: 'password1' }),
+    });
+    expect(res.status).toBe(200);
   });
 
   it('needs a login to change the password', async () => {

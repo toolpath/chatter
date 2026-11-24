@@ -1,4 +1,4 @@
-import type { Role } from '@local-chatter/shared';
+import { newPasswordProblem, type Role } from '@local-chatter/shared';
 import { createInterface, type Interface } from 'node:readline';
 import { Writable } from 'node:stream';
 import { setUpSchema } from '../routes/schemas.js';
@@ -129,8 +129,9 @@ export async function runPasswordReset({ input, output, ...stores }: PasswordRes
     }
 
     const password = await prompt.askHidden('Password of the new Admin: ');
-    const checked = setUpSchema.shape.password.safeParse(password);
-    if (!checked.success) return stop(say, checked.error.issues[0].message);
+    // The rule of the setup: 8 characters or more, not the username, and not a common password
+    const problem = newPasswordProblem(password, username.data);
+    if (problem) return stop(say, problem);
     if (await prompt.askHidden('Type the password again: ') !== password) {
       return stop(say, 'The two passwords are not the same.');
     }
