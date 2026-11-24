@@ -18,15 +18,30 @@ interface LoginSettingsParts {
   proxySettings: ProxySettings;
 }
 
+/**
+ * One row for each address and masked name. Two unknown usernames can have the same masked name, and the web page
+ * uses the name as a key. The row keeps the lock that ends last. An unlock removes the locks of all such usernames.
+ */
+function oneRowEach<Locked extends { address?: string; username: string; until: Date }>(rows: Locked[]): Locked[] {
+  const byName = new Map<string, Locked>();
+  for (const row of rows) {
+    const key = JSON.stringify([row.address, row.username]);
+    const kept = byName.get(key);
+    if (!kept || row.until > kept.until) byName.set(key, row);
+  }
+  return [...byName.values()];
+}
+
 /** What the Settings page shows on the "Logins" tab */
 function loginsReport({ auth, limiter, loginLog }: LoginSettingsParts) {
   // An unknown username can be a password, so the lists show it masked, as the login log does
-  const shown = <Locked extends { username: string; until: Date }>(locked: Locked) =>
-    ({ ...locked, username: usernameForLog(auth, locked.username), until: locked.until.toISOString() });
+  const shown = <Locked extends { username: string; until: Date }>(locked: Locked[]) =>
+    oneRowEach(locked.map(row => ({ ...row, username: usernameForLog(auth, row.username) })))
+      .map(row => ({ ...row, until: row.until.toISOString() }));
   return {
     limits: { maxWrongPasswords: MAX_FAILURES, maxWrongPasswordsForUser: MAX_USER_FAILURES, lockMinutes: LOCK_MINUTES },
-    locked: limiter.lockedAddresses().map(shown),
-    lockedUsers: limiter.lockedUsers().map(shown),
+    locked: shown(limiter.lockedAddresses()),
+    lockedUsers: shown(limiter.lockedUsers()),
     tries: loginLog.recent().map(loginTry => ({
       ...loginTry,
       username: unknownInRow(auth, loginTry) ? maskedOnce(loginTry.username) : loginTry.username,
