@@ -64,8 +64,8 @@ export interface MachineData {
 }
 
 /**
- * The reads of the tool table and the tool data. Chatter reads them when the machine runs no program and the last
- * read is more than 10 minutes old, or when a user presses Sync. Times are ISO text, null when there was none.
+ * The reads of the tool table and the tool data. Chatter reads them only when a user presses Sync. Times are ISO
+ * text, null when there was none.
  */
 export interface ToolSyncState {
   /** The end of the last good read. Null: not synced yet. */
