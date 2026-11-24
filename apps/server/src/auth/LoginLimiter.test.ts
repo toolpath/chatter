@@ -399,7 +399,8 @@ describe('LoginLimiter log', () => {
   });
 
   it('writes one warning when a user lock starts, with the user, the address group and the count', () => {
-    const limiter = new LoginLimiter();
+    // app.ts gives the full name of a user that exists
+    const limiter = new LoginLimiter(Date.now, username => username);
     failFromManyAddresses(limiter, 'Admin', MAX_USER_FAILURES - 1);
     log = captureLog();
     expect(log.text('warn')).toBe('');
@@ -413,5 +414,16 @@ describe('LoginLimiter log', () => {
     expect(warnings[0].text).toContain('username=admin');
     expect(warnings[0].text).toContain('address=2001:db8:1:2::/64');
     expect(warnings[0].text).toContain(`count=${MAX_USER_FAILURES}`);
+  });
+
+  it('masks the username in the warning when it does not know which users exist, because the username can be a password', () => {
+    const limiter = new LoginLimiter();
+    failFromManyAddresses(limiter, 'My-Secret-Pa55', MAX_USER_FAILURES - 1);
+    log = captureLog();
+
+    limiter.recordAttempt('10.9.9.9', 'My-Secret-Pa55');
+
+    expect(log.text('warn')).toContain('username="my… (14 characters)"');
+    expect(log.text().toLowerCase()).not.toContain('secret');
   });
 });
