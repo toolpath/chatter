@@ -22,8 +22,13 @@ services:
     # platform: linux/amd64    # Mac with Apple silicon (runs slower, because the Mac emulates an Intel processor)
     # platform: linux/arm/v7   # 64-bit Raspberry Pi OS (not tested on a real Pi yet)
     container_name: chatterbox
+    # To open Chatter on one IP address of this computer only, put a line in the file ".env" next to this file,
+    # for example CHATTER_BIND_ADDRESS=192.168.10.5 (see docs/security.md). Use an IP address, not a name such as
+    # localhost. The Docker package has no ".env", so an update does not replace your ".env".
+    # With no CHATTER_BIND_ADDRESS, this is "3001:3001": Docker opens port 3001 on all IPv4 and IPv6 addresses.
+    # On the Pi card, do not set it: the update helper checks Chatter at 127.0.0.1:3001.
     ports:
-      - "3001:3001"
+      - "${CHATTER_BIND_ADDRESS:-}${CHATTER_BIND_ADDRESS:+:}3001:3001"
     # Only behind a reverse proxy (for HTTPS): the address of the proxy. See docs/guide/https.md.
     # Settings > HTTPS and proxy can set it too. When TRUST_PROXY is set here, it wins, and Settings cannot change it.
     environment:

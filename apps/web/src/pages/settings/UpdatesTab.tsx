@@ -95,7 +95,7 @@ function ManualUpdatePanel() {
         </li>
         <li>
           Did you change <Command text="docker-compose.yml" /> or <Command text="vmalert/rules.yml" />? Keep a copy of
-          them.
+          them. Do you have a <Command text=".env" /> file? Keep it in the <Command text="chatter" /> folder.
         </li>
         <li>
           Download the Docker package of the new version from the GitHub release.

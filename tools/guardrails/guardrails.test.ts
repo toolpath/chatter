@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { networksOf, type ComposeServiceNetworks } from './composeNetworks';
-import { portsOpened, type ComposePort } from './composePorts';
+import { interpolate, portsOpened, variableInPorts, variablesIn, type ComposePort, type OpenedPorts } from './composePorts';
 import { anchorsOf, docsLinksIn, docsPageFile, headingLinksIn } from './docsLinks';
 
 const ROOT = join(import.meta.dirname, '../..');
@@ -74,16 +74,51 @@ describe('user data', () => {
 describe('closed ports', () => {
   // VictoriaMetrics (8428), vmalert (8880) and the alert port (3002) have no login.
   const noLoginPorts = [8428, 8880, 3002];
-  const thisComputerOnly = ['127.0.0.1', 'localhost', '::1'];
+  // Docker Compose accepts only an IP address as the host address, so "localhost" is not in this list.
+  const thisComputerOnly = ['127.0.0.1', '::1'];
   it('finds the compose files', () => {
     expect(composeFiles).toContain('docker-compose.yml');
   });
 
-  it.each(composeFiles)('uses no variable in a port of %s, so that this test can read each port', file => {
-    const withVariable = Object.values(compose(file).services ?? {})
-      .flatMap(({ ports = [] }) => ports)
-      .filter(port => JSON.stringify(port).includes('$'));
-    expect(withVariable).toEqual([]);
+  // A user can set a variable of a port in a ".env" file, to any text. So a variable may set only the host address:
+  // the host port and the container port must be plain text in the file. The tests also read each port with the
+  // variables not set, empty, and set to an address or to a hostile value, one at a time and all together.
+  // A variable syntax that the test cannot read makes the test fail.
+  const portsOf = (file: string) =>
+    Object.entries(compose(file).services ?? {}).flatMap(([service, { ports = [] }]) => ports.map(port => ({ service, port })));
+  const networkAddress = '192.0.2.10';
+  const values = [
+    '',
+    networkAddress,
+    '[2001:db8::1]',
+    '0.0.0.0:8428:8428',
+    '0.0.0.0:3002:3002/udp',
+    '1.2.3.4/udp',
+    '1.2.3.4,5',
+    '127.0.0.1:3002:3002,8428',
+    'a b',
+    '1.2.3.4\n- 3002:3002',
+  ];
+  const environmentsOf = (port: ComposePort) => {
+    const names = variablesIn(JSON.stringify(port));
+    const all = (value: string) => Object.fromEntries(names.map(name => [name, value]));
+    const oneSet = (value: string) => names.map(name => ({ [name]: value }));
+    return [{}, ...values.flatMap(value => [all(value), ...oneSet(value)])];
+  };
+  const sameContainerPorts = (a: OpenedPorts, b: OpenedPorts) => JSON.stringify(a.containerPorts) === JSON.stringify(b.containerPorts);
+  const withVariables = (file: string) => portsOf(file).filter(({ port }) => variablesIn(JSON.stringify(port)).length > 0);
+  const named = ({ service, port }: { service: string; port: ComposePort }) => `${service}: ${JSON.stringify(port)}`;
+
+  it.each(composeFiles)('uses a variable in a port of %s only for the host address', file => {
+    const inPorts = withVariables(file).filter(({ port }) => variableInPorts(port));
+    expect(inPorts.map(named)).toEqual([]);
+
+    const notOnlyAddress = withVariables(file).filter(({ port }) => {
+      const unset = portsOpened(port);
+      const set = portsOpened(port, Object.fromEntries(variablesIn(JSON.stringify(port)).map(name => [name, networkAddress])));
+      return set.hostIp !== networkAddress || environmentsOf(port).some(environment => !sameContainerPorts(portsOpened(port, environment), unset));
+    });
+    expect(notOnlyAddress.map(named)).toEqual([]);
   });
 
   it('publishes no port of VictoriaMetrics or vmalert in docker-compose.yml', () => {
@@ -92,15 +127,14 @@ describe('closed ports', () => {
     expect(services.vmalert.ports).toBeUndefined();
   });
 
-  it.each(composeFiles)('publishes a port with no login in %s only to this computer', file => {
-    const opened = Object.entries(compose(file).services ?? {}).flatMap(([service, { ports = [] }]) =>
-      ports
-        .filter(port => {
-          const { hostIp, containerPorts } = portsOpened(port);
-          return !thisComputerOnly.includes(hostIp) && containerPorts.some(p => noLoginPorts.includes(p));
-        })
-        .map(port => `${service}: ${JSON.stringify(port)}`),
-    );
+  it.each(composeFiles)('publishes a port with no login in %s only to this computer, with and without the variables', file => {
+    const opened = portsOf(file)
+      .filter(({ port }) =>
+        environmentsOf(port)
+          .map(environment => portsOpened(port, environment))
+          .some(({ hostIp, containerPorts }) => !thisComputerOnly.includes(hostIp) && containerPorts.some(p => noLoginPorts.includes(p))),
+      )
+      .map(named);
     expect(opened).toEqual([]);
   });
 });
@@ -158,17 +192,33 @@ describe('history network', () => {
 });
 
 describe('facts that the docs quote', () => {
-  // The docs tell users to run "docker logs chatterbox", and to change "3001:3001" to "127.0.0.1:3001:3001".
+  // The docs tell users to run "docker logs chatterbox", and to set CHATTER_BIND_ADDRESS in a ".env" file.
   const { services } = compose('docker-compose.yml');
+  const chatterPorts = (environment: Record<string, string>) =>
+    (services.chatterbox?.ports ?? []).map(port => interpolate(String(port), environment));
 
   it('keeps the container name chatterbox in docker-compose.yml', () => {
     expect(services).toHaveProperty('chatterbox');
     expect(services.chatterbox.container_name).toBe('chatterbox');
   });
 
-  it('publishes the port of Chatter as "3001:3001" in docker-compose.yml', () => {
-    expect(services).toHaveProperty('chatterbox');
-    expect(services.chatterbox.ports).toContain('3001:3001');
+  it('publishes the port of Chatter as "3001:3001" when CHATTER_BIND_ADDRESS is not set, so on all IPv4 and IPv6 addresses as before', () => {
+    expect(chatterPorts({})).toEqual(['3001:3001']);
+    expect(chatterPorts({ CHATTER_BIND_ADDRESS: '' })).toEqual(['3001:3001']);
+  });
+
+  it('opens port 3001 with no host address when CHATTER_BIND_ADDRESS is not set, so Docker uses all addresses', () => {
+    expect(portsOpened(services.chatterbox.ports?.[0] ?? '', {})).toEqual({ hostIp: '', containerPorts: [3001] });
+  });
+
+  it.each([
+    ['192.168.10.5', '192.168.10.5'],
+    ['127.0.0.1', '127.0.0.1'],
+    ['[::1]', '::1'],
+    ['[fd00::5]', 'fd00::5'],
+  ])('publishes the port of Chatter only on CHATTER_BIND_ADDRESS=%s', (address, hostIp) => {
+    expect(chatterPorts({ CHATTER_BIND_ADDRESS: address })).toEqual([`${address}:3001:3001`]);
+    expect(portsOpened(services.chatterbox.ports?.[0] ?? '', { CHATTER_BIND_ADDRESS: address })).toEqual({ hostIp, containerPorts: [3001] });
   });
 });
 

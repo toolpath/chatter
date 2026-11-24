@@ -121,6 +121,8 @@ image $(repo_image victoriametrics/vmalert) platform linux/amd64"
   check "README.txt names the version and the processor type" grep -qF "Chatter 1.2.0 for Intel/AMD computers" "$folder/README.txt"
   check "README.txt tells how to load the images" grep -qF "docker load -i images.tar" "$folder/README.txt"
   check "README.txt tells how to start Chatter" grep -qF "docker compose up -d" "$folder/README.txt"
+  check "the package has no .env, so an update does not replace the .env of the user" test ! -e "$folder/.env"
+  check "README.txt tells to keep the .env file in an update" grep -qF 'Do you have a ".env" file? Keep it in the "chatter" folder' "$folder/README.txt"
 }
 
 test_names_64_bit_arm_in_the_readme() {

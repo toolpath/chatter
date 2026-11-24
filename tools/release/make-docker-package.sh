@@ -87,6 +87,7 @@ it starts a new Chatter with no machines and no users. Update the old Chatter in
 UPDATE
 1. Back up your data first: see "Back up" on the "Update Chatter" page of the Chatter docs.
 2. Did you change docker-compose.yml or vmalert/rules.yml? Then keep a copy of them.
+   Do you have a ".env" file? Keep it in the "chatter" folder. It keeps your CHATTER_BIND_ADDRESS setting.
 3. Unzip the new package to the same place, so that its "chatter" folder replaces this one.
    Chatter keeps its data in Docker volumes, not in this folder. Keep the folder name "chatter":
    Docker uses this name to find your data.

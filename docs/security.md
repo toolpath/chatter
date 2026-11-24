@@ -163,7 +163,28 @@ On Linux, Docker sends the traffic of a published port around the rules of ufw a
   sudo iptables -I DOCKER-USER -i <LAN interface> -p tcp -m conntrack --ctorigdstport 3001 --ctdir ORIGINAL ! -s 192.168.1.0/24 -j DROP
   ```
   Put your own network in place of `192.168.1.0/24`. To let only a reverse proxy through, put the address of the proxy there (see [Use HTTPS](./guide/https.md)). Put the name of the network interface of the computer in place of `<LAN interface>`, for example `eth0`. To see the names, run `ip -br addr`. With `-i`, the rule stops only the traffic that comes in from the network. So a proxy in a Docker container on the same computer can still reach Chatter. The rule is lost when the computer restarts. To keep it, save it, for example with the package `iptables-persistent`. This rule does not stop IPv6.
-- **Publish the port on one address only.** In `docker-compose.yml`, change `"3001:3001"` to `"<address>:3001:3001"`, for example `"192.168.1.20:3001:3001"`, then run `docker compose up -d`. Chatter then answers only on that address of the computer, and not on IPv6. Each computer that can reach that address can still open Chatter. An update replaces `docker-compose.yml`, so do the change again after each update (see [Update Chatter](./guide/update.md)). On the Pi card, the update helper replaces the file, so use the `DOCKER-USER` rule.
+- **Publish the port on one address only.** Use this on a computer with two networks, for example one network for the office and one network for the machines. See [Publish Chatter on one address](#publish-chatter-on-one-address).
+
+### Publish Chatter on one address
+
+By default, Docker publishes port 3001 on all the IPv4 and IPv6 addresses of the computer. To publish it on one address only, do these steps on the computer with Docker:
+
+1. In the `chatter` folder, next to `docker-compose.yml`, make a file with the name `.env`.
+2. Put this line in the file. Use the IP address of the computer on the network that must reach Chatter:
+   ```bash
+   CHATTER_BIND_ADDRESS=192.168.10.5
+   ```
+3. In the `chatter` folder, run `docker compose up -d`.
+
+Chatter then answers only on that IP address. A computer on the other network cannot open Chatter through a different address of this computer. Each computer that can reach the address can still open Chatter.
+
+- **One IP address only.** The setting takes one IP address. Do not use a name, such as `localhost`: Docker does not accept a name, and Chatter does not start. With an IPv4 address, Chatter does not answer on IPv6. For an IPv6 address, use brackets, for example `CHATTER_BIND_ADDRESS=[fd00::5]`.
+- **The address must stay the same.** Give the computer a fixed address on that network. When the address is not on the computer, Docker cannot start Chatter.
+- **`127.0.0.1`.** With `CHATTER_BIND_ADDRESS=127.0.0.1`, only a program on the same computer can open Chatter. Use it when a reverse proxy runs directly on the same computer, not in Docker (see [Use HTTPS](./guide/https.md)). The other computers then open Chatter only through the proxy. A proxy in a Docker container cannot reach `127.0.0.1` of the computer.
+- **Updates.** The Docker package has no `.env` file, so an update does not change your setting. Keep the `.env` file when you replace the `chatter` folder (see [Update Chatter](./guide/update.md)).
+- **Did you change `"3001:3001"` in `docker-compose.yml` in an older version?** For example, to `"127.0.0.1:3001:3001"`. Do not change the new line. Put the IP address in the `.env` file, for example `CHATTER_BIND_ADDRESS=127.0.0.1`.
+- **To go back**, remove the line, then run `docker compose up -d` again.
+- **Not on the Pi card.** The update helper checks Chatter at `127.0.0.1:3001`. With a different address, each update fails the check and goes back to the old version. On the Pi card, use the `DOCKER-USER` rule.
 
 ## Locked out after wrong passwords
 
