@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { networksOf, type ComposeServiceNetworks } from './composeNetworks';
-import { portsOpened, type ComposePort } from './composePorts';
+import { portsOpened, variablesIn, type ComposePort } from './composePorts';
 import { anchorsOf, docsLinksIn, docsPageFile, headingLinksIn } from './docsLinks';
 
 const ROOT = join(import.meta.dirname, '../..');
@@ -79,11 +79,24 @@ describe('closed ports', () => {
     expect(composeFiles).toContain('docker-compose.yml');
   });
 
-  it.each(composeFiles)('uses no variable in a port of %s, so that this test can read each port', file => {
-    const withVariable = Object.values(compose(file).services ?? {})
-      .flatMap(({ ports = [] }) => ports)
-      .filter(port => JSON.stringify(port).includes('$'));
-    expect(withVariable).toEqual([]);
+  // A user can set a variable of a port in a ".env" file. The test sets each variable to an address on the network,
+  // because a user can do that too. A variable syntax that the test cannot read makes the test fail.
+  const portsOf = (file: string) =>
+    Object.entries(compose(file).services ?? {}).flatMap(([service, { ports = [] }]) => ports.map(port => ({ service, port })));
+  const networkAddress = '192.0.2.10';
+  const withEachVariableSet = (port: ComposePort) =>
+    Object.fromEntries(variablesIn(JSON.stringify(port)).map(name => [name, networkAddress]));
+
+  it.each(composeFiles)('uses a variable in a port of %s only for the host address', file => {
+    const notOnlyAddress = portsOf(file)
+      .filter(({ port }) => variablesIn(JSON.stringify(port)).length > 0)
+      .filter(({ port }) => {
+        const unset = portsOpened(port);
+        const set = portsOpened(port, withEachVariableSet(port));
+        return set.hostIp !== networkAddress || JSON.stringify(set.containerPorts) !== JSON.stringify(unset.containerPorts);
+      })
+      .map(({ service, port }) => `${service}: ${JSON.stringify(port)}`);
+    expect(notOnlyAddress).toEqual([]);
   });
 
   it('publishes no port of VictoriaMetrics or vmalert in docker-compose.yml', () => {
@@ -92,15 +105,14 @@ describe('closed ports', () => {
     expect(services.vmalert.ports).toBeUndefined();
   });
 
-  it.each(composeFiles)('publishes a port with no login in %s only to this computer', file => {
-    const opened = Object.entries(compose(file).services ?? {}).flatMap(([service, { ports = [] }]) =>
-      ports
-        .filter(port => {
-          const { hostIp, containerPorts } = portsOpened(port);
-          return !thisComputerOnly.includes(hostIp) && containerPorts.some(p => noLoginPorts.includes(p));
-        })
-        .map(port => `${service}: ${JSON.stringify(port)}`),
-    );
+  it.each(composeFiles)('publishes a port with no login in %s only to this computer, with and without the variables', file => {
+    const opened = portsOf(file)
+      .filter(({ port }) =>
+        [portsOpened(port), portsOpened(port, withEachVariableSet(port))].some(
+          ({ hostIp, containerPorts }) => !thisComputerOnly.includes(hostIp) && containerPorts.some(p => noLoginPorts.includes(p)),
+        ),
+      )
+      .map(({ service, port }) => `${service}: ${JSON.stringify(port)}`);
     expect(opened).toEqual([]);
   });
 });
