@@ -48,8 +48,10 @@ A Pi on the network cannot see which other program is connected to the machine. 
 
 The tool table of a Brother is a large read, so Chatter does not read it in each poll. Chatter reads it:
 
-- When the machine runs no program, and the last read is more than 10 minutes old. Chatter never reads it automatically while a program runs. If the control sends no run state, Chatter reads it only when the spindle is stopped.
-- When you click **Sync** in the **Tool table** tab of the machine. An Operator and an Admin have this button. A Viewer does not. This also works while a program runs. Chatter accepts one **Sync** in 30 seconds for each machine. This limit is for all users together, not for each user.
+- When the control has shown no program run (READY) for 2 minutes, and the last read is more than 10 minutes old. A feed hold, an open door, a program that runs, or a run state that Chatter does not know starts the 2 minutes again. A stopped spindle is not enough.
+- When you click **Sync** in the **Tool table** tab of the machine. An Operator and an Admin have this button. A Viewer does not. **Sync** works only when the control shows that no program runs. Otherwise, the tab shows **Chatter reads the tools only when no program runs.** Chatter accepts one **Sync** in 30 seconds for each machine. This limit is for all users together, not for each user.
+
+Chatter does not read the tool table while a program runs. On a Brother C00, a tool read at the time when an open door stopped the program kept the control from going into feed hold.
 
 The tab shows the time of the last read, for example **Synced 10:42 AM**, or **Not synced yet** before the first read. The format of the time follows the language settings of your browser. Until the next read, the tab shows the last values. If a read fails, the tab shows why.
 

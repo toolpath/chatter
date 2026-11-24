@@ -38,6 +38,8 @@ The rules between the two jobs:
 - A tool read waits for the state poll that runs now.
 - While a tool read runs, a state poll does not use the connection. It gives the last values at once, and it counts as a good poll.
 - The tool read has its own limit of 20 seconds. After that, Chatter disconnects, and the next poll connects again.
+- An automatic tool read starts only after each poll of 2 minutes said READY (`TOOL_SYNC_READY_HOLD_MS`). Another run state, an unknown run state, a failed poll or a new connection starts the 2 minutes again. A **Sync** needs only a last poll that said READY (the `program-running` outcome).
+  Why: at a shop, a tool read at the time when an open door stopped the program kept a C00 from going into feed hold. The spindle had stopped, so the old rule "no run state and spindle 0" started the read.
 
 The life of the connection:
 
@@ -47,9 +49,9 @@ poll():
   no connection?             -> connect
   connection is 60 s old?    -> planned reconnect: close in order (2 s at most), then connect
   read the machine state     -> no reply or error: disconnect, keep the reason
-  machine idle and the last tool read is old? -> start a tool read (the poll does not wait for it)
+  READY for 2 minutes and the last tool read is old? -> start a tool read (the poll does not wait for it)
 
-Sync (a user) -> refused (too soon, busy, not connected), or start a tool read
+Sync (a user) -> refused (too soon, busy, not connected, program running), or start a tool read
 tool read:  wait for the poll -> read ATC and tools -> record the result
 address change: forget the control (new generation), then disconnect
 disconnect or remove: destroy the socket
