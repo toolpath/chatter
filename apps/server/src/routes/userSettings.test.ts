@@ -80,6 +80,18 @@ describe('user settings routes', () => {
     expect(accounts.list().map(user => user.username)).toEqual(['admin']);
   });
 
+  it('refuses a new user with a common password in a different case and with spaces at the two ends', async () => {
+    const res = await asAdmin('POST', '/settings/users', { username: 'sam', password: ' PassWord1 ', role: 'viewer' });
+    expect(res.status).toBe(400);
+    expect(await errorOf(res)).toBe('The password is too common. Use a different password');
+  });
+
+  it('refuses a new user whose password is too short without the spaces at the two ends', async () => {
+    const res = await asAdmin('POST', '/settings/users', { username: 'sam', password: ' 1234567 ', role: 'viewer' });
+    expect(res.status).toBe(400);
+    expect(await errorOf(res)).toBe('The password must have at least 8 characters');
+  });
+
   it('changes the role of a user, and the new role works at once', async () => {
     const sam = await userWithRole('sam', 'operator');
 
@@ -130,6 +142,11 @@ describe('user settings routes', () => {
       body: JSON.stringify({ username: 'machinist', password: PASSWORD }),
     });
     expect(login.status).toBe(200);
+  });
+
+  it('answers 404 for a new password of an unknown user, also when the password is common', async () => {
+    const res = await asAdmin('PUT', '/settings/users/999/password', { password: 'password' });
+    expect(res.status).toBe(404);
   });
 
   it('removes a user, and logs out their browsers', async () => {
