@@ -1048,7 +1048,7 @@ describe('MachineDetailPage', () => {
       expect(within(banner).queryByRole('button')).not.toBeInTheDocument();
       expect(screen.getByRole('status', { name: 'Security warning' })).toHaveTextContent('Security is None.');
       const tablist = screen.getByRole('tablist', { name: 'Machine sections' });
-      expect(banner.compareDocumentPosition(tablist) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(banner.compareDocumentPosition(tablist)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     });
   });
 });

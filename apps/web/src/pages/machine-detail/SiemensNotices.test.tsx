@@ -47,7 +47,15 @@ function shownNotices() {
 }
 
 const banner = () => screen.getByRole('alert', { name: 'Certificate changed' });
+const noBanner = () => expect(screen.queryByRole('alert', { name: 'Certificate changed' })).not.toBeInTheDocument();
 const confirmBox = () => screen.findByRole('alertdialog');
+const TRUSTED = 'Chatter trusts the new certificate. It connects to the control again now.';
+
+/** Clicks Trust in the banner, and gives the confirm box */
+async function openTrustBox() {
+  fireEvent.click(screen.getByRole('button', { name: 'Trust new certificate' }));
+  return confirmBox();
+}
 
 describe('SiemensNotices', () => {
   beforeEach(() => {
@@ -58,6 +66,8 @@ describe('SiemensNotices', () => {
     renderNotices(siemens({ opcuaServerThumbprint: SHA256 }));
 
     expect(shownNotices()).toEqual([]);
+    expect(screen.queryByText(/certificate|security/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
   describe('the certificate changed', () => {
@@ -100,7 +110,10 @@ describe('SiemensNotices', () => {
       const box = await confirmBox();
       expect(within(box).getByText(SHOWN_SHA256)).toBeInTheDocument();
       expect(within(box).getByText(SHOWN_SHA1)).toBeInTheDocument();
-      expect(within(box).getByText(/Trust it only when a thumbprint is the same/)).toBeInTheDocument();
+      // The thumbprints are part of the message, so a screen reader reads them with the text
+      const message = within(box).getByText(/Trust it only when a thumbprint is the same/);
+      expect(message).toContainElement(within(box).getByText(SHOWN_SHA256));
+      expect(message).toContainElement(within(box).getByText(SHOWN_SHA1));
       fireEvent.click(within(box).getByRole('button', { name: 'Cancel' }));
       await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
       expect(trustOpcuaCertificate).not.toHaveBeenCalled();
@@ -144,6 +157,108 @@ describe('SiemensNotices', () => {
 
       expect(within(banner()).getByText('11:'.repeat(32).slice(0, -1))).toBeInTheDocument();
     });
+
+    it('shows only the SHA-256 thumbprint when the control gives no SHA-1 thumbprint', async () => {
+      renderNotices(changed(SHA256, null));
+
+      expect(within(banner()).getByText(SHOWN_SHA256)).toBeInTheDocument();
+      expect(within(banner()).queryByText('SHA-1')).not.toBeInTheDocument();
+      const box = await openTrustBox();
+      expect(within(box).getByText(SHOWN_SHA256)).toBeInTheDocument();
+      expect(within(box).queryByText('SHA-1')).not.toBeInTheDocument();
+    });
+
+    it('trusts nothing when the Admin closes the confirm box with Escape', async () => {
+      renderNotices(changed());
+
+      fireEvent.keyDown(await openTrustBox(), { key: 'Escape' });
+
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+      expect(trustOpcuaCertificate).not.toHaveBeenCalled();
+      expect(banner()).toBeInTheDocument();
+    });
+
+    it('sends one request when the Admin clicks Trust this certificate two times', async () => {
+      vi.mocked(trustOpcuaCertificate).mockResolvedValue(siemens({ opcuaServerThumbprint: SHA256 }));
+      renderNotices(changed());
+
+      const confirm = within(await openTrustBox()).getByRole('button', { name: 'Trust this certificate' });
+      fireEvent.click(confirm);
+      fireEvent.click(confirm);
+
+      expect(await screen.findByText(TRUSTED)).toBeInTheDocument();
+      expect(trustOpcuaCertificate).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens one confirm box and sends one request when the Admin clicks Trust new certificate two times', async () => {
+      vi.mocked(trustOpcuaCertificate).mockResolvedValue(siemens({ opcuaServerThumbprint: SHA256 }));
+      renderNotices(changed());
+
+      const trust = screen.getByRole('button', { name: 'Trust new certificate' });
+      fireEvent.click(trust);
+      fireEvent.click(trust);
+      fireEvent.click(within(await confirmBox()).getByRole('button', { name: 'Trust this certificate' }));
+
+      expect(await screen.findByText(TRUSTED)).toBeInTheDocument();
+      expect(trustOpcuaCertificate).toHaveBeenCalledTimes(1);
+      noBanner();
+    });
+
+    it('sends the thumbprint that the confirm box shows, also when a different certificate comes while the box is open', async () => {
+      vi.mocked(trustOpcuaCertificate).mockRejectedValue(new Error('The certificate of the control changed again.'));
+      vi.mocked(fetchMachine).mockResolvedValue(changed(OTHER_SHA256, 'aa'.repeat(20)));
+      const { showMachine } = renderNotices(changed());
+      const box = await openTrustBox();
+
+      showMachine(changed(OTHER_SHA256, 'aa'.repeat(20)));
+
+      expect(within(box).getByText(SHOWN_SHA256)).toBeInTheDocument();
+      fireEvent.click(within(box).getByRole('button', { name: 'Trust this certificate' }));
+      expect(await screen.findByText('The certificate of the control changed again.')).toBeInTheDocument();
+      expect(trustOpcuaCertificate).toHaveBeenCalledTimes(1);
+      expect(trustOpcuaCertificate).toHaveBeenCalledWith('m1', SHA256);
+    });
+
+    it('removes the banner after a trust, also when a new status came while the confirm box was open', async () => {
+      vi.mocked(trustOpcuaCertificate).mockResolvedValue(siemens({ opcuaServerThumbprint: SHA256 }));
+      const { showMachine } = renderNotices(changed());
+      const box = await openTrustBox();
+
+      // The server sends the same change again, as a new object
+      showMachine(changed());
+      fireEvent.click(within(box).getByRole('button', { name: 'Trust this certificate' }));
+
+      expect(await screen.findByText(TRUSTED)).toBeInTheDocument();
+      expect(trustOpcuaCertificate).toHaveBeenCalledWith('m1', SHA256);
+      noBanner();
+      expect(screen.queryByRole('button', { name: 'Trust new certificate' })).not.toBeInTheDocument();
+    });
+
+    it('keeps the error and the old thumbprint when the status cannot load again after an error', async () => {
+      const reason = 'The certificate of the control changed again. Chatter trusted nothing. Check the new thumbprint, then trust it.';
+      vi.mocked(trustOpcuaCertificate).mockRejectedValue(new Error(reason));
+      vi.mocked(fetchMachine).mockRejectedValue(new Error('Network error'));
+      renderNotices(changed());
+
+      fireEvent.click(within(await openTrustBox()).getByRole('button', { name: 'Trust this certificate' }));
+
+      expect(await screen.findByText(reason)).toBeInTheDocument();
+      await waitFor(() => expect(fetchMachine).toHaveBeenCalledWith('m1'));
+      expect(within(banner()).getByText(SHOWN_SHA256)).toBeInTheDocument();
+      expect(screen.queryByText('Network error')).not.toBeInTheDocument();
+    });
+
+    it('removes the old "trusts" notice when a new certificate change comes later', async () => {
+      vi.mocked(trustOpcuaCertificate).mockResolvedValue(siemens({ opcuaServerThumbprint: SHA256 }));
+      const { showMachine } = renderNotices(changed());
+      fireEvent.click(within(await openTrustBox()).getByRole('button', { name: 'Trust this certificate' }));
+      expect(await screen.findByText(TRUSTED)).toBeInTheDocument();
+
+      showMachine(changed(OTHER_SHA256));
+
+      expect(within(banner()).getByText('11:'.repeat(32).slice(0, -1))).toBeInTheDocument();
+      expect(screen.queryByText(TRUSTED)).not.toBeInTheDocument();
+    });
   });
 
   describe('the control shows no certificate', () => {
@@ -151,6 +266,15 @@ describe('SiemensNotices', () => {
       renderNotices(changed(null, null), role);
 
       expect(within(banner()).getByText(/The control shows no certificate now/)).toBeInTheDocument();
+      expect(within(banner()).getByText(/A login with a username needs a certificate of the control/)).toBeInTheDocument();
+      expect(within(banner()).queryByRole('button', { name: 'Trust new certificate' })).not.toBeInTheDocument();
+    });
+
+    it('shows no Trust button and no SHA-1 thumbprint when the control gives a SHA-1 thumbprint but no SHA-256', () => {
+      renderNotices(changed(null, SHA1));
+
+      expect(within(banner()).getByText(/The control shows no certificate now/)).toBeInTheDocument();
+      expect(within(banner()).queryByText(SHOWN_SHA1)).not.toBeInTheDocument();
       expect(within(banner()).queryByRole('button', { name: 'Trust new certificate' })).not.toBeInTheDocument();
     });
 
@@ -160,13 +284,15 @@ describe('SiemensNotices', () => {
       expect(within(banner()).queryByRole('button')).not.toBeInTheDocument();
     });
 
-    it('lets an Admin forget the saved certificate after a confirm that tells what the next connect trusts', async () => {
+    it('lets an Admin forget the saved certificate after a confirm that tells what the next connect trusts, with and without a certificate', async () => {
       vi.mocked(forgetOpcuaCertificate).mockResolvedValue(siemens({ opcuaServerThumbprint: null }));
       renderNotices(changed(null, null));
 
       fireEvent.click(within(banner()).getByRole('button', { name: 'Forget the saved certificate' }));
       const box = await confirmBox();
-      expect(within(box).getByText(/trusts the certificate that the control shows then/)).toBeInTheDocument();
+      expect(within(box).getByText(/If the control shows a certificate then, Chatter trusts it/)).toBeInTheDocument();
+      expect(within(box).getByText(/If the control shows no certificate, Chatter trusts nothing/)).toBeInTheDocument();
+      expect(within(box).getByText(/a login with a username and Security None stays offline/)).toBeInTheDocument();
       expect(within(box).getByText(/192\.168\.1\.50/)).toBeInTheDocument();
       fireEvent.click(within(box).getByRole('button', { name: 'Forget the certificate' }));
 

@@ -73,6 +73,14 @@ describe('MachineSettingsSection of a Siemens machine', () => {
       renderSection(siemens({ opcuaServerThumbprint: SHA256 }));
 
       expect(within(certificate()).getByText(SHOWN_SHA256)).toHaveClass('font-mono');
+      expect(within(certificate()).queryByText('SHA-1')).not.toBeInTheDocument();
+    });
+
+    it.each<Role>(['operator', 'viewer'])('gives the role %s no Forget button', role => {
+      renderSection(siemens({ opcuaServerThumbprint: SHA256 }), role);
+
+      expect(screen.queryByRole('group', { name: 'Trusted certificate of the control' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Forget the saved certificate' })).not.toBeInTheDocument();
     });
 
     it('tells that the next connect trusts the certificate of the control when no certificate is saved', () => {
@@ -88,7 +96,8 @@ describe('MachineSettingsSection of a Siemens machine', () => {
 
       fireEvent.click(within(certificate()).getByRole('button', { name: 'Forget the saved certificate' }));
       const box = await screen.findByRole('alertdialog');
-      expect(within(box).getByText(/trusts the certificate that the control shows then/)).toBeInTheDocument();
+      expect(within(box).getByText(/If the control shows a certificate then, Chatter trusts it/)).toBeInTheDocument();
+      expect(within(box).getByText(/If the control shows no certificate, Chatter trusts nothing/)).toBeInTheDocument();
       fireEvent.click(within(box).getByRole('button', { name: 'Forget the certificate' }));
 
       expect(await screen.findByText('Chatter forgot the saved certificate. It connects to the control again now.')).toBeInTheDocument();
