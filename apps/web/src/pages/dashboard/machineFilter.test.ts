@@ -1,5 +1,7 @@
+import { machineStatusFor } from '@local-chatter/shared';
 import { describe, expect, it } from 'vitest';
 import { testMachine } from '../../test/testMachine';
+import type { Machine } from '../../types';
 import { byUrgency, countByState, filterMachines } from './machineFilter';
 
 const running = testMachine({ id: 'a', name: 'Lathe', host: '10.0.0.1' }, { execution: 'ACTIVE', spindleSpeed: 5000, program: 'O1234' });
@@ -13,6 +15,13 @@ describe('filterMachines', () => {
     expect(filterMachines(machines, ' mill ', 'all')).toEqual([idle, alarm]);
     expect(filterMachines(machines, '10.0.0.4', 'all')).toEqual([offline]);
     expect(filterMachines(machines, 'o1234', 'all')).toEqual([running]);
+  });
+
+  it('finds a machine of a Viewer, who gets no IP address (D4), by its name and program', () => {
+    const viewed = machines.map(machine => machineStatusFor('viewer', machine) as Machine);
+    expect(filterMachines(viewed, 'mill', 'all').map(machine => machine.id)).toEqual(['b', 'c']);
+    expect(filterMachines(viewed, 'o1234', 'all').map(machine => machine.id)).toEqual(['a']);
+    expect(filterMachines(viewed, '10.0.0.4', 'all')).toEqual([]);
   });
 
   it('finds a program when the user types the number 0 in place of the letter O, which look alike', () => {

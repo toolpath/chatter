@@ -1,5 +1,7 @@
+import { machineStatusFor } from '@local-chatter/shared';
 import { describe, expect, it } from 'vitest';
 import { testMachine } from '../test/testMachine';
+import type { Machine } from '../types';
 import { machineAddress, machinesWhileChatterIsLost, machineStateOf, machineTypeLabel, makerOf, partCountOf, spindleLoadOf, spindleSpeedText, toolText } from './machineStatus';
 
 describe('machineStateOf', () => {
@@ -59,6 +61,10 @@ describe('machineAddress', () => {
 
   it('shows only the host when there is no port', () => {
     expect(machineAddress(testMachine({ dataPort: undefined }))).toBe('192.168.1.50');
+  });
+
+  it('gives no address for a Viewer, who gets no address and no port from the server (D4)', () => {
+    expect(machineAddress(machineStatusFor('viewer', testMachine()) as Machine)).toBeNull();
   });
 });
 

@@ -1,4 +1,4 @@
-import type { AlertRule, Role } from '@local-chatter/shared';
+import { machineStatusFor, type AlertRule, type Role } from '@local-chatter/shared';
 import { Dialog } from '@toolpath/ui';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { act } from 'react';
@@ -679,6 +679,27 @@ describe('MachineDetailPage', () => {
         expect(tabNames()).toEqual(['Dashboard', 'Report', 'Files', 'Tool table 2', 'Settings']);
         cleanup();
       }
+    });
+
+    it('shows a Viewer, who gets no connection settings (D4), only the Connection health, with no empty value', async () => {
+      const machine = machineStatusFor('viewer', testMachine({ errors: ['connect ECONNREFUSED the machine address'] })) as Machine;
+      renderPage({ role: 'viewer', machine });
+
+      const header = screen.getByRole('heading', { level: 1, name: 'Mill 1' }).parentElement!.parentElement!;
+      expect(header).toHaveTextContent(/Brother CNC · polled/);
+      expect(header).not.toHaveTextContent(/undefined|null/);
+
+      fireEvent.click(screen.getByRole('tab', { name: 'Settings' }));
+      const panel = screen.getByRole('tabpanel', { name: 'Settings' });
+      expect(within(panel).getAllByRole('region').map(region => region.id)).toEqual([SETTINGS_SECTION_IDS.connection]);
+      expect(await within(panel).findByText('Last good poll')).toBeInTheDocument();
+      expect(panel).not.toHaveTextContent(/undefined|IP address|OPC UA username/);
+      expect(document.body).not.toHaveTextContent('undefined');
+    });
+
+    it('shows an Operator the address of the machine in the header', () => {
+      renderPage({ role: 'operator' });
+      expect(screen.getByRole('heading', { level: 1, name: 'Mill 1' }).parentElement!.parentElement!).toHaveTextContent('192.168.1.50:10000');
     });
 
     it('shows an admin five panels, Machine, Connection, Alert rules, Advanced and Delete machine, with no side menu', async () => {
