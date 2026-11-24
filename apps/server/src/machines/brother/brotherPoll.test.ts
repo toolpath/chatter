@@ -138,7 +138,7 @@ describe('Brother poll times in the status', () => {
     const { connector } = connectedBrother();
 
     await connector.poll();
-    await connector.toolSyncEnded();
+    await connector.requestToolSync();
 
     const timings = connector.getStatus().pollTimings!;
     expect(Object.keys(timings.lastPoll.commands).sort()).toEqual(['ALARM', 'MEM', 'PANEL', 'PDSP', 'WKCNTR']);

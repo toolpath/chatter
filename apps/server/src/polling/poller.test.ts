@@ -164,6 +164,8 @@ describe('HardwarePoller', () => {
     afterEach(() => {
       poller.stop();
       vi.useRealTimers();
+      // The poll that never ends must not stay for the later tests
+      vi.restoreAllMocks();
     });
 
     it('says a machine that was just added is connecting, in the answer and in the status', async () => {
@@ -324,7 +326,8 @@ describe('HardwarePoller', () => {
     it('asks the Brother to read its tools, and sends the new status to the screens', async () => {
       const machine = await addSpeedio();
       const connector = poller.getConnector(machine.id) as BrotherConnector;
-      new FakeConnection(connector);
+      // A Sync needs a poll that found the machine READY
+      await new FakeConnection(connector).poll();
       const updates = vi.fn();
       poller.on('update', updates);
 

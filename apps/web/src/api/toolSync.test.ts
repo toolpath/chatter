@@ -46,7 +46,7 @@ describe('syncTools', () => {
     expect(error.problem).toEqual({ outcome: 'too-soon', retryAfterSeconds: 12 });
   });
 
-  it.each(['busy', 'not-connected'] as const)('gives the outcome %s of a refusal', async outcome => {
+  it.each(['busy', 'not-connected', 'program-running'] as const)('gives the outcome %s of a refusal', async outcome => {
     replyWith(409, { error: 'Refused', outcome });
 
     expect((await errorOfSync()).problem).toEqual({ outcome });

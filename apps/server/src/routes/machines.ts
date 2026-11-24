@@ -72,6 +72,11 @@ export function machineRoutes(poller: HardwarePoller) {
           return c.json({
             error: 'The machine is not connected. Chatter can read its tool table when it is online.', ...result,
           } satisfies ToolSyncErrorBody, 409);
+        case 'program-running':
+          return c.json({
+            error: 'Chatter reads the tools only when no program runs. Press Sync again when the program ends.',
+            ...result,
+          } satisfies ToolSyncErrorBody, 409);
         case 'address-changed':
           return c.json({
             error: 'The address of the machine changed during the read. Chatter did not keep the result. '
