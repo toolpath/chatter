@@ -301,17 +301,26 @@ describe('update routes', () => {
     });
 
     it('stops an upload that sends no bytes for the idle time, and deletes the half file', async () => {
-      const app = appWith({ idleMs: 30 });
-      const body = heldStream();
-      const reply = upload(app, body.stream, { 'Content-Length': '100' });
-      body.send('half');
+      // The idle timer runs on fake time, so a busy computer cannot pass the limit in a normal upload
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const app = appWith({ idleMs: 30_000 });
+        const body = heldStream();
+        const reply = upload(app, body.stream, { 'Content-Length': '100' });
+        body.send('half');
+        await vi.waitFor(() => expect(inboxNames()).toHaveLength(1));
 
-      const res = await reply;
+        vi.advanceTimersByTime(30_000);
+        const res = await reply;
 
-      expect(res.status).toBe(408);
-      expect(await errorOf(res)).toContain('The update file stopped coming in: no bytes came in for');
-      expect(inboxNames()).toEqual([]);
-      expect((await upload(app, 'update file')).status).toBe(200);
+        expect(res.status).toBe(408);
+        expect(await errorOf(res)).toContain('The update file stopped coming in: no bytes came in for 30 seconds');
+        expect(inboxNames()).toEqual([]);
+        // The next upload can start, with the same idle limit
+        expect((await upload(app, 'update file')).status).toBe(200);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
