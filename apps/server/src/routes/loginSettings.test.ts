@@ -201,13 +201,26 @@ describe('login settings routes', () => {
     });
 
     it('writes who unlocked a user, from which address', async () => {
-      await asAdmin('/api/settings/logins/unlock', { username: 'Sam' });
+      const otherCase = TEST_LOGIN.username.toUpperCase();
+      await asAdmin('/api/settings/logins/unlock', { username: otherCase });
 
       const text = log.text('info');
       expect(text).toContain('Login lock removed');
       expect(text).toContain(`by=${TEST_LOGIN.username}`);
       expect(text).toContain(`from=${ADMIN_COMPUTER}`);
-      expect(text).toContain('username=Sam');
+      expect(text).toContain(`username=${otherCase}`);
+    });
+
+    it('masks an unknown username that an admin types for an unlock, but not the masked name of the list', async () => {
+      await asAdmin('/api/settings/logins/unlock', { username: 'My-Secret-Pa55' });
+      await asAdmin('/api/settings/logins/unlock', { username: 'my… (14 characters)' });
+
+      const lines = log.lines.filter(line => line.text.includes('Login lock removed')).map(line => line.text);
+      expect(lines).toEqual([
+        expect.stringContaining('username="My… (14 characters)"'),
+        expect.stringContaining('username="my… (14 characters)"'),
+      ]);
+      expect(log.text()).not.toContain('Secret');
     });
 
     it('writes nothing for an unlock that the check refuses', async () => {
