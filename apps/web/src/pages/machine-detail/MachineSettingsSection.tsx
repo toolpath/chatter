@@ -76,7 +76,7 @@ export function MachineSettingsSection({ machine, onUpdate }: MachineSettingsSec
   return (
     <form onSubmit={save} className="flex flex-col gap-5 p-4">
       <EditMachineForm
-        machineType={machine.type}
+        machine={machine}
         hasFtpPassword={saved.hasFtpPassword}
         hasOpcuaPassword={saved.hasOpcuaPassword}
         saved={saved.form}

@@ -1,5 +1,5 @@
 import { cn } from '@toolpath/ui';
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { AlarmIcon, CloseIcon, OfflineIcon } from './icons';
 
 /**
@@ -51,10 +51,13 @@ export function Notice({ tone, title, tag, children, onClose, className }: Notic
   const toneStyle = TONE_STYLES[tone];
   const isLarge = tone === 'alarm' || tone === 'offline';
   const isUrgent = tone === 'alarm' || tone === 'error';
+  // The title names the box, so a test or a screen reader can find a notice by its title
+  const titleId = useId();
 
   return (
     <div
       role={isUrgent ? 'alert' : 'status'}
+      aria-labelledby={titleId}
       className={cn(
         'relative flex items-start gap-3 rounded-[0.625rem] border border-l-[3px]',
         isLarge ? 'px-3.5 py-3' : 'px-3 py-2.5',
@@ -73,7 +76,7 @@ export function Notice({ tone, title, tag, children, onClose, className }: Notic
       )}
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <div className="flex flex-wrap items-center gap-2">
-          <span className={cn('font-bold', isLarge && 'text-[0.9375rem]')}>{title}</span>
+          <span id={titleId} className={cn('font-bold', isLarge && 'text-[0.9375rem]')}>{title}</span>
           {tag && (
             <span className={cn('rounded px-1.5 py-px font-mono text-[0.6875rem] font-medium', toneStyle.tile, 'text-zinc-50')}>
               {tag}

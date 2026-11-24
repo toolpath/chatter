@@ -21,9 +21,10 @@ Add the machine with the type **Siemens SINUMERIK**. Then, on the machine page, 
 
 If you set a username and Security **None**, Chatter saves the settings and does not refuse them. But Chatter gives a warning: `Security is None. Chatter does not sign or encrypt the OPC UA connection. A device on the network can read the data and use the session of this login. Set Security to Sign and encrypt.`
 
+- The machine settings show the warning before you save, when you set Security **None** and type a username.
+- The machine page shows the warning to each user, under the name of the machine.
 - The reply of the API, when you add or change the machine, and the status of the machine in the API have the warning.
 - The server log gets a warning line with the same text each time a change sets this mix. A restart of Chatter does not write the line again.
-- The machine page does not show this warning yet.
 - The warning stays until you set Security to **Sign and encrypt**, or remove the username.
 - An anonymous login gets no warning, because Chatter sends no login.
 
@@ -49,16 +50,20 @@ At each later connect, Chatter reads the certificate of the control before it lo
 
 `The OPC UA certificate of the control changed. Chatter did not send the login.`
 
-The error also gives the thumbprint of the new certificate and the thumbprint of the trusted certificate. Chatter tries again at each poll, but it does not log in until an Admin trusts the new certificate.
+The machine page also shows the box **Certificate changed** to each user. The box gives the two thumbprints of the new certificate. Chatter tries again at each poll, but it does not log in until an Admin trusts the new certificate.
+
+To see the trusted certificate, an Admin opens **Settings** on the machine page. **Trusted certificate of the control** shows its SHA-256 thumbprint.
 
 ### Check a new certificate
 
 A control can get a new certificate for a good reason. For example, a person made a new certificate on the control, or the control was replaced. But a different device at the address of the control also shows a different certificate. So find the reason before you trust a new certificate:
 
 1. Ask the person who looks after the control if the certificate changed.
-2. Get the two thumbprints of the new certificate from Chatter. The status of the machine (`GET /api/machine/<machine ID>`) has `opcuaCertificateChanged`:
-   - `presentedThumbprint`: the SHA-256 thumbprint. Chatter trusts by this thumbprint.
-   - `presentedSha1Thumbprint`: the SHA-1 thumbprint of the same certificate. Some controls show only SHA-1 on their screen. Use it only to compare.
+2. Get the two thumbprints of the new certificate from the box **Certificate changed** on the machine page:
+   - **SHA-256**: Chatter trusts by this thumbprint.
+   - **SHA-1**: the SHA-1 thumbprint of the same certificate. Some controls show only SHA-1 on their screen. Use it only to compare.
+
+   The box writes each thumbprint in pairs of hex digits with colons, as openssl writes them. In the API, the status of the machine (`GET /api/machine/<machine ID>`) has the same thumbprints in `opcuaCertificateChanged`: `presentedThumbprint` (SHA-256) and `presentedSha1Thumbprint` (SHA-1), with no colons.
 3. Compare a thumbprint with the certificate of the control. You can compare in one of two ways:
    - On the control, open **Commissioning > Network > OPC UA > Certificates**. If the screen shows a thumbprint of the certificate of the control, compare it. It is often SHA-1.
    - Or export the certificate of the control from that screen (a `.der` file). On a computer, run one of these commands:
@@ -68,13 +73,21 @@ A control can get a new certificate for a good reason. For example, a person mad
      openssl x509 -inform der -in <file> -noout -fingerprint -sha1
      ```
 
-     openssl writes, for example, `sha256 Fingerprint=AB:CD:...`. Remove `sha256 Fingerprint=` (or `sha1 Fingerprint=`) and the colons. Upper case and lower case are both correct.
+     openssl writes, for example, `sha256 Fingerprint=AB:CD:...`. Compare the part after `Fingerprint=`. Upper case and lower case are both correct.
 
    The thumbprint must be the same as the thumbprint in Chatter. If it is not the same, do not trust the certificate. Find the device at the address of the control.
 
 ### Trust a new certificate
 
-An Admin trusts the new certificate. The machine page has no button for this yet. Send the SHA-256 thumbprint of the new certificate to Chatter:
+An Admin trusts the new certificate. Operators and Viewers see the box **Certificate changed**, but not its buttons.
+
+1. On the machine page, in the box **Certificate changed**, click **Trust new certificate**.
+2. The confirm box shows the two thumbprints again. Compare them with the control one more time.
+3. If a thumbprint is the same, click **Trust this certificate**. If not, click **Cancel**.
+
+Chatter trusts only the SHA-256 thumbprint that the box shows, and only when the control shows that certificate now. If the control shows a different certificate again, Chatter trusts nothing and shows "The certificate of the control changed again". The box then shows the thumbprints of the newest certificate. Check them again. When Chatter trusts the certificate, the box goes, and Chatter connects at once with the new certificate. The audit log records who trusted which thumbprint.
+
+You can also use the API. Send the SHA-256 thumbprint with no colons:
 
 ```bash
 curl -u <admin username> -X POST -H 'Content-Type: application/json' \
@@ -82,20 +95,23 @@ curl -u <admin username> -X POST -H 'Content-Type: application/json' \
   http://<Chatter address>:3001/api/machine/<machine ID>/opcua/trust-certificate
 ```
 
-The machine ID is the last part of the address of the machine page, after `/machine/`. curl asks for the password of the Admin. If you use an HTTPS proxy (see [HTTPS](./https.md)), port 3001 is closed. Then use the HTTPS address of the proxy, for example `https://<proxy address>/api/machine/...`.
-
-Chatter trusts only the thumbprint that you send, and only when the control shows that certificate now. If the control shows a different certificate again, Chatter trusts nothing and replies with `409` and "The certificate of the control changed again". Then check the new thumbprint. After a good reply, Chatter connects at once with the new certificate. The audit log records who trusted which thumbprint.
+The machine ID is the last part of the address of the machine page, after `/machine/`. curl asks for the password of the Admin. If you use an HTTPS proxy (see [HTTPS](./https.md)), port 3001 is closed. Then use the HTTPS address of the proxy, for example `https://<proxy address>/api/machine/...`. When the certificate changed again, the API replies with `409`.
 
 ### Forget the trusted certificate
 
-Sometimes there is no new certificate to trust. For example, the control now shows no certificate. Then the trust route replies with `409`. An Admin can forget the trusted certificate:
+Sometimes there is no new certificate to trust. For example, the control now shows no certificate. Then the box **Certificate changed** tells that the control shows no certificate, and it has no Trust button. An Admin can forget the trusted certificate:
 
-```bash
-curl -u <admin username> -X POST \
-  http://<Chatter address>:3001/api/machine/<machine ID>/opcua/forget-certificate
-```
+- In the box **Certificate changed**, click **Forget the saved certificate**.
+- Or, on the machine page, open **Settings**. Under **Trusted certificate of the control**, click **Forget the saved certificate**.
 
-Chatter connects at once. That connect trusts the certificate that the control shows then, as the first connect does. So first make sure that the device at the address is your control. The audit log records who forgot the certificate. The web button for this comes in a later version.
+The confirm box tells what happens next. Click **Forget the certificate**. Chatter connects at once:
+
+- If the control shows a certificate then, Chatter trusts it, as the first connect does. So first make sure that the device at the address is your control.
+- If the control shows no certificate, Chatter trusts nothing. A login with a username needs a certificate of the control. So with a username and Security **None**, the machine stays offline (see [What the check protects](#what-the-check-protects)). With no username and Security **None**, Chatter connects with no password.
+
+The audit log records who forgot the certificate.
+
+With the API, send `POST /api/machine/<machine ID>/opcua/forget-certificate` with no body, as in [Trust a new certificate](#trust-a-new-certificate).
 
 When you change the IP address or the OPC UA port of the machine, Chatter also forgets the trusted certificate. The next connect trusts the certificate of the device at the new address. When you change only the **Security**, Chatter keeps the trusted certificate. If the control has a different certificate for each security, the machine then shows "The OPC UA certificate of the control changed". Check the new certificate and trust it.
 

@@ -2,13 +2,16 @@ import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Field, SelectInput, TextInput } from '../../components/ui/fields';
 import { CloseIcon, PlusIcon } from '../../components/ui/icons';
+import { Notice } from '../../components/ui/Notice';
 import { AGENT_MAKERS } from '../../machines/machineStatus';
-import type { MacroConfig, MachineType, OpcUaSecurity } from '../../types';
-import { DEFAULT_MTCONNECT_PORT } from '../../types';
+import type { MacroConfig, Machine, OpcUaSecurity } from '../../types';
+import { DEFAULT_MTCONNECT_PORT, opcuaSecurityWarning } from '../../types';
 import { DEFAULT_PORTS, ftpPasswordHint, opcuaPasswordHint, type EditFormState, type PasswordHint } from './editForm';
+import { TrustedCertificate } from './opcuaCertificate';
 
 interface EditMachineFormProps {
-  machineType: MachineType;
+  /** The machine as the server has it. The form shows its type, and the trusted certificate of a Siemens control. */
+  machine: Machine;
   /** The server says only whether an FTP password is saved, never the password */
   hasFtpPassword: boolean;
   /** The same for the OPC UA password of a Siemens machine */
@@ -39,7 +42,10 @@ function removeAt<T>(list: T[], index: number): T[] {
 }
 
 /** The settings of a machine. Each machine type shows its own fields. */
-function EditMachineForm({ machineType, hasFtpPassword, hasOpcuaPassword = false, saved, form, setForm }: EditMachineFormProps) {
+function EditMachineForm({ machine, hasFtpPassword, hasOpcuaPassword = false, saved, form, setForm }: EditMachineFormProps) {
+  const machineType = machine.type;
+  // The same rule as the server, so the user sees the warning before the save
+  const securityWarning = opcuaSecurityWarning(form);
   const setField: FieldSetter = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
   };
@@ -61,7 +67,12 @@ function EditMachineForm({ machineType, hasFtpPassword, hasOpcuaPassword = false
             onChange={text => setField('focasPort', portOrDefault(text, DEFAULT_PORTS.focas))}
           />
         )}
-        {machineType === 'siemens' && <SiemensConnectionFields form={form} setField={setField} />}
+        {machineType === 'siemens' && (
+          <>
+            <SiemensConnectionFields form={form} setField={setField} />
+            <TrustedCertificate machine={machine} />
+          </>
+        )}
       </FieldGroup>
       {machineType === 'siemens' && (
         <FieldGroup legend="OPC UA login">
@@ -83,6 +94,7 @@ function EditMachineForm({ machineType, hasFtpPassword, hasOpcuaPassword = false
             isRemoving={form.removeOpcuaPassword}
             onToggleRemove={() => setField('removeOpcuaPassword', !form.removeOpcuaPassword)}
           />
+          {securityWarning && <Notice tone="info" title="Security warning" className="col-span-full">{securityWarning}</Notice>}
         </FieldGroup>
       )}
       <FieldGroup legend="FTP login">
