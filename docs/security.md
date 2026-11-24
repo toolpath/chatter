@@ -159,6 +159,17 @@ VictoriaMetrics (the machine history database) and vmalert have no login. Anyone
 
 Only an Admin can read and change the alert rules. A custom alert query can only read the machine history. It cannot change or delete data.
 
+## Container rights
+
+`docker-compose.yml` gives each container only the rights that it uses. So a program that takes control of a container gets fewer rights. For example, a bad FOCAS library or a bug in node-opcua can start such a program.
+
+- **No Linux capabilities.** Each container drops all capabilities (`cap_drop: [ALL]`). So a program in a container cannot send raw network packets, for example to read the FTP or OPC UA logins of a machine. Chatter runs as the user `node`, so it used no capability before either. VictoriaMetrics and vmalert run as `root`, but they need no capability. VictoriaMetrics made each file in its volume, so it can still write them, also in an old volume. vmalert only reads files that all users can read.
+- **No new rights.** With `no-new-privileges:true`, a program in a container cannot get more rights from a setuid file or a file capability.
+- **A process limit.** `pids_limit` sets the most processes and threads of each container: 256 for Chatter and vmalert, 512 for VictoriaMetrics. Each one uses far fewer. So a program in a container cannot use up the processes of the computer. When the Linux kernel has no `pids` cgroup, Docker does not use the limit and shows a warning.
+- **No memory limit.** On a Pi with 512 MB, a memory limit can stop Chatter. So the containers have no memory limit.
+- **Keep these settings.** Do not add `cap_add` or `privileged` to `docker-compose.yml`. Do not change these settings in a second compose file.
+- **Restore a backup of the machine history as root.** VictoriaMetrics must own the files in its volume. The restore commands in [Update Chatter](./guide/update.md#restore-a-backup) run as `root`, so `root` owns the files.
+
 ## Limit who can reach Chatter
 
 On Linux, Docker sends the traffic of a published port around the rules of ufw and firewalld. So these rules do not limit port 3001. Use one of these two ways:
