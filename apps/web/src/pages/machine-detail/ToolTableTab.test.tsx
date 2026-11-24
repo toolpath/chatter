@@ -97,13 +97,15 @@ describe('ToolTableTab sync', () => {
     expect(screen.getByRole('button', { name: 'Sync' })).toBeEnabled();
   });
 
-  it('tells when Chatter reads the tool table', () => {
+  it('tells that Chatter reads the tool table only on a Sync, and when not to press Sync', () => {
     renderTab(NOT_SYNCED, {});
 
     expect(screen.getByText(
-      'Chatter reads the tool table only when no program runs. '
-      + 'It reads it automatically after 2 minutes with no program, when the last read is more than 10 minutes old.',
+      'Chatter reads the tool table only when you press Sync, and only when the control reports that no program runs. '
+      + 'Press Sync only when no program runs. Do not press it while the door is open during a program: '
+      + 'some Brother controls report that no program runs while the door holds a program.',
     )).toBeInTheDocument();
+    expect(screen.queryByText(/automatic|minutes/)).toBeNull();
   });
 
   it('shows the reason of the server when it refused a Sync because a program can run, and keeps the button', async () => {
@@ -155,7 +157,7 @@ describe('ToolTableTab sync', () => {
     expect(screen.getByRole('button', { name: 'Sync' })).toBeEnabled();
   });
 
-  it('shows the error of the last automatic read', () => {
+  it('shows the error of the last read', () => {
     renderTab({ ...SYNCED, error: 'No reply' });
 
     expect(screen.getByRole('alert')).toHaveTextContent('No reply');
