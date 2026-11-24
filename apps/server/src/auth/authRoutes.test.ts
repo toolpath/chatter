@@ -150,11 +150,11 @@ describe('auth routes', () => {
     try {
       const res = await post('/api/auth/setup', ADMIN, { Host: 'evil.example:3001' });
 
-      expect(res.status).toBe(421);
+      expect(res.status).toBe(403);
       expect(await res.json()).toEqual({ error: LOCAL_SETUP_ONLY });
       expect(res.headers.get('Set-Cookie')).toBeNull();
-      expect(log.text()).not.toContain('made a new Admin');
-      expect(log.text()).toContain('host=evil.example:3001');
+      // Only the audit log tells a refused setup, so a flood of requests cannot fill the server log
+      expect(log.text()).toBe('');
     } finally {
       log.restore();
     }
@@ -163,7 +163,25 @@ describe('auth routes', () => {
 
   it('refuses the setup at a name in DNS also when the URL has the name and no Host header', async () => {
     const res = await post('http://chatter.shop.example.com/api/auth/setup', ADMIN);
-    expect(res.status).toBe(421);
+    expect(res.status).toBe(403);
+  });
+
+  it('refuses the setup at a name in DNS before it reads the body', async () => {
+    const short = await post('/api/auth/setup', { username: 'admin', password: 'short' }, { Host: 'evil.example' });
+    expect(short.status).toBe(403);
+    expect(await short.json()).toEqual({ error: LOCAL_SETUP_ONLY });
+
+    const notJson = await app.request('/api/auth/setup', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Host: 'evil.example' }, body: 'not json',
+    });
+    expect(notJson.status).toBe(403);
+  });
+
+  it('gives the closed-setup reply at a name in DNS after the setup, as at a local address', async () => {
+    await setUp();
+    const res = await post('/api/auth/setup', { username: 'attacker', password: 'attacker-password' }, { Host: 'evil.example' });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'The setup is closed. Ask an Admin for an account.' });
   });
 
   it.each(['192.168.1.20:3001', '[::1]:3001', 'localhost:5173', 'chatter.local', 'CHATTER.LOCAL.', 'chatter'])(
@@ -464,10 +482,12 @@ describe('auth routes behind a reverse proxy', () => {
   });
 
   /** A request that the proxy sends on for a user */
-  function postFor(user: string, path: string, body: object, protocol = 'http', cookie?: string) {
+  function postFor(user: string, path: string, body: object, protocol = 'http', cookie?: string, headers: Record<string, string> = {}) {
     return app.request(path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': user, 'X-Forwarded-Proto': protocol, ...(cookie ? { Cookie: cookie } : {}) },
+      headers: {
+        'Content-Type': 'application/json', 'X-Forwarded-For': user, 'X-Forwarded-Proto': protocol, ...(cookie ? { Cookie: cookie } : {}), ...headers,
+      },
       body: JSON.stringify(body),
     }, fromProxy);
   }
@@ -782,6 +802,36 @@ describe('auth routes behind a reverse proxy', () => {
       ]);
       expect(audit.lines.join('\n')).not.toContain(ADMIN.password);
       expect(audit.lines.join('\n')).not.toContain('attacker');
+    });
+
+    it('writes each setup at a host that is not local, and X-Forwarded-Host does not change the host', async () => {
+      const { auth, accounts } = authParts();
+      app = createApp({ poller: new HardwarePoller(emptyDb), auth, accounts, history: noHistory(), proxySettings: ProxySettings.inMemory(PROXY) });
+      audit = captureAudit();
+
+      const res = await postFor('192.168.1.99', '/api/auth/setup', ADMIN, 'http', undefined, {
+        Host: 'evil.example:3001', 'X-Forwarded-Host': 'localhost',
+      });
+
+      expect(res.status).toBe(403);
+      expect(auditLines('setup')).toEqual([
+        expect.stringMatching(/First-run setup refused at a host that is not local address=192\.168\.1\.99 host=evil\.example:3001$/),
+      ]);
+      expect(audit.lines.join('\n')).not.toContain(ADMIN.password);
+      expect(await (await app.request('/api/auth/status')).json()).toMatchObject({ setupNeeded: true });
+    });
+
+    it('cuts a long host in the audit line', async () => {
+      const { auth, accounts } = authParts();
+      app = createApp({ poller: new HardwarePoller(emptyDb), auth, accounts, history: noHistory(), proxySettings: ProxySettings.inMemory(PROXY) });
+      audit = captureAudit();
+      const longHost = `${'a'.repeat(300)}.example`;
+
+      expect((await postFor('192.168.1.99', '/api/auth/setup', ADMIN, 'http', undefined, { Host: longHost })).status).toBe(403);
+
+      const [line] = auditLines('host=');
+      expect(line).toMatch(/host=a+…$/);
+      expect(line).not.toContain(longHost);
     });
   });
 

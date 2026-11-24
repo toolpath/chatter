@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { hostOfRequest, isLocalHost } from './localHost.js';
+import { hostOfRequest, isLocalHost, LOCAL_SETUP_ONLY } from './localHost.js';
 
 describe('isLocalHost', () => {
   it('accepts an IPv4 address, with or without a port', () => {
     expect(isLocalHost('192.168.1.20')).toBe(true);
     expect(isLocalHost('192.168.1.20:3001')).toBe(true);
     expect(isLocalHost('127.0.0.1:80')).toBe(true);
+    expect(isLocalHost('192.168.1.20.')).toBe(true);
+    expect(isLocalHost('192.168.1.20.:3001')).toBe(true);
   });
 
   it('accepts an IPv6 address in brackets, with or without a port', () => {
@@ -56,6 +58,16 @@ describe('isLocalHost', () => {
     expect(isLocalHost('evil.example@127.0.0.1')).toBe(false);
     expect(isLocalHost('127.0.0.1:abc')).toBe(false);
     expect(isLocalHost('127.0.0.1 evil.example')).toBe(false);
+    // Node removes the spaces around a header value, so a host with spaces is not a real request
+    expect(isLocalHost(' localhost ')).toBe(false);
+  });
+});
+
+describe('LOCAL_SETUP_ONLY', () => {
+  it('names each kind of local address', () => {
+    expect(LOCAL_SETUP_ONLY).toBe(
+      'Do the first-run setup at a local address: an IP address, localhost, a name that ends with .local, or a name with no dot.',
+    );
   });
 });
 
