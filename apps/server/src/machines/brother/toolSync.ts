@@ -1,6 +1,4 @@
-import type { ToolSyncOutcome, ToolSyncState } from '../../types/index.js';
-
-/**
+/*
  * The tool table (ATC) and the tool data (TOLN) are big replies, like a file, and they change only when an operator
  * loads or measures a tool. Chatter reads them only when a user presses Sync, and only when the last poll said READY
  * (MEM operation status 0). Chatter never reads them by itself.
@@ -9,10 +7,11 @@ import type { ToolSyncOutcome, ToolSyncState } from '../../types/index.js';
  * closed. A stopped spindle, or a run state that Chatter does not know, does not tell that no program runs.
  * Also READY does not prove that no program runs: on a C00, MEM A01 index 2 (the operation status) reads 0 (READY)
  * during a door-open feed hold. So the screen tells the operator to press Sync only when no program runs.
- *
- * The shortest time between two Sync requests for the same machine, so many clicks do not keep the one connection of
- * the control busy.
  */
+
+import type { ToolSyncOutcome, ToolSyncState } from '../../types/index.js';
+
+/** The shortest time between two Sync requests for the same machine, so many clicks do not keep the control busy */
 export const TOOL_SYNC_MIN_GAP_MS = 30_000;
 
 /**
@@ -35,7 +34,7 @@ const isoOrNull = (time: number | null) => (time === null ? null : new Date(time
 export class ToolSyncTracker {
   private lastSyncAt: number | null = null;
   private lastAttemptAt: number | null = null;
-  private lastManualAt: number | null = null;
+  private lastRequestAt: number | null = null;
   private error: string | null = null;
   private runningNow = false;
   private lastPollWasReady = false;
@@ -47,7 +46,7 @@ export class ToolSyncTracker {
 
   started(now: number): void {
     this.runningNow = true;
-    this.lastManualAt = now;
+    this.lastRequestAt = now;
   }
 
   /** `error` is null for a good read */
@@ -65,7 +64,7 @@ export class ToolSyncTracker {
    */
   abandoned(): void {
     this.runningNow = false;
-    this.lastManualAt = null;
+    this.lastRequestAt = null;
   }
 
   /**
@@ -94,8 +93,8 @@ export class ToolSyncTracker {
   /** Null when a Sync request can start now */
   manualRefusal(now: number): ToolSyncRefusal | null {
     if (this.running) return { outcome: 'busy' };
-    if (this.lastManualAt !== null && now - this.lastManualAt < TOOL_SYNC_MIN_GAP_MS) {
-      return { outcome: 'too-soon', retryAfterSeconds: Math.ceil((TOOL_SYNC_MIN_GAP_MS - (now - this.lastManualAt)) / 1000) };
+    if (this.lastRequestAt !== null && now - this.lastRequestAt < TOOL_SYNC_MIN_GAP_MS) {
+      return { outcome: 'too-soon', retryAfterSeconds: Math.ceil((TOOL_SYNC_MIN_GAP_MS - (now - this.lastRequestAt)) / 1000) };
     }
     return null;
   }
