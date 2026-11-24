@@ -26,7 +26,7 @@ A machine that you added before keeps its rules. Chatter does not change them.
 
 ![Settings > Alert rules: rules as sentences, and a custom query](../images/chatter-alert-rules-tab.png)
 
-Only an **Admin** can see and change the rules. The rules are settings. An Operator and a Viewer do not see the **Alert rules** section. They see the alerts in the **Alerts** panel.
+Only an **Admin** can see and change the rules. An Operator and a Viewer do not see the **Alert rules** section. They see the alerts in the **Alerts** panel.
 
 When the machine has no alerts, the **Alerts** panel of an Admin has a link to **Settings › Alert rules**.
 
