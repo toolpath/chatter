@@ -11,7 +11,7 @@ A reverse proxy is a server that takes the HTTPS requests from the browsers, and
    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
    proxy_set_header X-Forwarded-Proto $scheme;
    ```
-2. Open Chatter through the proxy, and log in as an Admin. Go to **Settings > HTTPS and proxy**.
+2. Open Chatter through the proxy, and log in as an Admin. If no Admin exists yet, first do the setup at the IP address of Chatter, not through the proxy. Chatter accepts the first-run setup only at a local address. Go to **Settings > HTTPS and proxy**.
    The proxy is in the list **Computers that sent proxy headers**. Click **Trust** on its line.
    You can also type its address in **Add a proxy address or range**.
    Do not trust a wide range, like `172.16.0.0/12`, if normal users also have addresses in it.

@@ -4,6 +4,8 @@
 
 Open Chatter in a browser. On the first visit, Chatter asks for a username and a password. This first account is an **Admin**.
 
+Open Chatter at a local address for this step: the IP address (for example `http://192.168.1.20:3001`), `localhost`, or a name that ends with `.local`. At a different name, Chatter refuses the setup (see [Security](../security.md)).
+
 ::: danger Warning:
 Do this at once. Until then, anyone who opens Chatter can make the Admin.
 :::
