@@ -1,4 +1,4 @@
-import { DEFAULT_OPCUA_PORT, opcuaSecurityWarning } from '@local-chatter/shared';
+import { DEFAULT_OPCUA_PORT, OPCUA_NO_ENCRYPTION_WARNING, opcuaSecurityWarning } from '@local-chatter/shared';
 import { createLogger } from '../../logging/logger.js';
 import { BaseMachineConnector, errorMessage } from '../BaseMachineConnector.js';
 import type {
@@ -345,7 +345,8 @@ export class SiemensConnector extends BaseMachineConnector {
    */
   logSecurityWarning(): void {
     if (this.securityWarning === null) return;
-    log.warn('Security is None. Chatter logs in to the OPC UA server of the control on a connection with no signature and no encryption.', {
+    // The same text as the status, so a search of the log finds it. No username and no password.
+    log.warn(OPCUA_NO_ENCRYPTION_WARNING, {
       machine: this.id, host: this.host, port: this.opcuaPort,
     });
   }

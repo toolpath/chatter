@@ -101,8 +101,13 @@ function sharedCertificateManager(): OPCUACertificateManager | undefined {
   return certificateManager;
 }
 
+/** A user login, not an anonymous one. A username of only spaces is no username, the same as in opcuaSecurityWarning. */
+function isUserLogin(options: SinumerikConnectOptions): options is SinumerikConnectOptions & { user: string } {
+  return (options.user ?? '').trim() !== '';
+}
+
 function userIdentity(options: SinumerikConnectOptions): UserIdentityInfo {
-  if (!options.user) return { type: UserTokenType.Anonymous };
+  if (!isUserLogin(options)) return { type: UserTokenType.Anonymous };
   return { type: UserTokenType.UserName, userName: options.user, password: options.password ?? '' };
 }
 
@@ -263,7 +268,7 @@ export function sinumerikSessionOpener(createClient: CreateOpcUaClient): OpenSin
     });
     try {
       await client.connect(endpointUrl);
-      if (!secure && options.user) refuseClearTextPassword(await client.getEndpoints(), certificate);
+      if (!secure && isUserLogin(options)) refuseClearTextPassword(await client.getEndpoints(), certificate);
       const session = await client.createSession(userIdentity(options));
       return new OpcUaSinumerikSession(client, session, thumbprint);
     } catch (error) {
