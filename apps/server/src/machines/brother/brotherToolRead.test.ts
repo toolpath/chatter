@@ -422,6 +422,62 @@ describe('Brother tool sync: the tool table and the tool data, read apart from t
     await machine.pollAndSync();
     expect((await machine.connector.requestToolSync()).outcome).toBe('synced');
   });
+
+  it('refuses a Sync after a failed poll, which disconnects, and sends no tool command', async () => {
+    const machine = machineThatTakes(100);
+    await machine.pollAndSync();
+    machine.fake.fail('MEM');
+    expect((await machine.pollAndSync()).errors).not.toEqual([]);
+
+    expect(await machine.connector.requestToolSync()).toEqual({ outcome: 'not-connected' });
+    expect(machine.sent).not.toContain('ATCTL');
+  });
+
+  it('starts the 2 minutes again after the machine closed the connection', async () => {
+    const machine = machineThatTakes(100);
+    await machine.pollAndSync();
+    vi.setSystemTime(Date.now() + TOOL_SYNC_READY_HOLD_MS - 10_000);
+    machine.fake.machineClosed();
+    await machine.pollAndSync();
+    expect(machine.fake.connects).toBe(1);
+
+    vi.setSystemTime(Date.now() + 60_000);
+    await machine.pollAndSync();
+    expect(machine.sent).not.toContain('ATCTL');
+
+    vi.setSystemTime(Date.now() + TOOL_SYNC_READY_HOLD_MS);
+    await machine.pollAndSync();
+    expect(machine.sent).toEqual(expect.arrayContaining(TOOL_COMMANDS));
+  });
+
+  // The shop finding on a C00: a tool read at the time when an open door stopped the program kept the control from
+  // going into feed hold. The spindle stopped, so the old rule started the read.
+  it('shop finding: reads no tools at a door-open stop more than 10 minutes after the last read, nor in the 2 minutes of READY after it', async () => {
+    const machine = machineThatTakes(100);
+    await machine.pollUntilReadyHeld();
+    expect(machine.sent).toEqual(expect.arrayContaining(TOOL_COMMANDS));
+    const toolCommands: string[] = [];
+    const record = () => toolCommands.push(...machine.sent.filter(command => TOOL_COMMANDS.includes(command)));
+
+    vi.setSystemTime(Date.now() + 10 * 60_000 + 1000);
+    machine.replies.MEM = MEM_RUNNING;
+    await machine.pollAndSync();
+    record();
+    vi.setSystemTime(Date.now() + 1000);
+    machine.replies.MEM = MEM_FEED_HOLD;
+    const status = await machine.pollAndSync();
+    record();
+    expect(status.data.spindleSpeed).toBe(0);
+
+    machine.replies.MEM = MOCK_RESPONSES.MEM;
+    await machine.pollAndSync();
+    record();
+    vi.setSystemTime(Date.now() + TOOL_SYNC_READY_HOLD_MS - 1000);
+    await machine.pollAndSync();
+    record();
+
+    expect(toolCommands).toEqual([]);
+  });
 });
 
 describe('Brother tool sync that does not end', () => {
@@ -758,6 +814,19 @@ describe('Brother address update', () => {
 
     expect(atcCommandsSent()).toEqual(['ATCTL', 'ATCTL']);
     expect(connector.getStatus().data).toMatchObject({ controlType: 'C00', hasPocketInfo: true });
+  });
+
+  it('does not read the tools at the new address before the control there has said READY for 2 minutes', async () => {
+    const { connector, atcCommandsSent } = brotherThatAnswers(true);
+    await pollAndReadTools(connector);
+
+    applyBrotherUpdate(connector, { host: '192.168.1.60' });
+    await connector.poll();
+    vi.setSystemTime(Date.now() + TOOL_SYNC_READY_HOLD_MS - 1000);
+    await connector.poll();
+    await connector.toolSyncEnded();
+
+    expect(atcCommandsSent()).toEqual(['ATCTL']);
   });
 
   it('records nothing of a tool read at the old address, and reads the tools after the READY hold time at the new address', async () => {

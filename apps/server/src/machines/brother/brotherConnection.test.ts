@@ -3,7 +3,7 @@ import Database from 'better-sqlite3';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { BROTHER_RECONNECT_MS, BrotherConnector, MAX_BROTHER_REPLY_BYTES, NO_REPLY_ERROR } from './BrotherConnector.js';
 import type { BrotherMachineStatus } from '../../types/index.js';
-import { TOOL_SYNC_TIMEOUT_MS } from './toolSync.js';
+import { TOOL_SYNC_READY_HOLD_MS, TOOL_SYNC_TIMEOUT_MS } from './toolSync.js';
 import { captureLog, type CapturedLog } from '../../logging/testSupport.js';
 import { ConnectionLog } from '../../logging/ConnectionLog.js';
 import { HardwarePoller } from '../../polling/poller.js';
@@ -319,6 +319,20 @@ describe('Brother planned reconnect every 60 seconds, with a real TCP connection
     expect(status.connected).toBe(true);
     expect(log.text('info') + log.text('warn')).toBe(linesBefore);
     expect(log.text('debug')).toMatch(/Planned reconnect.*machine=b1/);
+  });
+
+  it('keeps the READY time across the planned reconnect, so the tools are read 2 minutes after the first READY poll', async () => {
+    await startRecordingBrother();
+    await pollAndSync();
+    vi.setSystemTime(Date.now() + BROTHER_RECONNECT_MS);
+    await pollAndSync();
+    expect(fake.events).toContain('connect 2');
+    expect(fake.commands).not.toContain('ATCTL');
+
+    vi.setSystemTime(Date.now() + TOOL_SYNC_READY_HOLD_MS - BROTHER_RECONNECT_MS);
+    await pollAndSync();
+
+    expect(fake.commands).toContain('ATCTL');
   });
 
   it('counts the planned reconnects in the poll times', async () => {
