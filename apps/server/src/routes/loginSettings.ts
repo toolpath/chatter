@@ -67,9 +67,10 @@ export function loginSettingsRoutes(parts: LoginSettingsParts) {
       const { address, username } = c.req.valid('json');
       if (address !== undefined) parts.limiter.unlock(address);
       if (username !== undefined) unlockUser(parts, username);
-      // An unlock lets someone guess again, so the log keeps who did it
+      // An unlock lets someone guess again, so the log keeps who did it. An unknown username can be a password.
       log.info('Login lock removed', {
-        by: c.var.user.username, from: originOf(c, parts.proxySettings).address, address, username,
+        by: c.var.user.username, from: originOf(c, parts.proxySettings).address, address,
+        username: username === undefined || parts.auth.hasUser(username) ? username : maskedOnce(username),
       });
       return c.json(loginsReport(parts));
     });
