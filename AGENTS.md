@@ -19,7 +19,7 @@ npm test
 - `npm test` also runs `test:tools`, the tests of `tools/fake-machines`, `tools/fake-notify`, `tools/quality`, `tools/guardrails` and `tools/loc`. These folders are not workspaces, so the workspace commands skip them.
 - To find code with no test, run `npm run coverage`, then `npm run coverage:changed`. Coverage is a signal, not a gate.
 - The CI fails when a pull request adds copied code. Run `npm run dup:new` to see the copies. `npm run dead` lists unused code, as a signal only.
-- `npm run loc` prints the lines of code, tests, and docs and comments that the commits of the branch add and remove (add `-- --base <ref>` for a stack). The skill `/chatter-pr-description` ([.agents/skills/chatter-pr-description/SKILL.md](.agents/skills/chatter-pr-description/SKILL.md)) puts this table in the pull request description. It is a signal, not a gate.
+- `npm run loc` prints the lines of code, tests, and docs and comments that the commits of the branch add and remove (add `-- --base <ref>` for a stack). The skill `/chatter-pr-description` ([.agents/skills/chatter-pr-description/SKILL.md](.agents/skills/chatter-pr-description/SKILL.md)) puts this table at the top of the pull request description. It is a signal, not a gate.
 - `docs/` is its own npm package. Run `npm --prefix docs ci` once, then `npm run docs:build`. The build fails on a dead link.
 
 ## How we work
