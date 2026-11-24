@@ -308,9 +308,18 @@ describe('update routes', () => {
         const body = heldStream();
         const reply = upload(app, body.stream, { 'Content-Length': '100' });
         body.send('half');
-        await vi.waitFor(() => expect(inboxNames()).toHaveLength(1));
+        // The file has the bytes, so the idle timer started again after them. vi.waitFor moves the fake time, so this
+        // waits with setImmediate, which is real, and the fake time stays at the start of the idle time.
+        const fileHasTheBytes = () => inboxNames().some((name) => readFileSync(path.join(inbox, name), 'utf8') === 'half');
+        for (let turn = 0; turn < 10_000 && !fileHasTheBytes(); turn++) await new Promise((next) => setImmediate(next));
+        expect(fileHasTheBytes()).toBe(true);
 
-        vi.advanceTimersByTime(30_000);
+        // 1 ms before the limit, the idle timer has not stopped the upload: it is the one timer that still waits
+        expect(vi.getTimerCount()).toBe(1);
+        vi.advanceTimersByTime(29_999);
+        expect(vi.getTimerCount()).toBe(1);
+
+        vi.advanceTimersByTime(1);
         const res = await reply;
 
         expect(res.status).toBe(408);
