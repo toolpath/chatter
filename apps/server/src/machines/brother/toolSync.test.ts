@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TOOL_SYNC_MIN_GAP_MS, ToolSyncTracker } from './toolSync.js';
+import { ToolSyncTracker } from './toolSync.js';
 
 const START = Date.parse('2026-11-21T08:00:00Z');
 const MINUTE = 60_000;
@@ -100,7 +100,7 @@ describe('ToolSyncTracker', () => {
     expect(tracker.manualRefusal(START + 1000)).toEqual({ outcome: 'busy' });
     tracker.ended(START + 2000, null);
     expect(tracker.manualRefusal(START + 10_000)).toEqual({ outcome: 'too-soon', retryAfterSeconds: 20 });
-    expect(tracker.manualRefusal(START + TOOL_SYNC_MIN_GAP_MS)).toBeNull();
-    expect(TOOL_SYNC_MIN_GAP_MS).toBe(30_000);
+    expect(tracker.manualRefusal(START + 29_999)).toEqual({ outcome: 'too-soon', retryAfterSeconds: 1 });
+    expect(tracker.manualRefusal(START + 30_000)).toBeNull();
   });
 });

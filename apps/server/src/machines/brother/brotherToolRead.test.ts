@@ -80,25 +80,38 @@ async function syncWithReconnects(fake: FakeConnection, count: number) {
 describe('Brother tool read: only on a Sync', () => {
   useFakeClock();
 
-  /** Poll every 2 seconds for `minutes`, as the scheduler does. Each poll says READY. */
+  /**
+   * Poll every 2 seconds for `minutes`, as the scheduler does. Each poll says READY. Halfway, the machine closes the
+   * connection, so the next poll connects again (an unplanned reconnect).
+   */
   async function pollReadyFor(fake: FakeConnection, minutes: number) {
+    const half = (minutes * 60_000) / 2;
+    const connectsBefore = fake.connects;
     for (let elapsed = 0; elapsed <= minutes * 60_000; elapsed += 2000) {
+      if (elapsed === half) fake.machineClosed();
       await fake.connector.poll();
       vi.setSystemTime(Date.now() + 2000);
     }
+    expect(fake.connects).toBeGreaterThan(connectsBefore);
   }
 
-  const toolCommandsSent = (fake: FakeConnection) => fake.sent.filter(command => command.startsWith('ATCTL') || command.startsWith('TOLN'));
+  const isToolCommand = (command: string) => command.startsWith('ATCTL') || command.startsWith('TOLN');
 
-  it('sends no tool command from a fresh connect and 30 minutes of READY polls', async () => {
-    const fake = connectedBrother();
-    fake.connector.disconnect();
+  const toolCommandsSent = (fake: FakeConnection) => fake.sent.filter(isToolCommand);
 
-    await pollReadyFor(fake, 30);
+  it('sends no tool command from a new connector (a server start) and 30 minutes of READY polls, with a real TCP connection', async () => {
+    const fake = await startFakeBrother();
+    const connector = new BrotherConnector({ id: 'b1', name: 'Speedio', host: '127.0.0.1', dataPort: fake.port, timeout: 1000 });
 
-    expect(fake.connects).toBe(1);
-    expect(toolCommandsSent(fake)).toEqual([]);
-    expect(fake.connector.getStatus().data.toolSync).toEqual({ lastSyncAt: null, lastAttemptAt: null, error: null, running: false });
+    for (let elapsed = 0; elapsed <= 30 * 60_000; elapsed += 2000) {
+      expect((await connector.poll()).connected).toBe(true);
+      vi.setSystemTime(Date.now() + 2000);
+    }
+    const toolSync = connector.getStatus().data.toolSync;
+    connector.disconnect();
+
+    expect(fake.commands.filter(isToolCommand)).toEqual([]);
+    expect(toolSync).toEqual({ lastSyncAt: null, lastAttemptAt: null, error: null, running: false });
   });
 
   it('sends no tool command across the planned reconnects of 30 minutes of READY polls, with a real TCP connection', async () => {
@@ -111,8 +124,9 @@ describe('Brother tool read: only on a Sync', () => {
     }
     connector.disconnect();
 
-    expect(fake.events.filter(event => event.startsWith('connect')).length).toBeGreaterThanOrEqual(25);
-    expect(fake.commands.filter(command => command.startsWith('ATCTL') || command.startsWith('TOLN'))).toEqual([]);
+    // The first connect, then a planned reconnect at each 60 s mark: 60 s, 120 s, ... 1800 s
+    expect(fake.events.filter(event => event.startsWith('connect')).length).toBe(31);
+    expect(fake.commands.filter(isToolCommand)).toEqual([]);
   });
 
   it('sends no tool command after an address change and 30 minutes of READY polls', async () => {
@@ -422,6 +436,25 @@ describe('Brother tool sync: the tool table and the tool data, read apart from t
     expect(machine.fake.connects).toBe(1);
     expect(machine.sent).not.toContain('ATCTL');
     expect((await machine.connector.requestToolSync()).outcome).toBe('synced');
+  });
+
+  it('does not trust the READY poll from before the machine closed the connection: a Sync during the reconnect waits for the new poll', async () => {
+    const machine = machineThatTakes(100);
+    await machine.poll();
+    machine.fake.machineClosed();
+    const panel = machine.fake.hold('PANEL');
+    machine.replies.MEM = MEM_FEED_HOLD;
+    const poll = machine.poll();
+    await vi.waitFor(() => expect(panel.waiting).toBe(true));
+
+    const sync = machine.connector.requestToolSync();
+    panel.release();
+    await poll;
+
+    expect(machine.fake.connects).toBe(1);
+    expect(await sync).toEqual({ outcome: 'program-running' });
+    expect(machine.sent).not.toContain('ATCTL');
+    expect(machine.sent).not.toContain('TOLNI1');
   });
 
   // The shop finding on a C00: a tool read near the time when an open door stopped the program kept the control from

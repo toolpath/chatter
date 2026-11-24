@@ -8,7 +8,7 @@ import { captureLog, type CapturedLog } from '../../logging/testSupport.js';
 import { ConnectionLog } from '../../logging/ConnectionLog.js';
 import { HardwarePoller } from '../../polling/poller.js';
 import type { MachineRegistry } from '../../polling/MachineRegistry.js';
-import { MOCK_RESPONSES, closeFakeBrothers, closedPort, startFakeBrother, type FakeBrother } from './testSupport.js';
+import { MEM_FEED_HOLD, MOCK_RESPONSES, closeFakeBrothers, closedPort, startFakeBrother, type FakeBrother } from './testSupport.js';
 import { sendForever } from '../testSupport.js';
 
 /**
@@ -571,6 +571,22 @@ describe('Brother planned reconnect when the control does not close its side', (
 
     expect(await sync).toEqual({ outcome: 'synced', toolSync: expect.objectContaining({ error: null, running: false }) });
     expect(fake.machineSides).toHaveLength(2);
+  });
+
+  it('refuses a Sync during the reconnect when the new connection finds a feed hold, and reads no tools', async () => {
+    const brother = await brotherThatKeepsItsSideOpen();
+    // The poll before the reconnect said READY. The poll on the new connection finds a feed hold.
+    fake.replies.MEM = MEM_FEED_HOLD;
+    const poll = brother.poll();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    const sync = brother.requestToolSync();
+    await vi.advanceTimersByTimeAsync(1000);
+    await poll;
+
+    expect(await sync).toEqual({ outcome: 'program-running' });
+    expect(fake.machineSides).toHaveLength(2);
+    expect(fake.commands.filter(command => command.startsWith('ATCTL') || command.startsWith('TOLN'))).toEqual([]);
   });
 });
 
