@@ -31,6 +31,7 @@ npm test
 - Do not add AI attribution. A commit message has no `Co-Authored-By` line, and a pull request has no "Generated with" line. `.claude/settings.json` turns off these lines in Claude Code.
 - Write docs and screen text in ASD-STE100 Simplified Technical English: short sentences, active voice, one idea in each sentence.
 - Server logging: use `createLogger('component')` from `apps/server/src/logging/logger.ts`. In tests, read the log with `captureLog()` from `logging/testSupport.ts`.
+- Before you propose to hide or lock something for security, read [What we protect](docs/security.md#what-we-protect). Protect credentials, actions, program content and the audit trail. Do not hide from a logged-in user what each computer on the network can find.
 - Web colors: text uses `text-primary-text`, so it is easy to read in light mode. Fills and borders use `primary`.
 
 ## Guardrails
