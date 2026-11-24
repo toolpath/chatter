@@ -1,4 +1,4 @@
-import { newPasswordProblem } from '@local-chatter/shared';
+import { MIN_PASSWORD_LENGTH, newPasswordProblem } from '@local-chatter/shared';
 import { useState, type FormEvent } from 'react';
 import type { AuthResult } from '../api/auth';
 import { Field, TextInput } from './ui/fields';
@@ -49,6 +49,9 @@ export function UsernameField({ value, onChange }: UsernameFieldProps) {
     </Field>
   );
 }
+
+/** The password rule for the user, before they send a form with a new password */
+export const PASSWORD_RULE_TEXT = `Use ${MIN_PASSWORD_LENGTH} characters or more for the password. Do not use the username or a common password.`;
 
 /**
  * Returns the problem with a new password and its second copy, or null when both are good.

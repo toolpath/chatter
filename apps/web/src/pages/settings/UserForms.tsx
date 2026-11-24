@@ -1,7 +1,7 @@
 import { ROLES, type Role, type UserToAdd } from '@local-chatter/shared';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import type { ChatterUser } from '../../api/settings';
-import { newPasswordFormProblem, PasswordField } from '../../components/PasswordForm';
+import { newPasswordFormProblem, PASSWORD_RULE_TEXT, PasswordField } from '../../components/PasswordForm';
 import { Button } from '../../components/ui/Button';
 import { CloseButton } from '../../components/ui/CloseButton';
 import { Field, SelectInput, TextInput } from '../../components/ui/fields';
@@ -89,7 +89,7 @@ export function AddUserForm({ onAdd, ...state }: FormState & { onAdd: (user: Use
   return (
     <UserForm
       title="Add a user"
-      description="Give the username and the password to the person. They can change the password on Your account."
+      description={`${PASSWORD_RULE_TEXT} Give the username and the password to the person. They can change the password on Your account.`}
       saveLabel="Add user"
       problem={trimmedUsername ? newPassword.problem : 'Type a username'}
       onSave={() => onAdd({ username: trimmedUsername, password: newPassword.password, role })}
@@ -142,7 +142,7 @@ export function SetPasswordForm({ user, onSet, ...state }: SetPasswordFormProps)
   return (
     <UserForm
       title={`Set a new password for ${user.username}`}
-      description={`Each browser of ${user.username} is logged out. Give the new password to the person.`}
+      description={`${PASSWORD_RULE_TEXT} Each browser of ${user.username} is logged out. Give the new password to the person.`}
       saveLabel="Set password"
       problem={newPassword.problem}
       onSave={() => onSet(newPassword.password)}
