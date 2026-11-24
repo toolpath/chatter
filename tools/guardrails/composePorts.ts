@@ -83,6 +83,17 @@ function range(text: string): number[] {
   return Array.from({ length: last - first + 1 }, (_, i) => first + i);
 }
 
+/**
+ * The parts of a short-form entry: [HOST_IP:][HOST_PORT:]CONTAINER_PORT[/PROTOCOL]. An IPv6 host address is in brackets,
+ * or (Docker Compose accepts this too) it is all the parts before the last two. As in Docker Compose, the protocol
+ * comes off the last part only, so a "/" in the host address does not cut the ports.
+ */
+function shortFormParts(text: string): string[] {
+  const ipv6 = /^\[([^\]]+)\]:(.*)$/.exec(text);
+  const parts = ipv6 ? [ipv6[1], ...ipv6[2].split(':')] : text.split(':');
+  return parts.length >= 3 ? [parts.slice(0, -2).join(':'), ...parts.slice(-2)] : parts;
+}
+
 /** The host address and the container ports of one "ports:" entry, in the short or the long form. */
 export function portsOpened(entry: ComposePort, environment: Environment = {}): OpenedPorts {
   if (typeof entry === 'number') return { hostIp: '', containerPorts: [entry] };
@@ -93,13 +104,29 @@ export function portsOpened(entry: ComposePort, environment: Environment = {}): 
     };
   }
 
-  // [HOST_IP:][HOST_PORT:]CONTAINER_PORT[/PROTOCOL]. An IPv6 host address is in brackets, or
-  // (Docker Compose accepts this too) it is all the parts before the last two.
-  const withoutProtocol = interpolate(entry, environment).split('/')[0];
-  const ipv6 = /^\[([^\]]+)\]:(.*)$/.exec(withoutProtocol);
-  const parts = ipv6 ? [ipv6[1], ...ipv6[2].split(':')] : withoutProtocol.split(':');
-  return {
-    hostIp: parts.length >= 3 ? parts.slice(0, -2).join(':') : '',
-    containerPorts: range(parts[parts.length - 1]),
-  };
+  const parts = shortFormParts(interpolate(entry, environment));
+  const containerPort = parts[parts.length - 1].replace(/\/[^/]*$/, '');
+  return { hostIp: parts.length === 3 ? parts[0] : '', containerPorts: range(containerPort) };
+}
+
+// Stands for any text that a user can give a variable. It has no ":" and no "/", so it stays in one part.
+const USER_TEXT = '<user text>';
+
+/**
+ * True when a variable can change the host port, the container port or the protocol of the entry. Only the host
+ * address may come from a variable: a ".env" file can hold any text. The test tries each variable not set, empty and
+ * set to any text, and looks for that text in the last two parts.
+ */
+export function variableInPorts(entry: ComposePort): boolean {
+  if (typeof entry === 'number') return false;
+  if (typeof entry === 'object') {
+    return [entry.target, entry.published, entry.protocol].some(value => variablesIn(String(value ?? '')).length > 0);
+  }
+
+  const names = variablesIn(entry);
+  const environments = names.reduce<Environment[]>(
+    (all, name) => all.flatMap(environment => [undefined, '', USER_TEXT].map(value => ({ ...environment, [name]: value }))),
+    [{}],
+  );
+  return environments.some(environment => shortFormParts(interpolate(entry, environment)).slice(-2).join(':').includes(USER_TEXT));
 }
