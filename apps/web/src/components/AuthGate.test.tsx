@@ -30,6 +30,14 @@ describe('AuthGate', () => {
     expect(screen.getByLabelText('Username')).toBeInTheDocument();
   });
 
+  it('tells the password rule on the first run, before the user sends the form', async () => {
+    mockedGetAuthStatus.mockResolvedValue(FIRST_RUN);
+    renderGate();
+    await screen.findByText('Welcome to Chatter');
+
+    expect(screen.getByText(/Use 8 characters or more for the password\. Do not use the username or a common password\./)).toBeInTheDocument();
+  });
+
   it('does not send a first-run password that is the username', async () => {
     mockedGetAuthStatus.mockResolvedValue(FIRST_RUN);
     renderGate();

@@ -94,6 +94,18 @@ describe('UsersTab', () => {
     expect(addUser).not.toHaveBeenCalled();
   });
 
+  it('tells the password rule in the forms that set a password, before the user sends the form', async () => {
+    await renderTab();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add user' }));
+    expect(within(addUserForm()).getByText(/Use 8 characters or more for the password\. Do not use the username or a common password\./)).toBeInTheDocument();
+    fireEvent.click(within(addUserForm()).getByRole('button', { name: 'Cancel' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set a new password for sam' }));
+    const setPasswordForm = screen.getByRole('dialog', { name: 'Set a new password for sam' });
+    expect(within(setPasswordForm).getByText(/Use 8 characters or more for the password\. Do not use the username or a common password\./)).toBeInTheDocument();
+  });
+
   it('shows the reason of the server, and keeps the form open', async () => {
     vi.mocked(addUser).mockRejectedValue(new Error('A user with this username exists already'));
     await renderTab();
