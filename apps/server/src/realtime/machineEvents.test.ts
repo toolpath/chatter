@@ -3,14 +3,7 @@ import { setTimeout as wait } from 'node:timers/promises';
 import { Hono, type Context } from 'hono';
 import { captureLog } from '../logging/testSupport.js';
 import type { MachineChangeFeed } from './MachineChangeFeed.js';
-import type { LoggedInEnv } from '../auth/authRoutes.js';
 import { KEEP_ALIVE_MS, machineEventRoutes } from './machineEvents.js';
-
-/** An app with the logged-in Admin of requireLogin, as app.ts has it before the live events */
-const asAdmin = () => new Hono<LoggedInEnv>().use((c, next) => {
-  c.set('user', { id: 1, username: 'admin', role: 'admin' });
-  return next();
-});
 
 describe('machineEventRoutes', () => {
   it('logs an error of the live events, sends no error text, and closes the stream so the browser connects again', async () => {
@@ -18,7 +11,7 @@ describe('machineEventRoutes', () => {
       currentMachines: () => { throw new Error('the machine list is broken'); },
       subscribe: () => () => {},
     } as unknown as MachineChangeFeed;
-    const app = asAdmin().route('/', machineEventRoutes(feed, () => 'admin'));
+    const app = new Hono().route('/', machineEventRoutes(feed, () => 'admin'));
     const log = captureLog();
 
     const res = await app.request('/events');
@@ -51,7 +44,7 @@ describe('machineEventRoutes', () => {
       vi.useFakeTimers();
       try {
         const isLoggedIn = vi.fn(() => true);
-        const app = asAdmin().route('/', machineEventRoutes(feed, () => 'admin', isLoggedIn));
+        const app = new Hono().route('/', machineEventRoutes(feed, () => 'admin', isLoggedIn));
         const reader = (await app.request('/events')).body!.getReader();
         await reader.read();
         expect(isLoggedIn).not.toHaveBeenCalled();
@@ -73,7 +66,7 @@ describe('machineEventRoutes', () => {
       vi.useFakeTimers();
       try {
         let loggedIn = true;
-        const app = asAdmin().route('/', machineEventRoutes(feed, () => 'admin', () => loggedIn));
+        const app = new Hono().route('/', machineEventRoutes(feed, () => 'admin', () => loggedIn));
         const reader = (await app.request('/events')).body!.getReader();
         await reader.read();
 
@@ -103,7 +96,7 @@ describe('machineEventRoutes', () => {
     }
 
     /** Open the live events and read the first event (the machine list) */
-    async function openEvents(app: Pick<Hono, 'request'>): Promise<ReadableStreamDefaultReader<Uint8Array>> {
+    async function openEvents(app: Hono): Promise<ReadableStreamDefaultReader<Uint8Array>> {
       const reader = (await app.request('/events')).body!.getReader();
       await reader.read();
       return reader;
@@ -120,7 +113,7 @@ describe('machineEventRoutes', () => {
 
     it('frees the stream slot of the login, so the failed streams do not close the good ones', async () => {
       const { state, feed, subscribe } = feedThatFails();
-      const app = asAdmin().route('/', machineEventRoutes(feed, () => 'admin'));
+      const app = new Hono().route('/', machineEventRoutes(feed, () => 'admin'));
       const log = captureLog();
       const readers = [await openEvents(app)];
       state.failing = true;

@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono';
 import type { SSEStreamingApi } from 'hono/streaming';
-import { MACHINE_EVENTS, machineStatusFor, type MachineRemovedEvent, type Role } from '@local-chatter/shared';
+import { MACHINE_EVENTS, type MachineRemovedEvent } from '@local-chatter/shared';
 import type { MachineChangeFeed, MachineChanges } from './MachineChangeFeed.js';
 import type { LoggedInEnv } from '../auth/authRoutes.js';
 import { StreamsPerLogin } from './StreamsPerLogin.js';
@@ -29,10 +29,9 @@ function sendEvent(stream: SSEStreamingApi, event: string, data: unknown): Promi
   return stream.writeSSE({ event, data: JSON.stringify(data) });
 }
 
-/** Each change, as the role of the stream may see it: a Viewer gets no connection settings (D4) */
-function sendChanges(stream: SSEStreamingApi, changes: MachineChanges, role: Role): void {
+function sendChanges(stream: SSEStreamingApi, changes: MachineChanges): void {
   for (const machine of changes.changed) {
-    void sendEvent(stream, MACHINE_EVENTS.changed, machineStatusFor(role, machine));
+    void sendEvent(stream, MACHINE_EVENTS.changed, machine);
   }
   for (const id of changes.removedIds) {
     void sendEvent(stream, MACHINE_EVENTS.removed, { id } satisfies MachineRemovedEvent);
@@ -73,9 +72,8 @@ export function machineEventRoutes(
     try {
       // Subscribe before the first wait, so no change is lost while the list is sent.
       // The writes go out in the order they are made, so the list is still first.
-      const role = c.var.user.role;
-      const listSent = sendEvent(stream, MACHINE_EVENTS.list, feed.currentMachines().map(machine => machineStatusFor(role, machine)));
-      unsubscribe = feed.subscribe(changes => sendChanges(stream, changes, role));
+      const listSent = sendEvent(stream, MACHINE_EVENTS.list, feed.currentMachines());
+      unsubscribe = feed.subscribe(changes => sendChanges(stream, changes));
       await listSent;
       while (!stopped) {
         await Promise.race([stream.sleep(KEEP_ALIVE_MS), whenStopped]);

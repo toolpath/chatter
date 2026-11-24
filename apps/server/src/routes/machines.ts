@@ -1,15 +1,14 @@
-import { Hono, type Context } from 'hono';
-import { machineStatusFor } from '@local-chatter/shared';
+import { Hono } from 'hono';
 import type { HardwarePoller } from '../polling/poller.js';
 import { MTConnectConnector } from '../machines/mtconnect/MTConnectConnector.js';
 import { findMachineWithSameAddress, getRequestedDataPort } from '../polling/machinePorts.js';
 import { PasswordNeededError } from '../polling/machineSettings.js';
-import { requirePermission, type LoggedInEnv } from '../auth/authRoutes.js';
+import { requirePermission } from '../auth/authRoutes.js';
 import { addAuditDetail } from '../logging/audit.js';
 import { checkedJson } from './checks.js';
 import { notFound } from './responses.js';
 import { addMachineSchema, scanPortSchema, trustCertificateSchema, updateMachineSchema } from './schemas.js';
-import type { BaseMachineStatus, ToolSyncErrorBody } from '../types/index.js';
+import type { ToolSyncErrorBody } from '../types/index.js';
 
 const NOT_SIEMENS = 'Only a Siemens machine has an OPC UA certificate.';
 
@@ -18,17 +17,12 @@ function unknownOutcome(result: never): never {
   throw new Error(`No reply for the Sync outcome ${JSON.stringify(result)}`);
 }
 
-/** The machines as the role of the user may see them: a Viewer gets no connection settings (D4, machineStatusFor) */
-export function machinesForRoleOf(c: Context<LoggedInEnv>, machines: BaseMachineStatus[]) {
-  return machines.map(machine => machineStatusFor(c.var.user.role, machine));
-}
-
 /** List, add, change, and remove machines */
 export function machineRoutes(poller: HardwarePoller) {
   const canManageMachines = requirePermission('manage-machines');
   const canSyncTools = requirePermission('sync-tools');
-  return new Hono<LoggedInEnv>()
-    .get('/machines', c => c.json(machinesForRoleOf(c, poller.getMachines())))
+  return new Hono()
+    .get('/machines', c => c.json(poller.getMachines()))
 
     .post('/machines', canManageMachines, checkedJson(addMachineSchema), async c => {
       const request = c.req.valid('json');
@@ -43,7 +37,7 @@ export function machineRoutes(poller: HardwarePoller) {
 
     .get('/machine/:id', c => {
       const machine = poller.getMachine(c.req.param('id'));
-      return machine ? c.json(machineStatusFor(c.var.user.role, machine)) : notFound(c);
+      return machine ? c.json(machine) : notFound(c);
     })
 
     .put('/machine/:id', canManageMachines, checkedJson(updateMachineSchema), async c => {

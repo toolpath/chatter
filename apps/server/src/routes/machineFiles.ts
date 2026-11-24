@@ -2,7 +2,7 @@ import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { createMiddleware } from 'hono/factory';
 import type { UnofficialStatusCode } from 'hono/utils/http-status';
-import { FILE_LIST_CUT_SHORT_HEADER, hideMachineAddress, PROGRAM_UPLOAD_LIMIT_BYTES, seesMachineSettings } from '@local-chatter/shared';
+import { FILE_LIST_CUT_SHORT_HEADER, PROGRAM_UPLOAD_LIMIT_BYTES } from '@local-chatter/shared';
 import type { HardwarePoller } from '../polling/poller.js';
 import { recordUpload, type SentBy } from '../storage/database.js';
 import { attachmentHeader, downloadAsStream } from './fileDownload.js';
@@ -168,15 +168,7 @@ export function machineFileRoutes(poller: HardwarePoller, proxySettings: ProxySe
       const connector = poller.getConnector(c.req.param('id'));
       if (!connector) return notFound(c);
 
-      let tree: Awaited<ReturnType<typeof connector.readFileTree>>;
-      try {
-        tree = await connector.readFileTree(path, parseInt(depth), c.req.raw.signal);
-      } catch (error) {
-        // A Viewer can read the program list, but not the address or the FTP username in its error (D4)
-        if (error instanceof Error && !seesMachineSettings(c.var.user.role)) error.message = hideMachineAddress(error.message, connector.getStatus());
-        throw error;
-      }
-      const { nodes, isCutShort } = tree;
+      const { nodes, isCutShort } = await connector.readFileTree(path, parseInt(depth), c.req.raw.signal);
       if (isCutShort) c.header(FILE_LIST_CUT_SHORT_HEADER, 'true');
       return c.json(nodes);
     })
