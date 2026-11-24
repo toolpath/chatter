@@ -37,7 +37,7 @@ Chatter is made for a **shop network that you trust**, behind a firewall. Do not
 These limits are known. They are not bugs, but you must know them:
 
 - **Every computer on the network can open Chatter** on port 3001. On Linux, a ufw or firewalld rule does not stop them, because Docker sends the traffic of a published port around these rules. To let only some computers reach Chatter, see [Limit who can reach Chatter](#limit-who-can-reach-chatter).
-- **Docker can also publish port 3001 on the IPv6 addresses of the computer.** Then other computers can open Chatter on an IPv6 address, also when a rule for IPv4 stops them. To see the addresses, run `docker port chatterbox`. A line with `[::]` is for IPv6. To stop this, publish the port on one IPv4 address (see [Limit who can reach Chatter](#limit-who-can-reach-chatter)).
+- **Docker can also publish port 3001 on the IPv6 addresses of the computer.** Then other computers can open Chatter on an IPv6 address, also when a rule for IPv4 stops them. To see the addresses, run `docker port chatterbox`. A line with `[::]` is for IPv6. To stop this, publish the port on one IPv4 address (see [Limit who can reach Chatter](#limit-who-can-reach-chatter)). On the Pi card, see [IPv6 on the Pi card](#ipv6-on-the-pi-card).
 - **No HTTPS by itself.** Other people on the network can read the login cookie, and the password that a program sends. To use HTTPS, put a reverse proxy in front of Chatter (see [Use HTTPS](./guide/https.md)). A login cookie from plain HTTP gets the Secure flag when the browser uses it over HTTPS. This does not stop a copy that a person read before. After a move to HTTPS, each user clicks **Log out**, logs in again through the proxy, and then clicks **Log out all other browsers** (see step 5 in [Use HTTPS](./guide/https.md)).
 - **Chatter sends no HSTS header.** HSTS tells a browser to use only HTTPS for an address. On a LAN address with plain HTTP, it can lock the users out. If your proxy gives HTTPS, the proxy can send HSTS. Chatter sends the other security headers: other sites cannot show Chatter in a frame, and the page loads scripts only from Chatter.
 - **Chatter accepts at most 256 connections at a time.** This keeps file handles free for the database, the log and the machines. Chatter closes a connection that does not send its request headers in about 20 seconds. Each login can have 5 live update streams. When a login opens a 6th, its oldest stream closes. A computer on the network can still use all 256 connections, and then other browsers cannot open Chatter until it stops.
@@ -84,8 +84,11 @@ Chatter itself cannot install an update. It only puts the update file and a requ
 
 - The helper installs only a file that is signed with the Chatter release key, and only a newer version. So a bad download or a bad upload cannot install.
 - GitHub signs the update file in a separate job. Only that job gets the release key, and it runs no GitHub Action except the checkout. Each workflow pins its actions by a full commit.
-- The sign job refuses a tag that is not on `main`. This check stops a mistake, but not an attack. For a tag, GitHub runs the workflow file of the tagged commit. So a person who can push to the repo can push a tag on another commit, with a changed workflow that skips the check and reads the key. The `release` environment gives the key to each tag such as `v1.2.0`. A tag ruleset and required reviewers on the `release` environment stop this attack. These settings are a separate item, and they are not on yet.
-- Until these settings are on, a new tag on an old commit of `main` also gets a signed update file.
+- The sign job refuses a tag that is not on `main`. This check stops a mistake, but not an attack. For a tag, GitHub runs the workflow file of the tagged commit. So a tag on another commit can run a changed workflow that skips the check and reads the key. The `release` environment gives the key only to a tag such as `v1.2.0`.
+- The tag ruleset "Release tags" lets only a person with the Admin role of the repo make, move or delete a tag that starts with `v`. So a person with the Write or Maintain role, or a stolen token of that person, cannot make a release tag.
+- The `release` environment has no required reviewers. The owners of the GitHub organization also have the Admin role of the repo. An Admin can also bypass the rules of the environment. So an Admin account, or a stolen token of an Admin, can still get a signed update file from a changed workflow. Keep the number of Admins small, and use two-factor authentication for each Admin account.
+- A release tag on an old commit of `main` also gets a signed update file. Only an Admin can make this tag. The helper installs only a newer version, but the version comes from the name of the tag. So a tag such as `v9.9.9` on an old commit makes a "newer" version of old code, and each Pi accepts it.
+- The helper trusts each public key in `/etc/chatter/update-keys/` on the card. An update file never changes the helper or its keys. So if the release key leaks, a card trusts the leaked key until the user puts a new card image on it. For the steps, see [If the update key leaks](./develop/update-key-leak.md).
 - The helper does not trust anything that Chatter says or puts in the folder. So an attacker who breaks into Chatter cannot use the helper to take control of the Pi.
 - A newer helper also accepts the request `reboot`, and restarts the Pi at most once in 15 minutes. So an attacker who breaks into Chatter can restart the Pi, but cannot keep it down.
 - A newer helper writes `network.json` (the addresses of the Pi, the gateway, and if SSH is on) and `helper.log` for **Settings > Diagnostics**. It writes each value only when the value has the expected shape.
@@ -151,6 +154,7 @@ VictoriaMetrics (the machine history database) and vmalert have no login. Anyone
 - VictoriaMetrics and vmalert are only on the Docker network `history`. This network is internal. So no other computer on the network can send packets to these containers, and these containers cannot connect to the shop network or to the internet. Chatter is on `history` and on the network `default`. Do not put `victoriametrics` or `vmalert` on `default`, and do not remove `internal: true`.
 - Port 3002 of Chatter is on the network `default`. On Linux, a Docker Engine older than 28 lets a computer on the same network send packets directly to the address of a container. So that computer can reach port 3002. Use Docker Engine 28 or later (see [Install on a computer](./install/computer.md)). Each Pi card, from the first card of Chatter 1.0.0, has Docker 28 or later. The card build installs the newest Docker from the packages of Docker. An update of Chatter does not change Docker. To see the version, run `docker version` on the Pi.
 - Each container on the network `history` can reach VictoriaMetrics and vmalert. Each container on the network `default` can reach port 3002. Do not add other services to this `docker-compose.yml`, and do not connect other containers to its networks.
+- Chatter is one of these containers. So each address that an Admin types, for example the address of a notification channel or of a machine, can reach VictoriaMetrics and vmalert, for example `http://victoriametrics:8428`. Only an Admin can set these addresses. Type only the address of a service or a machine outside Chatter.
 - Without Docker, Chatter listens on port 3002 only on `127.0.0.1`. Change `ALERT_HOST` only to an address that other computers cannot reach.
 
 Only an Admin can read and change the alert rules. A custom alert query can only read the machine history. It cannot change or delete data.
@@ -186,6 +190,21 @@ Chatter then answers only on that IP address. A computer on the other network ca
 - **Did you change `"3001:3001"` in `docker-compose.yml` in an older version?** For example, to `"127.0.0.1:3001:3001"`. Do not change the new line. Put the IP address in the `.env` file, for example `CHATTER_BIND_ADDRESS=127.0.0.1`.
 - **To go back**, remove the line, then run `docker compose up -d` again.
 - **Not on the Pi card.** The update helper checks Chatter at `127.0.0.1:3001`. With a different address, each update fails the check and goes back to the old version. On the Pi card, use the `DOCKER-USER` rule.
+- **IPv6 on the Pi card.** See [IPv6 on the Pi card](#ipv6-on-the-pi-card).
+
+### IPv6 on the Pi card
+
+The `DOCKER-USER` rule stops only IPv4. On the Pi card, do not set `CHATTER_BIND_ADDRESS`. So a computer can open Chatter on the IPv6 address of the Pi.
+
+- A rule at your router stops only the IPv6 traffic from other networks. A computer on the same network as the Pi does not send its traffic through the router. So it can still open Chatter over IPv6. There, the Chatter login protects Chatter.
+- To stop this traffic too, turn off IPv6 on the Pi. On the Pi, run:
+  ```bash
+  printf 'net.ipv6.conf.all.disable_ipv6 = 1\nnet.ipv6.conf.default.disable_ipv6 = 1\n' | sudo tee /etc/sysctl.d/90-chatter-no-ipv6.conf
+  sudo sysctl --system
+  ```
+  The setting stays after a restart. Then open Chatter on the IPv4 address of the Pi, to make sure that it still works.
+- **We did not test these commands on a Chatter card yet.** If Chatter does not open after the change, delete the file `/etc/sysctl.d/90-chatter-no-ipv6.conf` and restart the Pi.
+- The update helper checks Chatter at `127.0.0.1`, so updates still work without IPv6.
 
 ## Locked out after wrong passwords
 
