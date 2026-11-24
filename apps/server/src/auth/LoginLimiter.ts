@@ -200,7 +200,11 @@ export class LoginLimiter {
   private readonly unknownUsers: FailureCounts<UnknownUserTries>;
   private endedFloods: UnknownUserFlood[] = [];
 
-  constructor(now: () => number = Date.now) {
+  /**
+   * @param nameInLog The username for the warning when a user lock starts. app.ts masks an unknown username here,
+   * because it can be a password. The counts always use the full username.
+   */
+  constructor(now: () => number = Date.now, private readonly nameInLog: (username: string) => string = username => username) {
     this.byAddress = new FailureCounts(now, MAX_FAILURES);
     this.byUser = new FailureCounts(now, MAX_USER_FAILURES);
     this.byDevice = new FailureCounts(now, MAX_DEVICE_FAILURES);
@@ -260,7 +264,7 @@ export class LoginLimiter {
     this.byAddress.add(addressKey(address, username), { address: group, username: user });
     const count = this.byUser.add(user, { username: user });
     // Anyone on the network can start this lock, so the log tells the admin who did it
-    if (count === MAX_USER_FAILURES) log.warn('User locked on all addresses after too many password tries', { username: user, address: group, count });
+    if (count === MAX_USER_FAILURES) log.warn('User locked on all addresses after too many password tries', { username: this.nameInLog(user), address: group, count });
   }
 
   /**

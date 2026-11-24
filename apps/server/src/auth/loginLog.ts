@@ -9,7 +9,7 @@ const MAX_TEXT_LENGTH = 64;
  * logged-in: the username and password were right.
  * password-changed: the current password was right, and the password changed.
  * wrong-password: the account exists, but the password was wrong.
- * no-such-user: no account has this username.
+ * no-such-user: no account has this username. The log keeps only its start and its length (see unknownUsername.ts).
  * locked: the computer had too many wrong passwords, so Chatter did not check the password.
  * reset-password: `npm run reset-password` on the server made this user the new Admin. It is not a password try,
  * but the Admin must see it here, because it changes who controls Chatter.
