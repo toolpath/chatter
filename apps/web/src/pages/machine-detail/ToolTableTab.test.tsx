@@ -101,9 +101,8 @@ describe('ToolTableTab sync', () => {
     renderTab(NOT_SYNCED, {});
 
     expect(screen.getByText(
-      'Chatter reads the tool table only when you press Sync, and only when the control reports that no program runs. '
-      + 'Press Sync only when no program runs. Do not press it while the door is open during a program: '
-      + 'some Brother controls report that no program runs while the door holds a program.',
+      'Chatter reads the tool table only when you press Sync. It reads it only when the control reports that no '
+      + 'program runs. Do not press Sync while a program runs or while the door is open during a program.',
     )).toBeInTheDocument();
     expect(screen.queryByText(/automatic|minutes/)).toBeNull();
   });

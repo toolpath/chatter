@@ -142,9 +142,8 @@ function ToolSyncBar({ machineId, link, toolSync }: { machineId: string; link: M
       <span>{running ? 'Syncing…' : state.lastSyncAt ? `Synced ${timeOf(state.lastSyncAt)}` : 'Not synced yet'}</span>
       {canSync && <Button size="sm" onClick={() => void sync()} disabled={running}>Sync</Button>}
       <span className="text-xs">
-        Chatter reads the tool table only when you press Sync, and only when the control reports that no program runs.
-        Press Sync only when no program runs. Do not press it while the door is open during a program: some Brother
-        controls report that no program runs while the door holds a program.
+        Chatter reads the tool table only when you press Sync. It reads it only when the control reports that no
+        program runs. Do not press Sync while a program runs or while the door is open during a program.
       </span>
       {shownError && !running && <span role="alert" className="w-full text-alarm-soft">{shownError}</span>}
     </div>
