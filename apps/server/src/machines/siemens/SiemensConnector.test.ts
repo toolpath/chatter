@@ -162,8 +162,11 @@ describe('SiemensConnector', () => {
       connector = withLogin('signAndEncrypt');
       connector.updateOpcUaSettings({ security: 'none' });
       expect(warnings()).toHaveLength(1);
+      expect(warnings()[0].text).toContain(OPCUA_NO_ENCRYPTION_WARNING);
       expect(warnings()[0].text).toContain('m1');
+      expect(warnings()[0].text).toContain('10.0.0.5');
       expect(warnings()[0].text).not.toContain('secret');
+      expect(warnings()[0].text).not.toContain('OpcUaClient');
 
       connector.updateOpcUaSettings({ security: 'none', user: 'other' });
       await connector.poll();

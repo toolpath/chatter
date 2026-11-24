@@ -305,6 +305,18 @@ describe('openSinumerikSession never sends the password in clear text', () => {
     expect(control.logins()).toEqual([{ type: UserTokenType.Anonymous }]);
   });
 
+  it('with no security, logs in with no login for a username of only spaces, also with a password', async () => {
+    const control = fakeControl(noneEndpoint(CLEAR_TEXT_PASSWORD));
+    await control.open({ ...LOGIN, user: '   ' });
+    expect(control.logins()).toEqual([{ type: UserTokenType.Anonymous }]);
+  });
+
+  it('with no security, logs in with no login for a password with no username', async () => {
+    const control = fakeControl(noneEndpoint(CLEAR_TEXT_PASSWORD));
+    await control.open({ ...LOGIN, user: '' });
+    expect(control.logins()).toEqual([{ type: UserTokenType.Anonymous }]);
+  });
+
   it('with Sign and encrypt, sends the password in a policy with no encryption of its own, because the channel encrypts it', async () => {
     const control = fakeControl([
       endpoint(MessageSecurityMode.SignAndEncrypt, SecurityPolicy.Basic256Sha256, CONTROL_CERTIFICATE, CLEAR_TEXT_PASSWORD),
