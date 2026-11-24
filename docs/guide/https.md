@@ -5,12 +5,14 @@ A reverse proxy is a server that takes the HTTPS requests from the browsers, and
 
 ## Set up the proxy
 
-1. Set up the proxy to send the requests to Chatter on port 3001, with the `X-Forwarded-For` and `X-Forwarded-Proto` headers.
+1. Set up the proxy to send the requests to Chatter on port 3001, with the `X-Forwarded-For` and `X-Forwarded-Proto` headers, and with the `Host` header of the browser.
    Caddy sends these headers by itself. For nginx, add:
    ```nginx
+   proxy_set_header Host $host;
    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
    proxy_set_header X-Forwarded-Proto $scheme;
    ```
+   Without `proxy_set_header Host $host;`, nginx sends the address of Chatter as the host. Then Chatter cannot see the name that the browser used, and the first-run setup check does not work through the proxy.
 2. Open Chatter through the proxy, and log in as an Admin. If no Admin exists yet, first do the setup at the IP address of Chatter, not through the proxy. Chatter accepts the first-run setup only at a local address. Go to **Settings > HTTPS and proxy**.
    The proxy is in the list **Computers that sent proxy headers**. Click **Trust** on its line.
    You can also type its address in **Add a proxy address or range**.
