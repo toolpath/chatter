@@ -82,10 +82,22 @@ describe('login settings routes', () => {
     expect(report.tries.map(loginTry => loginTry.username)).toEqual(['jo… (12 characters)', 'My… (14 characters)']);
   });
 
-  it('shows the username of an old row in full when the result is not no-such-user', async () => {
-    loginLog.record({ username: 'sam', address: ATTACKER, result: 'wrong-password' });
+  it('shows the username of a user that exists in full', async () => {
+    loginLog.record({ username: TEST_LOGIN.username, address: ATTACKER, result: 'wrong-password' });
+    loginLog.record({ username: TEST_LOGIN.username, address: ATTACKER, result: 'locked' });
     const report = (await (await asAdmin('/api/settings/logins')).json()) as LoginsReport;
-    expect(report.tries.map(loginTry => loginTry.username)).toEqual(['sam']);
+    expect(report.tries.map(loginTry => loginTry.username)).toEqual([TEST_LOGIN.username, TEST_LOGIN.username]);
+  });
+
+  it('masks an unknown username in a locked row that an older version saved in full', async () => {
+    // An older version saved the text of a locked try in full too
+    loginLog.record({ username: 'My-Secret-Pa55', address: ATTACKER, result: 'locked' });
+    for (let i = 0; i < 11; i++) await logIn('john-secret1', 'wrong-password');
+
+    const report = (await (await asAdmin('/api/settings/logins')).json()) as LoginsReport;
+    expect(report.tries[0]).toMatchObject({ username: 'jo… (12 characters)', result: 'locked' });
+    expect(report.tries.at(-1)).toMatchObject({ username: 'My… (14 characters)', result: 'locked' });
+    expect(JSON.stringify(report)).not.toContain('Secret');
   });
 
   it('lists a locked computer, and unlocks it', async () => {
@@ -105,7 +117,6 @@ describe('login settings routes', () => {
     for (let i = 0; i < 10; i++) await logIn(TEST_LOGIN.username, 'wrong-password');
     const report = (await (await asAdmin('/api/settings/logins')).json()) as LoginsReport;
     expect(report.locked).toEqual([{ address: ATTACKER, username: TEST_LOGIN.username, until: expect.any(String) }]);
-    await asAdmin('/api/settings/logins/unlock', { address: ATTACKER });
   });
 
   it('unlocks only the IPv4 address that the admin gives', async () => {
@@ -140,6 +151,19 @@ describe('login settings routes', () => {
 
     expect(((await res.json()) as LoginsReport).lockedUsers).toEqual([]);
     expect((await logIn('My-Secret-Pa55', 'wrong-password', '192.168.3.1')).status).toBe(401);
+  });
+
+  it('unlocks each unknown username that fits the masked name, but not a user that exists', async () => {
+    for (let i = 0; i < 30; i++) await logIn('My-Secret-Pa55', 'wrong-password', `192.168.2.${Math.floor(i / 5)}`);
+    for (let i = 0; i < 30; i++) await logIn('My-Other-Pa55!', 'wrong-password', `192.168.4.${Math.floor(i / 5)}`);
+    for (let i = 0; i < 30; i++) await logIn(TEST_LOGIN.username, 'wrong-password', `192.168.5.${Math.floor(i / 5)}`);
+
+    const res = await asAdmin('/api/settings/logins/unlock', { username: 'my… (14 characters)' });
+
+    expect(((await res.json()) as LoginsReport).lockedUsers).toEqual([{ username: TEST_LOGIN.username, until: expect.any(String) }]);
+    expect((await logIn('My-Secret-Pa55', 'wrong-password', '192.168.3.1')).status).toBe(401);
+    expect((await logIn('My-Other-Pa55!', 'wrong-password', '192.168.3.1')).status).toBe(401);
+    expect((await logIn(TEST_LOGIN.username, TEST_LOGIN.password, '192.168.3.1')).status).toBe(429);
   });
 
   describe('log', () => {
