@@ -11,6 +11,25 @@ Open the **Security** tab of the repo, click **Report a vulnerability**, and fil
 
 We fix security problems only in the newest version. To get a fix, [update Chatter](./guide/update.md).
 
+## What we protect
+
+Chatter is for a shop network that you trust, not for the internet. The CNC protocols are public, and most controls have no login on their data ports. So each computer on the network can already find the machines and read their data. The main risk is a user who makes a mistake, not an attacker. So Chatter protects only what gives more than this network access: a saved credential, an action, a program, or the audit trail.
+
+Chatter protects these items:
+
+- **Credentials.** A saved password, token or secret never goes to the browser or into a log. Chatter sends a saved password only to the address where you saved it (see [How Chatter is made to be used](#how-chatter-is-made-to-be-used)).
+- **Actions.** Each action needs the correct role. Only an Operator or an Admin can send a program to a machine or delete a program on it. Only an Admin can change the settings and manage the users.
+- **Program content.** A Viewer sees the names of the program files. A Viewer cannot download or read a program.
+- **The audit trail.** Only an Admin can read the server log, the audit log, the login log and the support bundle. A Viewer does not see who sent a program. Only an Admin sees the address of the computer that sent it (see [Audit](#audit)).
+
+Chatter does not hide this information from a logged-in user, also from a Viewer. Each person on the network can find it without Chatter:
+
+- The names, the addresses and the ports of the machines
+- The FTP and OPC UA usernames of the machines (not the passwords)
+- The status and the health of the machines, and their error texts
+
+A logged-in user who can see this information is not a security problem. Some items are for an Admin only for other reasons, for example the alert rules.
+
 ## How Chatter is made to be used
 
 Chatter is made for a **shop network that you trust**, behind a firewall. Do not make it open to the internet.
@@ -93,7 +112,7 @@ Chatter keeps an audit log in the data volume: `logs/audit.log`, at most 2 files
 - **The upload history tells who sent a program.** Each send of a program records the user and the address of the computer. The address comes from a trusted proxy, as for the login. A send from before this version has no user and no address. A Viewer does not get the user or the address. An Operator gets the user, but not the address. Only an Admin gets the address. A delete is only in the audit log, not in the upload history.
 - **The audit log has no secret.** A line never has a value of the body, a password, a token, or a cookie. From the query, it has only the file name of a program delete. Chatter hides secrets in the details as in the server log.
 - **Only an Admin can read the logs.** The server log, the live log, the login log (**Settings > Logins**), the log of the update helper, and the support bundle (which has the audit log) answer `403` to a Viewer and to an Operator. The connection health of a machine (`/api/machine/:id/health`) is machine status, not a log. Each logged-in user can read it (see [Diagnostics](#diagnostics)).
-- **Only an Admin can read the alert rules.** The rules are settings of a machine. `GET /api/machine/:id/alert-rules` answers `403` to a Viewer and to an Operator. These users see the alerts that fired (`/api/alerts`). For each alert, they see the rule name, the level, the rule ID, the machine, and the text. The name of a simple rule tells its limit, for example "Spindle load above 90%". The text tells the current value, or the minutes of a state rule. For a custom query, they also see the labels of each series that the query gave. These users do not see the query text, a rule that is off, or a rule that did not fire.
+- **Only an Admin can read the alert rules.** `GET /api/machine/:id/alert-rules` answers `403` to a Viewer and to an Operator. These users see the alerts that fired (`/api/alerts`). For each alert, they see the rule name, the level, the rule ID, the machine, and the text. The name of a simple rule tells its limit, for example "Spindle load above 90%". The text tells the current value, or the minutes of a state rule. For a custom query, they also see the labels of each series that the query gave. These users do not see the query text, a rule that is off, or a rule that did not fire.
 - **The audit log is not proof.** A person with access to the data volume or to the server can change or delete the file. When the card is too slow, Chatter can drop lines, and it writes how many. When the files are full, Chatter deletes the oldest lines. Each logged-in user, also a Viewer, can send many requests that are not `GET`, and each one gets a line. So a user who sends many requests can push old lines out in some minutes. To keep the lines longer, copy the file to another computer.
 - **A request with no login gets no `Change` line.** Chatter refuses it before it can change something. The login and the setup have their own lines.
 
