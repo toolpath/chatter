@@ -1,5 +1,6 @@
 import { addressGroup } from './addressGroup.js';
 import { createLogger } from '../logging/logger.js';
+import { maskUnknownUsername } from './unknownUsername.js';
 
 const log = createLogger('auth');
 
@@ -201,10 +202,10 @@ export class LoginLimiter {
   private endedFloods: UnknownUserFlood[] = [];
 
   /**
-   * @param nameInLog The username for the warning when a user lock starts. app.ts masks an unknown username here,
-   * because it can be a password. The counts always use the full username.
+   * @param nameInLog The username for the warning when a user lock starts. It can be a password, so with no function the
+   * warning masks each username. app.ts gives the full name of a user that exists. The counts always use the full username.
    */
-  constructor(now: () => number = Date.now, private readonly nameInLog: (username: string) => string = username => username) {
+  constructor(now: () => number = Date.now, private readonly nameInLog: (username: string) => string = maskUnknownUsername) {
     this.byAddress = new FailureCounts(now, MAX_FAILURES);
     this.byUser = new FailureCounts(now, MAX_USER_FAILURES);
     this.byDevice = new FailureCounts(now, MAX_DEVICE_FAILURES);
