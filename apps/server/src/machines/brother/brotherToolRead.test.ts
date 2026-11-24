@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { BrotherConnector, NO_REPLY_ERROR } from './BrotherConnector.js';
-import { TOOL_SYNC_READY_HOLD_MS, TOOL_SYNC_TIMEOUT_MS } from './toolSync.js';
+import { TOOL_SYNC_TIMEOUT_MS } from './toolSync.js';
 import { applyBrotherUpdate } from '../../polling/machineSettings.js';
 import {
   D00_ATCTLD,
@@ -18,7 +18,7 @@ import {
 } from './testSupport.js';
 
 /**
- * The tool read: the tool table (ATC) and the tool data, read apart from the state polls, automatically or by Sync.
+ * The tool read: the tool table (ATC) and the tool data, read apart from the state polls, only on a Sync.
  * Also the control type (C00 or D00), which the first tool read finds, and what an address change does to both.
  */
 
@@ -38,7 +38,7 @@ afterEach(async () => {
   await closeFakeBrothers();
 });
 
-/** Only the clock is fake, so the 30 s Sync limit and the 10 minutes can pass at once */
+/** Only the clock is fake, so the 30 s Sync limit and long times of polls can pass at once */
 function useFakeClock() {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] });
@@ -57,19 +57,12 @@ function machineThatTakes(msPerCommand: number) {
     fake.sent.length = 0;
     return fake.connector.poll();
   };
-  /** A poll, then the end of the tool sync that it can start */
-  const pollAndSync = async () => {
-    const status = await poll();
-    await fake.connector.toolSyncEnded();
-    return status;
+  /** A READY poll, then a Sync that reads the tools */
+  const pollAndRequestSync = async () => {
+    await poll();
+    expect((await fake.connector.requestToolSync()).outcome).toBe('synced');
   };
-  /** READY polls for the hold time, so the last poll can start the automatic tool read */
-  const pollUntilReadyHeld = async () => {
-    await pollAndSync();
-    vi.setSystemTime(Date.now() + TOOL_SYNC_READY_HOLD_MS);
-    return pollAndSync();
-  };
-  return { fake, connector: fake.connector, replies: fake.replies, sent: fake.sent, poll, pollAndSync, pollUntilReadyHeld };
+  return { fake, connector: fake.connector, replies: fake.replies, sent: fake.sent, poll, pollAndRequestSync };
 }
 
 /** Sync the tools `count` times, 30 s apart (the Sync limit), and connect again before each one */
@@ -77,11 +70,75 @@ async function syncWithReconnects(fake: FakeConnection, count: number) {
   for (let i = 0; i < count; i++) {
     fake.connector.disconnect();
     await fake.connector.poll();
-    await fake.connector.toolSyncEnded();
     await fake.connector.requestToolSync();
     vi.setSystemTime(Date.now() + 30_000);
   }
 }
+
+// The shop finding on a C00: a tool read near a door-open stop kept the control from going into feed hold. So
+// Chatter reads the tools only when a user presses Sync, never by itself.
+describe('Brother tool read: only on a Sync', () => {
+  useFakeClock();
+
+  /** Poll every 2 seconds for `minutes`, as the scheduler does. Each poll says READY. */
+  async function pollReadyFor(fake: FakeConnection, minutes: number) {
+    for (let elapsed = 0; elapsed <= minutes * 60_000; elapsed += 2000) {
+      await fake.connector.poll();
+      vi.setSystemTime(Date.now() + 2000);
+    }
+  }
+
+  const toolCommandsSent = (fake: FakeConnection) => fake.sent.filter(command => command.startsWith('ATCTL') || command.startsWith('TOLN'));
+
+  it('sends no tool command from a fresh connect and 30 minutes of READY polls', async () => {
+    const fake = connectedBrother();
+    fake.connector.disconnect();
+
+    await pollReadyFor(fake, 30);
+
+    expect(fake.connects).toBe(1);
+    expect(toolCommandsSent(fake)).toEqual([]);
+    expect(fake.connector.getStatus().data.toolSync).toEqual({ lastSyncAt: null, lastAttemptAt: null, error: null, running: false });
+  });
+
+  it('sends no tool command across the planned reconnects of 30 minutes of READY polls, with a real TCP connection', async () => {
+    const fake = await startFakeBrother();
+    const connector = new BrotherConnector({ id: 'b1', name: 'Speedio', host: '127.0.0.1', dataPort: fake.port, timeout: 1000 });
+
+    for (let elapsed = 0; elapsed <= 30 * 60_000; elapsed += 10_000) {
+      expect((await connector.poll()).connected).toBe(true);
+      vi.setSystemTime(Date.now() + 10_000);
+    }
+    connector.disconnect();
+
+    expect(fake.events.filter(event => event.startsWith('connect')).length).toBeGreaterThanOrEqual(25);
+    expect(fake.commands.filter(command => command.startsWith('ATCTL') || command.startsWith('TOLN'))).toEqual([]);
+  });
+
+  it('sends no tool command after an address change and 30 minutes of READY polls', async () => {
+    const fake = connectedBrother();
+    await fake.poll();
+    await fake.connector.requestToolSync();
+    expect(toolCommandsSent(fake)).toEqual(['ATCTL', 'TOLNI1']);
+    fake.sent.length = 0;
+
+    applyBrotherUpdate(fake.connector, { host: '192.168.1.60' });
+    await pollReadyFor(fake, 30);
+
+    expect(toolCommandsSent(fake)).toEqual([]);
+  });
+
+  it('sends no tool command after a Sync, in 30 minutes of READY polls', async () => {
+    const fake = connectedBrother();
+    await fake.poll();
+    await fake.connector.requestToolSync();
+    fake.sent.length = 0;
+
+    await pollReadyFor(fake, 30);
+
+    expect(toolCommandsSent(fake)).toEqual([]);
+  });
+});
 
 describe('Brother tool table from a tool sync', () => {
   it('puts the tool of each ATC pot in the table, with the offsets and name from the tool data', async () => {
@@ -130,18 +187,18 @@ describe('Brother tool sync: the tool table and the tool data, read apart from t
     const machine = machineThatTakes(100);
     machine.replies.MEM = MEM_RUNNING;
 
-    await machine.pollAndSync();
+    await machine.poll();
 
     expect([...machine.sent].sort()).toEqual([...STATE_COMMANDS].sort());
   });
 
-  it('does not read the tools while a program runs, also after 10 minutes and more', async () => {
+  it('does not read the tools while a program runs, also after 15 minutes', async () => {
     const machine = machineThatTakes(100);
     machine.replies.MEM = MEM_RUNNING;
-    await machine.pollAndSync();
+    await machine.poll();
 
     vi.setSystemTime(Date.now() + 15 * 60_000);
-    await machine.pollAndSync();
+    await machine.poll();
 
     expect(machine.sent).not.toEqual(expect.arrayContaining(['ATCTL']));
     expect(machine.sent).not.toContain('TOLNI1');
@@ -152,28 +209,16 @@ describe('Brother tool sync: the tool table and the tool data, read apart from t
     const machine = machineThatTakes(100);
     machine.replies.MEM = MEM_RUNNING;
 
-    const status = await machine.pollAndSync();
+    const status = await machine.poll();
 
     expect(status.data.controlType).toBeNull();
     expect(machine.sent).not.toContain('ATCTL');
   });
 
-  it('does not read the tools while the control has said READY for less than 2 minutes', async () => {
-    const machine = machineThatTakes(100);
-    await machine.pollAndSync();
-    expect(machine.sent).not.toContain('ATCTL');
-
-    vi.setSystemTime(Date.now() + TOOL_SYNC_READY_HOLD_MS - 1000);
-    await machine.pollAndSync();
-
-    expect(machine.sent).not.toContain('ATCTL');
-    expect(machine.connector.getStatus().data.toolSync?.lastAttemptAt).toBeNull();
-  });
-
-  it('reads the tools when the control has said READY for 2 minutes with no break, the first time at once', async () => {
+  it('reads the tool table, the tool data and the control type on a Sync', async () => {
     const machine = machineThatTakes(100);
 
-    await machine.pollUntilReadyHeld();
+    await machine.pollAndRequestSync();
 
     expect(machine.sent.slice(-2)).toEqual(TOOL_COMMANDS);
     const { data } = machine.connector.getStatus();
@@ -190,96 +235,30 @@ describe('Brother tool sync: the tool table and the tool data, read apart from t
   ])('does not read the tools during %s, also when the spindle stands still for 15 minutes', async (_, mem) => {
     const machine = machineThatTakes(100);
     machine.replies.MEM = mem;
-    await machine.pollAndSync();
+    await machine.poll();
     expect(machine.connector.getStatus().data.spindleSpeed).toBe(0);
 
     vi.setSystemTime(Date.now() + 15 * 60_000);
-    await machine.pollAndSync();
+    await machine.poll();
 
     expect(machine.sent).not.toContain('ATCTL');
     expect(machine.sent).not.toContain('TOLNI1');
     expect(machine.connector.getStatus().data.toolSync?.lastAttemptAt).toBeNull();
   });
 
-  it('starts the 2 minutes again after one poll that is not READY', async () => {
-    const machine = machineThatTakes(100);
-    await machine.pollAndSync();
-    vi.setSystemTime(Date.now() + TOOL_SYNC_READY_HOLD_MS - 10_000);
-    machine.replies.MEM = MEM_FEED_HOLD;
-    await machine.pollAndSync();
-    machine.replies.MEM = MOCK_RESPONSES.MEM;
-    await machine.pollAndSync();
-
-    vi.setSystemTime(Date.now() + 60_000);
-    await machine.pollAndSync();
-    expect(machine.sent).not.toContain('ATCTL');
-
-    vi.setSystemTime(Date.now() + TOOL_SYNC_READY_HOLD_MS);
-    await machine.pollAndSync();
-    expect(machine.sent).toEqual(expect.arrayContaining(TOOL_COMMANDS));
-  });
-
-  it('starts the 2 minutes again after the connection was lost', async () => {
-    const machine = machineThatTakes(100);
-    await machine.pollAndSync();
-    vi.setSystemTime(Date.now() + TOOL_SYNC_READY_HOLD_MS - 10_000);
-    machine.connector.disconnect();
-    await machine.pollAndSync();
-    expect(machine.fake.connects).toBe(1);
-
-    vi.setSystemTime(Date.now() + 60_000);
-    await machine.pollAndSync();
-
-    expect(machine.sent).not.toContain('ATCTL');
-  });
-
-  it('starts the 2 minutes again after a failed poll', async () => {
-    const machine = machineThatTakes(100);
-    await machine.pollAndSync();
-    vi.setSystemTime(Date.now() + TOOL_SYNC_READY_HOLD_MS - 10_000);
-    machine.fake.fail('MEM');
-    expect((await machine.pollAndSync()).errors).not.toEqual([]);
-    await machine.pollAndSync();
-
-    vi.setSystemTime(Date.now() + 60_000);
-    await machine.pollAndSync();
-
-    expect(machine.sent).not.toContain('ATCTL');
-  });
-
-  it('does not read the tools again while idle when the last read is 10 minutes old or less', async () => {
-    const machine = machineThatTakes(100);
-    await machine.pollUntilReadyHeld();
-
-    vi.setSystemTime(Date.now() + 10 * 60_000 - 1000);
-    await machine.pollAndSync();
-
-    expect(machine.sent).not.toContain('ATCTL');
-  });
-
-  it('reads the tools again while idle when the last read is more than 10 minutes old', async () => {
-    const machine = machineThatTakes(100);
-    await machine.pollUntilReadyHeld();
-
-    vi.setSystemTime(Date.now() + 10 * 60_000 + 1000);
-    await machine.pollAndSync();
-
-    expect(machine.sent).toEqual(expect.arrayContaining(TOOL_COMMANDS));
-  });
-
   it('keeps the tool table between reads, so it stays on the screen and in the history', async () => {
     const machine = machineThatTakes(100);
-    await machine.pollUntilReadyHeld();
+    await machine.pollAndRequestSync();
 
-    const status = await machine.pollAndSync();
+    const status = await machine.poll();
 
     expect(status.data.toolTable?.[1]).toMatchObject({ toolNum: 1, length: 1.5, name: 'ENDMILL' });
     expect(machine.connector.getDataSnapshot().custom).toMatchObject({ toolTable: { 1: { toolNum: 1, length: 1.5 } } });
   });
 
-  it('reads the tools at once when a user asks and the last poll said READY, with no wait for 2 minutes', async () => {
+  it('reads the tools at once when a user asks and the last poll said READY', async () => {
     const machine = machineThatTakes(100);
-    await machine.pollAndSync();
+    await machine.poll();
 
     const result = await machine.connector.requestToolSync();
 
@@ -294,14 +273,14 @@ describe('Brother tool sync: the tool table and the tool data, read apart from t
   ])('refuses a request when %s, and sends no tool command', async (_, mem) => {
     const machine = machineThatTakes(100);
     machine.replies.MEM = mem;
-    await machine.pollAndSync();
+    await machine.poll();
 
     expect(await machine.connector.requestToolSync()).toEqual({ outcome: 'program-running' });
     expect(machine.sent).not.toContain('ATCTL');
     expect(machine.sent).not.toContain('TOLNI1');
     // A refused request does not count in the limit of 30 seconds
     machine.replies.MEM = MOCK_RESPONSES.MEM;
-    await machine.pollAndSync();
+    await machine.poll();
     expect((await machine.connector.requestToolSync()).outcome).toBe('synced');
   });
 
@@ -336,7 +315,7 @@ describe('Brother tool sync: the tool table and the tool data, read apart from t
 
   it('gives the error of a failed read, and keeps the last tool table', async () => {
     const machine = machineThatTakes(100);
-    await machine.pollUntilReadyHeld();
+    await machine.pollAndRequestSync();
     vi.setSystemTime(Date.now() + 60_000);
     machine.fake.fail('TOLNI1');
 
@@ -419,62 +398,57 @@ describe('Brother tool sync: the tool table and the tool data, read apart from t
     expect(machine.connector.getStatus().data.toolSync).toEqual({ lastSyncAt: null, lastAttemptAt: null, error: null, running: false });
     // The refused Sync does not count in the limit of 30 seconds
     machine.replies.MEM = MOCK_RESPONSES.MEM;
-    await machine.pollAndSync();
+    await machine.poll();
     expect((await machine.connector.requestToolSync()).outcome).toBe('synced');
   });
 
   it('refuses a Sync after a failed poll, which disconnects, and sends no tool command', async () => {
     const machine = machineThatTakes(100);
-    await machine.pollAndSync();
+    await machine.poll();
     machine.fake.fail('MEM');
-    expect((await machine.pollAndSync()).errors).not.toEqual([]);
+    expect((await machine.poll()).errors).not.toEqual([]);
 
     expect(await machine.connector.requestToolSync()).toEqual({ outcome: 'not-connected' });
     expect(machine.sent).not.toContain('ATCTL');
   });
 
-  it('starts the 2 minutes again after the machine closed the connection', async () => {
+  it('refuses a Sync after the machine closed the connection, and accepts one after the next READY poll', async () => {
     const machine = machineThatTakes(100);
-    await machine.pollAndSync();
-    vi.setSystemTime(Date.now() + TOOL_SYNC_READY_HOLD_MS - 10_000);
+    await machine.poll();
     machine.fake.machineClosed();
-    await machine.pollAndSync();
+
+    expect(await machine.connector.requestToolSync()).toEqual({ outcome: 'not-connected' });
+    await machine.poll();
     expect(machine.fake.connects).toBe(1);
-
-    vi.setSystemTime(Date.now() + 60_000);
-    await machine.pollAndSync();
     expect(machine.sent).not.toContain('ATCTL');
-
-    vi.setSystemTime(Date.now() + TOOL_SYNC_READY_HOLD_MS);
-    await machine.pollAndSync();
-    expect(machine.sent).toEqual(expect.arrayContaining(TOOL_COMMANDS));
+    expect((await machine.connector.requestToolSync()).outcome).toBe('synced');
   });
 
-  // The shop finding on a C00: a tool read at the time when an open door stopped the program kept the control from
-  // going into feed hold. The spindle stopped, so the old rule started the read.
-  it('shop finding: reads no tools at a door-open stop more than 10 minutes after the last read, nor in the 2 minutes of READY after it', async () => {
+  // The shop finding on a C00: a tool read near the time when an open door stopped the program kept the control from
+  // going into feed hold. So no poll starts a read, and a Sync during the stop is refused.
+  it('shop finding: reads no tools at a door-open stop, nor in the READY time after it', async () => {
     const machine = machineThatTakes(100);
-    await machine.pollUntilReadyHeld();
-    expect(machine.sent).toEqual(expect.arrayContaining(TOOL_COMMANDS));
+    await machine.pollAndRequestSync();
     const toolCommands: string[] = [];
     const record = () => toolCommands.push(...machine.sent.filter(command => TOOL_COMMANDS.includes(command)));
 
     vi.setSystemTime(Date.now() + 10 * 60_000 + 1000);
     machine.replies.MEM = MEM_RUNNING;
-    await machine.pollAndSync();
+    await machine.poll();
     record();
     vi.setSystemTime(Date.now() + 1000);
     machine.replies.MEM = MEM_FEED_HOLD;
-    const status = await machine.pollAndSync();
+    const status = await machine.poll();
     record();
     expect(status.data.spindleSpeed).toBe(0);
+    expect(await machine.connector.requestToolSync()).toEqual({ outcome: 'program-running' });
 
     machine.replies.MEM = MOCK_RESPONSES.MEM;
-    await machine.pollAndSync();
-    record();
-    vi.setSystemTime(Date.now() + TOOL_SYNC_READY_HOLD_MS - 1000);
-    await machine.pollAndSync();
-    record();
+    for (let i = 0; i < 10; i++) {
+      vi.setSystemTime(Date.now() + 60_000);
+      await machine.poll();
+      record();
+    }
 
     expect(toolCommands).toEqual([]);
   });
@@ -731,17 +705,17 @@ describe('Brother control type when the machine does not answer ATCTL, with a re
     });
     const connector = new BrotherConnector({ id: 'b1', name: 'Speedio', host: '127.0.0.1', dataPort: fake.port, timeout: 150 });
 
-    const pollUntilReadyHeld = async () => {
+    /** A READY poll, a Sync, and the end of the 30 s Sync limit */
+    const pollAndRequestSync = async () => {
       await connector.poll();
-      vi.setSystemTime(Date.now() + TOOL_SYNC_READY_HOLD_MS);
-      await connector.poll();
-      await connector.toolSyncEnded();
+      await connector.requestToolSync();
+      vi.setSystemTime(Date.now() + 30_000);
     };
 
-    await pollUntilReadyHeld();
+    await pollAndRequestSync();
     const first = connector.getStatus().data.toolSync;
-    // The read with no reply disconnected, so the READY time starts again at the next poll
-    await pollUntilReadyHeld();
+    // The read with no reply disconnected, so the next poll connects again
+    await pollAndRequestSync();
     connector.disconnect();
 
     expect(first?.error).toBe(NO_REPLY_ERROR);
@@ -770,12 +744,11 @@ describe('Brother address update', () => {
     else delete fake.replies.ATCTL;
   }
 
-  /** READY polls for the hold time, and the automatic tool read that the last one starts */
+  /** After the 30 s Sync limit: a READY poll, and a Sync that reads the tools */
   async function pollAndReadTools(connector: BrotherConnector): Promise<void> {
+    vi.setSystemTime(Date.now() + 30_000);
     await connector.poll();
-    vi.setSystemTime(Date.now() + TOOL_SYNC_READY_HOLD_MS);
-    await connector.poll();
-    await connector.toolSyncEnded();
+    await connector.requestToolSync();
   }
 
   it.each([
@@ -804,43 +777,31 @@ describe('Brother address update', () => {
     expect(atcCommandsSent().filter(command => command === 'ATCTL').length).toBeGreaterThanOrEqual(2);
   });
 
-  it('reads the tools after the READY hold time at the new address, not 10 minutes later', async () => {
+  it('refuses a Sync at the new address before a poll there, and then reads the tools on a Sync', async () => {
     const { connector, atcCommandsSent } = brotherThatAnswers(true);
     await pollAndReadTools(connector);
 
     applyBrotherUpdate(connector, { host: '192.168.1.60' });
     expect(connector.getStatus().data.toolSync?.lastSyncAt).toBeNull();
+    vi.setSystemTime(Date.now() + 30_000);
+    expect(await connector.requestToolSync()).toEqual({ outcome: 'not-connected' });
     await pollAndReadTools(connector);
 
     expect(atcCommandsSent()).toEqual(['ATCTL', 'ATCTL']);
     expect(connector.getStatus().data).toMatchObject({ controlType: 'C00', hasPocketInfo: true });
   });
 
-  it('does not read the tools at the new address before the control there has said READY for 2 minutes', async () => {
-    const { connector, atcCommandsSent } = brotherThatAnswers(true);
-    await pollAndReadTools(connector);
-
-    applyBrotherUpdate(connector, { host: '192.168.1.60' });
-    await connector.poll();
-    vi.setSystemTime(Date.now() + TOOL_SYNC_READY_HOLD_MS - 1000);
-    await connector.poll();
-    await connector.toolSyncEnded();
-
-    expect(atcCommandsSent()).toEqual(['ATCTL']);
-  });
-
-  it('records nothing of a tool read at the old address, and reads the tools after the READY hold time at the new address', async () => {
+  it('records nothing of a tool read at the old address, and reads the tools on a Sync at the new address', async () => {
     const { fake, connector, atcCommandsSent } = brotherThatAnswers(true);
     const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
     const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
     const toolData = fake.hold('TOLNI1');
     await connector.poll();
-    vi.setSystemTime(Date.now() + TOOL_SYNC_READY_HOLD_MS);
-    await connector.poll();
+    const sync = connector.requestToolSync();
     await vi.waitFor(() => expect(toolData.waiting).toBe(true));
 
     applyBrotherUpdate(connector, { host: '192.168.1.60' });
-    await connector.toolSyncEnded();
+    expect(await sync).toEqual({ outcome: 'address-changed' });
 
     expect(connector.getStatus().data.toolSync).toEqual({ lastSyncAt: null, lastAttemptAt: null, error: null, running: false });
     const timerCall = setTimeoutSpy.mock.calls.findIndex(([, ms]) => ms === TOOL_SYNC_TIMEOUT_MS);
@@ -862,7 +823,7 @@ describe('Brother address update', () => {
     expect(await sync).toEqual({ outcome: 'address-changed' });
     expect(connector.getStatus().data.toolSync).toMatchObject({ error: null, lastAttemptAt: null, running: false });
     // The user can press Sync again at once: the abandoned Sync does not count in the limit of 30 seconds
-    await pollAndReadTools(connector);
+    await connector.poll();
     expect(await connector.requestToolSync()).toMatchObject({ outcome: 'synced' });
   });
 

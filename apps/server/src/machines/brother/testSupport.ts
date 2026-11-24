@@ -210,8 +210,8 @@ export class FakeConnection {
   }
 
   /**
-   * A good poll, so the last poll tells the run state, and a Sync can start when it is READY. A single READY poll
-   * starts no automatic tool read. Then the list of sent commands is cleared.
+   * A good poll, so the last poll tells the run state, and a Sync can start when it is READY. A poll starts no tool
+   * read. Then the list of sent commands is cleared.
    */
   async poll(): Promise<void> {
     await this.connector.poll();
