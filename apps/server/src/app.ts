@@ -6,7 +6,7 @@ import type { HistorySource } from './recording/MetricsReader.js';
 import { StatePeriodStore } from './recording/StatePeriodStore.js';
 import { MachineChangeFeed } from './realtime/MachineChangeFeed.js';
 import { machineEventRoutes } from './realtime/machineEvents.js';
-import { machineRoutes } from './routes/machines.js';
+import { machineRoutes, machinesForRoleOf } from './routes/machines.js';
 import { discoveryRoutes } from './routes/discovery.js';
 import { machineFileRoutes } from './routes/machineFiles.js';
 import { uploadHistoryRoutes } from './routes/uploadHistory.js';
@@ -126,7 +126,7 @@ export function createApp({
     .use(requireLogin(loginGuard))
     // Each request below that can change something goes in the audit log, with its user and its final status
     .use(auditLog(proxySettings))
-    .get('/status', c => c.json(poller.getStatus()))
+    .get('/status', c => c.json(machinesForRoleOf(c, poller.getStatus())))
     .route('/', machineRoutes(poller))
     .route('/', discoveryRoutes(poller))
     .route('/', machineFileRoutes(poller, proxySettings))

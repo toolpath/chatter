@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { MachineHealth } from '@local-chatter/shared';
+import { hideMachineAddress, seesMachineSettings, type MachineAddressParts, type MachineHealth, type Role } from '@local-chatter/shared';
 import type { HardwarePoller } from '../polling/poller.js';
 import type { ConnectionHealth } from '../logging/ConnectionLog.js';
 import { requirePermission, type LoggedInEnv } from '../auth/authRoutes.js';
@@ -22,6 +22,17 @@ export const RECONNECT_MESSAGES = {
 } as const;
 
 /** Why a machine is offline and since when, a reconnect of one machine, and its connection test */
+/** The texts of the health, as the role may see them: a Viewer gets no address and no username (D4) */
+function healthForRole(role: Role, health: ConnectionHealth, machine: MachineAddressParts): ConnectionHealth {
+  if (seesMachineSettings(role)) return health;
+  const hide = (text: string) => hideMachineAddress(text, machine);
+  return {
+    ...health,
+    lastError: health.lastError && { ...health.lastError, text: hide(health.lastError.text) },
+    events: health.events.map(event => ({ ...event, text: hide(event.text) })),
+  };
+}
+
 export function machineHealthRoutes(
   poller: HardwarePoller,
   connections: ConnectionHealthSource,
@@ -34,7 +45,7 @@ export function machineHealthRoutes(
       const machine = poller.getMachine(id);
       if (!machine) return notFound(c);
       const health: MachineHealth = {
-        ...connections.health(id), lastPollTime: machine.lastPollTime, serverTime: new Date().toISOString(),
+        ...healthForRole(c.var.user.role, connections.health(id), machine), lastPollTime: machine.lastPollTime, serverTime: new Date().toISOString(),
       };
       return c.json(health);
     })
