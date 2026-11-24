@@ -10,6 +10,7 @@ import { CurrentJobPanel } from './CurrentJobPanel';
 import { MachineHeader } from './MachineHeader';
 import { MachineNotice } from './MachineNotice';
 import { MachineSections } from './MachineSections';
+import { SiemensNotices } from './SiemensNotices';
 import MachineHistoryChart from './MachineHistoryChart';
 import { useMachineAlerts } from './useMachineAlerts';
 import { firstChartHistory } from './useChartView';
@@ -74,6 +75,7 @@ function MachineView({ machine, machines, chatterIsLost, onUpdate, onRemove }: M
     <>
       <MachineHeader machine={machine} state={state} now={now} firingCount={firingCount} />
       <MachineNotice machine={machine} state={state} now={now} chatterIsLost={chatterIsLost} />
+      {machine.type === 'siemens' && <SiemensNotices machine={machine} />}
       <MachineSections
         machine={machine}
         machines={machines}

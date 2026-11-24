@@ -41,6 +41,11 @@ function renderNotices(machine: Machine, role: Role = 'admin') {
   return { showMachine: (next: Machine) => rerender(page(next)) };
 }
 
+/** The roles that the notices use */
+function shownNotices() {
+  return [...screen.queryAllByRole('alert'), ...screen.queryAllByRole('status')];
+}
+
 const banner = () => screen.getByRole('alert', { name: 'Certificate changed' });
 const confirmBox = () => screen.findByRole('alertdialog');
 
@@ -50,9 +55,9 @@ describe('SiemensNotices', () => {
   });
 
   it('shows nothing for a Siemens machine with no certificate change and no warning', () => {
-    const { container } = render(<SiemensNotices machine={siemens({ opcuaServerThumbprint: SHA256 })} />);
+    renderNotices(siemens({ opcuaServerThumbprint: SHA256 }));
 
-    expect(container).toBeEmptyDOMElement();
+    expect(shownNotices()).toEqual([]);
   });
 
   describe('the certificate changed', () => {
