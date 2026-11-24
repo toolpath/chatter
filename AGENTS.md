@@ -43,6 +43,7 @@ npm test
 - **Doc links in released apps:** older app versions link to `guide/update#back-up` and `guide/manage`. Keep these pages and anchors.
 - **History restore:** keep `-dedup.minScrapeInterval=1ms` for VictoriaMetrics in `docker-compose.yml`. Without it, a second restore of a machine history doubles its samples.
 - **Closed ports:** VictoriaMetrics, vmalert and the alert port 3002 have no login. Keep them unpublished in `docker-compose.yml`. Keep VictoriaMetrics and vmalert only on the internal network `history`, with `internal: true`.
+- **Container rights:** each service in `docker-compose.yml` keeps `cap_drop: [ALL]`, `no-new-privileges:true` and a `pids_limit`. Do not add `cap_add` or `privileged` (see [docs/security.md](docs/security.md#container-rights)).
 
 The tests in `tools/guardrails` check some of these rules. If one fails, fix the change, not the test.
 

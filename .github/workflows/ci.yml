@@ -100,8 +100,10 @@ jobs:
           path: coverage/
           retention-days: 14
 
-  # The tests of the history backup with a real VictoriaMetrics and vmalert (the versions of docker-compose.yml).
-  # The script starts them with docker run: a service container cannot get the arguments that they need.
+  # The tests of the history backup with a real VictoriaMetrics and vmalert (the versions and the container rights
+  # of docker-compose.yml). The script starts them with docker run: a service container cannot get the arguments
+  # that they need. The job also tests that VictoriaMetrics with the container rights uses an old volume and a
+  # restored backup.
   history-backup-real-victoriametrics:
     runs-on: ubuntu-latest
 
@@ -128,6 +130,10 @@ jobs:
         env:
           CHATTER_TEST_VICTORIA_URL: http://127.0.0.1:18429
         run: npm run test:run -w apps/server -- src/history-backup src/routes/historyBackup
+
+      # It makes its own container and volumes on a different port, and removes them at the end
+      - name: Test VictoriaMetrics with the container rights on an old volume and a restored backup
+        run: tools/victoria-test/old-volume.test.sh
 
       - name: Show the log of VictoriaMetrics and vmalert after a failure
         if: failure()

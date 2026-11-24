@@ -15,12 +15,18 @@ const trackedFiles = () =>
   execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).split('\n').filter(Boolean);
 
 interface ComposeService {
+  cap_add?: string[];
+  cap_drop?: string[];
   command?: string[];
   container_name?: string;
   networks?: ComposeServiceNetworks | null;
   network_mode?: string;
+  pids_limit?: number;
   ports?: ComposePort[];
-  volumes?: string[];
+  privileged?: boolean;
+  security_opt?: string[];
+  user?: string;
+  volumes?: (string | { source?: string })[];
 }
 interface ComposeFile {
   name?: string;
@@ -28,8 +34,14 @@ interface ComposeFile {
   services: Record<string, ComposeService>;
   volumes?: Record<string, unknown>;
 }
-const compose = (path: string) => parse(read(path)) as ComposeFile;
-const composeFiles = trackedFiles().filter(file => /(^|\/)docker-compose[^/]*\.ya?ml$/.test(file));
+// Docker Compose merges a YAML merge key ("<<: *anchor"), so the tests merge it too.
+const parseCompose = (text: string) => parse(text, { merge: true }) as ComposeFile;
+const compose = (path: string) => parseCompose(read(path));
+// Docker Compose also reads compose.yaml and compose.override.yml.
+const composeFiles = trackedFiles().filter(file => /(^|\/)(docker-)?compose[^/]*\.ya?ml$/.test(file));
+// The files that Docker Compose merges with docker-compose.yml. docker-compose.dev.yml is a different project
+// (chatter-dev), so it is not in this list.
+const mergedFiles = composeFiles.filter(file => !['docker-compose.yml', 'docker-compose.dev.yml'].includes(file));
 
 describe('FANUC files', () => {
   it('are not in git, because the FOCAS2 library belongs to FANUC', () => {
@@ -77,7 +89,13 @@ describe('closed ports', () => {
   // Docker Compose accepts only an IP address as the host address, so "localhost" is not in this list.
   const thisComputerOnly = ['127.0.0.1', '::1'];
   it('finds the compose files', () => {
-    expect(composeFiles).toContain('docker-compose.yml');
+    // A new compose file makes this test fail. Then add it here, and to mergedFiles if Docker Compose merges it.
+    expect([...composeFiles].sort()).toEqual([
+      'docker-compose.build.yml',
+      'docker-compose.dev.yml',
+      'docker-compose.yml',
+      'tools/pi-image/in-pi/docker-compose.override.yml',
+    ]);
   });
 
   // A user can set a variable of a port in a ".env" file, to any text. So a variable may set only the host address:
@@ -172,8 +190,7 @@ describe('history network', () => {
   });
 
   // Docker Compose adds the "networks:" of a file that it merges with docker-compose.yml to the networks of
-  // docker-compose.yml. docker-compose.dev.yml is a different project (chatter-dev), so it is not in this list.
-  const mergedFiles = composeFiles.filter(file => !['docker-compose.yml', 'docker-compose.dev.yml'].includes(file));
+  // docker-compose.yml.
 
   it('finds the files that Docker Compose merges with docker-compose.yml', () => {
     expect(mergedFiles).toEqual(
@@ -188,6 +205,84 @@ describe('history network', () => {
       .map(([service]) => service);
     expect(withNetworks).toEqual([]);
     expect(merged.networks).toBeUndefined();
+  });
+});
+
+describe('container privileges', () => {
+  // A program that takes control of a container (for example through a bad FOCAS library or a bug in node-opcua)
+  // must not get more rights than the container uses. Chatter, VictoriaMetrics and vmalert need no Linux capability:
+  // they open only ports above 1024. Each one writes only files that it owns, and reads only files that it owns or that
+  // all users can read. VictoriaMetrics runs as root and made each file in its volume, also in an old volume.
+  // What the settings stop:
+  // - chatterbox runs as the user node. With no-new-privileges and no capabilities, a setuid program (for example su
+  //   or mount) does not give it root.
+  // - VictoriaMetrics and vmalert run as root. Without capabilities, root in them cannot ignore the rights of a file,
+  //   and cannot send false packets on the network "history" (for example to change the alerts to chatterbox:3002,
+  //   or the history that Chatter writes).
+  const main = compose('docker-compose.yml');
+  const services = Object.entries(main.services);
+  // The lowest and the highest pids_limit. Below the lowest, a busy Chatter could not start a thread.
+  // "0" and "-1" mean no limit. No test measures the threads: the hardware check in the pull request does.
+  const fewestPids = 64;
+  const mostPids = 1024;
+  // Settings that give a container more rights, or access to the processes, devices or kernel settings of the computer.
+  // deploy can set a pids limit too (deploy.resources.limits.pids).
+  const hostAccessKeys = ['cap_add', 'cgroup', 'deploy', 'device_cgroup_rules', 'devices', 'ipc', 'pid', 'privileged', 'sysctls', 'userns_mode'];
+  // Docker Compose adds the cap_add and security_opt of a merged file to those of docker-compose.yml,
+  // and the other settings of a merged file replace those of docker-compose.yml.
+  const privilegeKeys = [...hostAccessKeys, 'cap_drop', 'pids_limit', 'security_opt', 'user'];
+  const privilegesChangedIn = (file: ComposeFile) =>
+    Object.entries(file.services ?? {}).flatMap(([name, service]) =>
+      privilegeKeys.filter(key => key in service).map(key => `${name}: ${key}`),
+    );
+  const volumeSources = (file: ComposeFile) =>
+    Object.values(file.services ?? {}).flatMap(({ volumes = [] }) =>
+      volumes.map(volume => (typeof volume === 'string' ? volume.split(':')[0] : volume.source ?? '')),
+    );
+
+  it('finds the three services', () => {
+    expect(Object.keys(main.services)).toEqual(expect.arrayContaining(['chatterbox', 'victoriametrics', 'vmalert']));
+  });
+
+  it.each(services)('drops all the capabilities of %s', (_, service) => {
+    expect(service.cap_drop).toEqual(['ALL']);
+  });
+
+  it.each(services)('gives %s no capability back, no privileged mode and no access to the computer', (_, service) => {
+    expect(hostAccessKeys.filter(key => key in service)).toEqual([]);
+  });
+
+  it('runs chatterbox as the user of the image (node), not as a user from docker-compose.yml', () => {
+    expect(main.services.chatterbox).not.toHaveProperty('user');
+  });
+
+  it.each(services)('stops a program in %s from getting more rights through setuid or file capabilities', (_, service) => {
+    // Only this option: for example seccomp:unconfined or apparmor:unconfined would remove a protection.
+    expect(service.security_opt).toEqual(['no-new-privileges:true']);
+  });
+
+  it.each(services)('limits the number of processes and threads of %s', (_, service) => {
+    expect(Number.isInteger(service.pids_limit)).toBe(true);
+    expect(service.pids_limit).toBeGreaterThanOrEqual(fewestPids);
+    expect(service.pids_limit).toBeLessThanOrEqual(mostPids);
+  });
+
+  it.each(composeFiles)('mounts no Docker socket in %s', file => {
+    expect(volumeSources(compose(file)).filter(source => /docker\.sock/.test(source))).toEqual([]);
+  });
+
+  it.each(mergedFiles)('changes no privilege in %s, so the settings of docker-compose.yml apply', file => {
+    expect(privilegesChangedIn(compose(file))).toEqual([]);
+  });
+
+  it('finds a privilege that a merged file adds through a YAML merge key', () => {
+    const text = 'x-more: &more\n  cap_add: [NET_RAW]\n  pid: host\nservices:\n  chatterbox:\n    <<: *more\n';
+    expect(privilegesChangedIn(parseCompose(text))).toEqual(['chatterbox: cap_add', 'chatterbox: pid']);
+  });
+
+  it('finds a Docker socket in the long volume syntax', () => {
+    const text = 'services:\n  chatterbox:\n    volumes:\n      - type: bind\n        source: /var/run/docker.sock\n        target: /s\n';
+    expect(volumeSources(parseCompose(text))).toEqual(['/var/run/docker.sock']);
   });
 });
 
@@ -562,20 +657,22 @@ describe('test runs', () => {
     expect(projects).toContain(`'tools/${name}'`);
   });
 
-  // npm test does not run the shell tests of the Pi card and of the release scripts (some need Linux or Docker).
+  // npm test does not run the shell tests of the Pi card, of the release scripts and of VictoriaMetrics (some need Linux
+  // or Docker).
   // Only a workflow runs them, so a test script that no workflow runs never runs. The *.lib.sh files and
   // in-linux.sh are helpers, not tests. Only the run text of the steps counts, not a comment.
-  const shellTests = ['tools/pi-image/test', 'tools/release/test'].flatMap(dir =>
+  const shellTests = ['tools/pi-image/test', 'tools/release/test', 'tools/victoria-test'].flatMap(dir =>
     readdirSync(join(ROOT, dir)).filter(file => file.endsWith('.test.sh')).map(file => `${dir}/${file}`),
   );
   const runText = workflowFiles
     .flatMap(file => Object.values(workflow(file).jobs).flatMap(job => (job.steps ?? []).map(step => step.run ?? '')))
     .join('\n');
 
-  it('finds the shell tests of the Pi card and of the release scripts', () => {
+  it('finds the shell tests of the Pi card, of the release scripts and of VictoriaMetrics', () => {
     expect(shellTests).toEqual(expect.arrayContaining([
       'tools/pi-image/test/update-chatter-check.test.sh',
       'tools/release/test/check-tag-on-main.test.sh',
+      'tools/victoria-test/old-volume.test.sh',
     ]));
   });
 
