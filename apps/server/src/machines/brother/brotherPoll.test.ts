@@ -215,7 +215,6 @@ describe('Brother macros in a poll', () => {
     const fake = connectedBrother();
 
     await fake.connector.poll();
-    await fake.connector.toolSyncEnded();
 
     expect(fake.sent.some(command => command.startsWith('MCRN'))).toBe(false);
   });

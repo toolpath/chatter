@@ -3,12 +3,12 @@ import Database from 'better-sqlite3';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { BROTHER_RECONNECT_MS, BrotherConnector, MAX_BROTHER_REPLY_BYTES, NO_REPLY_ERROR } from './BrotherConnector.js';
 import type { BrotherMachineStatus } from '../../types/index.js';
-import { TOOL_SYNC_READY_HOLD_MS, TOOL_SYNC_TIMEOUT_MS } from './toolSync.js';
+import { TOOL_SYNC_TIMEOUT_MS } from './toolSync.js';
 import { captureLog, type CapturedLog } from '../../logging/testSupport.js';
 import { ConnectionLog } from '../../logging/ConnectionLog.js';
 import { HardwarePoller } from '../../polling/poller.js';
 import type { MachineRegistry } from '../../polling/MachineRegistry.js';
-import { MOCK_RESPONSES, closeFakeBrothers, closedPort, startFakeBrother, type FakeBrother } from './testSupport.js';
+import { MEM_FEED_HOLD, MOCK_RESPONSES, closeFakeBrothers, closedPort, startFakeBrother, type FakeBrother } from './testSupport.js';
 import { sendForever } from '../testSupport.js';
 
 /**
@@ -107,7 +107,6 @@ describe('Brother connection problems, with a real TCP connection', () => {
     const fake = await startFakeBrother();
     const brother = connectorFor(fake.port, 60_000);
     await brother.poll();
-    await brother.toolSyncEnded();
 
     fake.machineSides[0].resetAndDestroy();
 
@@ -265,15 +264,8 @@ describe('Brother planned reconnect every 60 seconds, with a real TCP connection
 
   /** A poll, and then what the connection log of the poller writes for it */
   async function pollAndLog(connectionLog: ConnectionLog) {
-    const status = await pollAndSync();
-    connectionLog.record(brother);
-    return status;
-  }
-
-  /** A poll, then the end of the tool sync that it can start */
-  async function pollAndSync() {
     const status = await brother.poll();
-    await brother.toolSyncEnded();
+    connectionLog.record(brother);
     return status;
   }
 
@@ -291,13 +283,13 @@ describe('Brother planned reconnect every 60 seconds, with a real TCP connection
 
   it('closes the connection in order and opens a new one at the first poll after 60 seconds', async () => {
     await startRecordingBrother();
-    await pollAndSync();
+    await brother.poll();
     vi.setSystemTime(Date.now() + 59_000);
-    await pollAndSync();
+    await brother.poll();
     expect(fake.events).toEqual(['connect 1']);
 
     vi.setSystemTime(Date.now() + 1_000);
-    const status = await pollAndSync();
+    const status = await brother.poll();
 
     await vi.waitFor(() => expect(fake.events).toEqual(['connect 1', 'end 1', 'connect 2']));
     expect(status.connected).toBe(true);
@@ -321,26 +313,24 @@ describe('Brother planned reconnect every 60 seconds, with a real TCP connection
     expect(log.text('debug')).toMatch(/Planned reconnect.*machine=b1/);
   });
 
-  it('keeps the READY time across the planned reconnect, so the tools are read 2 minutes after the first READY poll', async () => {
+  it('reads no tools at a planned reconnect, and accepts a Sync after it', async () => {
     await startRecordingBrother();
-    await pollAndSync();
+    await brother.poll();
     vi.setSystemTime(Date.now() + BROTHER_RECONNECT_MS);
-    await pollAndSync();
+    await brother.poll();
     expect(fake.events).toContain('connect 2');
     expect(fake.commands).not.toContain('ATCTL');
 
-    vi.setSystemTime(Date.now() + TOOL_SYNC_READY_HOLD_MS - BROTHER_RECONNECT_MS);
-    await pollAndSync();
-
+    expect((await brother.requestToolSync()).outcome).toBe('synced');
     expect(fake.commands).toContain('ATCTL');
   });
 
   it('counts the planned reconnects in the poll times', async () => {
     await startRecordingBrother();
-    await pollAndSync();
+    await brother.poll();
 
     vi.setSystemTime(Date.now() + BROTHER_RECONNECT_MS);
-    const status = await pollAndSync();
+    const status = await brother.poll();
 
     expect(status.pollTimings?.plannedReconnects).toEqual({ count: 1, lastAt: new Date(Date.now()).toISOString() });
   });
@@ -350,7 +340,7 @@ describe('Brother planned reconnect every 60 seconds, with a real TCP connection
     ['the user removes the machine', (machine: BrotherConnector) => machine.dispose()],
   ])('ends a tool read with the reason when %s during it, clears its 20 s timer, and the next poll connects again', async (_, close) => {
     await startRecordingBrother();
-    await pollAndSync();
+    await brother.poll();
     const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
     const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
     fake.hold = command => (command === 'TOLNI1' ? never() : null);
@@ -375,7 +365,7 @@ describe('Brother planned reconnect every 60 seconds, with a real TCP connection
 
   it('ends a Sync that waits for the state poll with the reason when the user removes the machine, and clears its 20 s timer', async () => {
     await startRecordingBrother();
-    await pollAndSync();
+    await brother.poll();
     const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
     const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
     fake.hold = command => (command === 'PDSP' ? never() : null);
@@ -399,7 +389,7 @@ describe('Brother planned reconnect every 60 seconds, with a real TCP connection
 
   it('does not reconnect while a tool read runs', async () => {
     await startRecordingBrother();
-    await pollAndSync();
+    await brother.poll();
     vi.setSystemTime(Date.now() + BROTHER_RECONNECT_MS);
     let releaseToolData: (() => void) | undefined;
     fake.hold = command => (command === 'TOLNI1' ? new Promise<void>(resolve => { releaseToolData = resolve; }) : null);
@@ -416,16 +406,16 @@ describe('Brother planned reconnect every 60 seconds, with a real TCP connection
 
   it('does not stop a poll that runs at the 60 s mark, and reconnects at the next poll', async () => {
     await startRecordingBrother();
-    await pollAndSync();
+    await brother.poll();
     vi.setSystemTime(Date.now() + 59_000);
     fake.onCommand = command => { if (command === 'MEM') vi.setSystemTime(Date.now() + 2_000); };
 
-    const status = await pollAndSync();
+    const status = await brother.poll();
 
     expect(status.errors).toEqual([]);
     expect(fake.events).toEqual(['connect 1']);
     fake.onCommand = () => {};
-    await pollAndSync();
+    await brother.poll();
     await vi.waitFor(() => expect(fake.events).toEqual(['connect 1', 'end 1', 'connect 2']));
   });
 });
@@ -453,7 +443,6 @@ describe('Brother planned reconnect when the control does not close its side', (
     fake = await startFakeBrother({ allowHalfOpen: true });
     const brother = connectorFor(fake.port, 1000);
     await brother.poll();
-    await brother.toolSyncEnded();
     vi.setSystemTime(Date.now() + BROTHER_RECONNECT_MS);
     return brother;
   }
@@ -582,6 +571,22 @@ describe('Brother planned reconnect when the control does not close its side', (
 
     expect(await sync).toEqual({ outcome: 'synced', toolSync: expect.objectContaining({ error: null, running: false }) });
     expect(fake.machineSides).toHaveLength(2);
+  });
+
+  it('refuses a Sync during the reconnect when the new connection finds a feed hold, and reads no tools', async () => {
+    const brother = await brotherThatKeepsItsSideOpen();
+    // The poll before the reconnect said READY. The poll on the new connection finds a feed hold.
+    fake.replies.MEM = MEM_FEED_HOLD;
+    const poll = brother.poll();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    const sync = brother.requestToolSync();
+    await vi.advanceTimersByTimeAsync(1000);
+    await poll;
+
+    expect(await sync).toEqual({ outcome: 'program-running' });
+    expect(fake.machineSides).toHaveLength(2);
+    expect(fake.commands.filter(command => command.startsWith('ATCTL') || command.startsWith('TOLN'))).toEqual([]);
   });
 });
 

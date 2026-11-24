@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { BrotherConnector } from '../machines/brother/BrotherConnector.js';
+import { BrotherConnector, type ToolSyncResult } from '../machines/brother/BrotherConnector.js';
 import { closeFakeBrothers, startFakeBrother, type FakeBrother } from '../machines/brother/testSupport.js';
 import type { BaseMachineConnector } from '../machines/BaseMachineConnector.js';
 import { PollScheduler } from './PollScheduler.js';
@@ -76,6 +76,8 @@ describe('a slow Brother tool read in the scheduler', () => {
   let scheduler: PollScheduler | null = null;
   let fake: FakeBrother | null = null;
   let connector: BrotherConnector | null = null;
+  /** The Sync that the test starts after the first poll */
+  let sync: Promise<ToolSyncResult> | null = null;
 
   afterEach(async () => {
     scheduler?.stopAll();
@@ -84,6 +86,7 @@ describe('a slow Brother tool read in the scheduler', () => {
     scheduler = null;
     fake = null;
     connector = null;
+    sync = null;
   });
 
   /**
@@ -99,7 +102,7 @@ describe('a slow Brother tool read in the scheduler', () => {
       afterPoll: (machine: BaseMachineConnector) => {
         const { connected, errors } = machine.getStatus();
         results.push({ connected, errors: [...errors] });
-        if (results.length === 1) void connector!.requestToolSync();
+        if (results.length === 1) sync = connector!.requestToolSync();
       },
       connectingEnded: () => {},
     }, SCALED);
@@ -114,7 +117,7 @@ describe('a slow Brother tool read in the scheduler', () => {
   it('stays online while a tool read takes longer than the poll limit, and then shows the tool table', async () => {
     // The two tool replies take 1.4 s together, more than the 1 s poll limit
     const results = await pollSlowBrother(5, 60, 700);
-    await connector!.toolSyncEnded();
+    expect((await sync)?.outcome).toBe('synced');
 
     expect(results.every(result => result.connected && result.errors.length === 0)).toBe(true);
     expect(fake!.commands).toEqual(expect.arrayContaining(TOOL_COMMANDS));

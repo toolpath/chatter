@@ -126,7 +126,7 @@ function ToolSyncBar({ machineId, link, toolSync }: { machineId: string; link: M
     try {
       setFromSync(await syncTools(machineId));
     } catch (err) {
-      // A read that failed has its error in its state, as an automatic read does, so the screen shows one text for it
+      // A read that failed has its error in its state, as in the status, so the screen shows one text for it
       if (err instanceof ToolSyncError && err.problem.outcome === 'failed') setFromSync(err.problem.toolSync);
       else setError(refusalErrorOf(err, toolSync, link));
     } finally {
@@ -142,8 +142,8 @@ function ToolSyncBar({ machineId, link, toolSync }: { machineId: string; link: M
       <span>{running ? 'Syncing…' : state.lastSyncAt ? `Synced ${timeOf(state.lastSyncAt)}` : 'Not synced yet'}</span>
       {canSync && <Button size="sm" onClick={() => void sync()} disabled={running}>Sync</Button>}
       <span className="text-xs">
-        Chatter reads the tool table only when no program runs. It reads it automatically after 2 minutes with no program,
-        when the last read is more than 10 minutes old.
+        Chatter reads the tool table only when you press Sync. It reads it only when the control reports that no
+        program runs. Do not press Sync while a program runs or while the door is open during a program.
       </span>
       {shownError && !running && <span role="alert" className="w-full text-alarm-soft">{shownError}</span>}
     </div>

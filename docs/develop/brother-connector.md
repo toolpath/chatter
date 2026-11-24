@@ -38,11 +38,11 @@ The rules between the two jobs:
 - A tool read waits for the state poll that runs now.
 - While a tool read runs, a state poll does not use the connection. It gives the last values at once, and it counts as a good poll.
 - The tool read has its own limit of 20 seconds. After that, Chatter disconnects, and the next poll connects again.
-- An automatic tool read starts only after each poll of 2 minutes said READY (`TOOL_SYNC_READY_HOLD_MS`). Another run state, an unknown run state, a failed poll or a new connection starts the 2 minutes again. A **Sync** needs only a last poll that said READY (the `program-running` outcome).
-  Why: at a shop, a tool read at the time when an open door stopped the program kept a C00 from going into feed hold. The spindle had stopped, so the old rule "no run state and spindle 0" started the read.
+- Only a **Sync** starts a tool read. No poll, connect, planned reconnect, address change or server start starts one. A **Sync** needs a last poll that said READY (the `program-running` outcome).
+  Why: on a C00, a tool read near a door-open stop kept the control from entering feed hold, so Chatter reads the tools only on a user's request. Version 1.8.3 started an automatic read only after 2 minutes of READY polls, and the fault stayed.
 - The READY check of a **Sync** uses the last poll, so its run state can be one poll interval old. After the wait for a state poll that runs (also the poll of the planned reconnect), the tool read checks READY again. If that poll did not say READY, the read sends no tool command and gives `program-running`.
-- Only the current poll changes the READY time. A poll that the scheduler left behind can end after a newer poll, so its run state is old. It does not change the READY time and does not start a tool read.
-- Known limit: some controls can report READY during a door-open hold. If the door stays open for more than 2 minutes, an automatic tool read can still start.
+- Only the current poll changes the run state that a **Sync** checks. A poll that the scheduler left behind can end after a newer poll, so its run state is old. It does not change that run state.
+- Known limit: READY does not prove that no program runs. On a C00, MEM `A01` index 2 (the operation status) reads 0 (READY) during a door-open feed hold. A shop saw a **Synced** time that matched a door open. So the screen tells the operator to press **Sync** only when no program runs, and not while the door is open during a program.
 
 The life of the connection:
 
@@ -52,7 +52,6 @@ poll():
   no connection?             -> connect
   connection is 60 s old?    -> planned reconnect: close in order (2 s at most), then connect
   read the machine state     -> no reply or error: disconnect, keep the reason
-  READY for 2 minutes and the last tool read is old? -> start a tool read (the poll does not wait for it)
 
 Sync (a user) -> refused (too soon, busy, not connected, program running), or start a tool read
 tool read:  wait for the poll -> read ATC and tools -> record the result
@@ -115,14 +114,14 @@ Steps 2 and 5 did these:
 
 - The class comment said "telnet". It now says raw TCP with LOD frames.
 - The comment of `TOOL_SYNC_TIMEOUT_MS` counted only the replies. It now tells that the limit includes the wait for the poll, and that the worst case (a slow poll, then 3 slow replies) is about 25 seconds. The value stays at 20 seconds: usually only a Sync waits for a poll, a read that fails can be tried again, and a longer read holds the one connection of the control for longer.
-- `MANUAL_SYNC_EVERY_MS` is now `TOOL_SYNC_MIN_GAP_MS`, because it also limits the automatic tries again.
-- `ToolSyncTracker.running` is the one "running" value of the tool read. The connector keeps only the promise of the last tool read, for `toolSyncEnded()`.
+- `MANUAL_SYNC_EVERY_MS` is now `TOOL_SYNC_MIN_GAP_MS`.
+- `ToolSyncTracker.running` is the one "running" value of the tool read. The connector keeps no promise of the tool read: only a **Sync** starts one, and the Sync request gives its promise.
 - `parseResponse`, `TRANSFORMS` and `parseValue` are in `brotherProtocol.ts`. The connector does not export them.
 
 These are still open:
 
 - `checkConnection()` has no caller outside the tests, in every connector. The Brother version writes `\n` to the control (step 6).
-- `sendCommand` and `toolSyncEnded()` are still public only for the tests. `FakeConnection` replaces `sendCommand`, and the TCP tests send a command with it. `toolSyncEnded()` is a test seam with a comment. A `BrotherLink` class (step 7) can make `sendCommand` private.
+- `sendCommand` is still public only for the tests. `FakeConnection` replaces `sendCommand`, and the TCP tests send a command with it. A `BrotherLink` class (step 7) can make `sendCommand` private.
 
 ### One failed connect gave two error lines (fixed in step 4)
 
