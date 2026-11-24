@@ -100,6 +100,19 @@ describe('login settings routes', () => {
     expect(JSON.stringify(report)).not.toContain('Secret');
   });
 
+  it('shows one row for unknown usernames with the same masked name', async () => {
+    // The same 2 first characters and the same length
+    for (let i = 0; i < 10; i++) await logIn('My-Secret-Pa55', 'wrong-password');
+    for (let i = 0; i < 10; i++) await logIn('My-Other-Pa55!', 'wrong-password');
+    for (let i = 0; i < 30; i++) await logIn('My-Secret-Pa55', 'wrong-password', `192.168.2.${Math.floor(i / 5)}`);
+    for (let i = 0; i < 30; i++) await logIn('My-Other-Pa55!', 'wrong-password', `192.168.4.${Math.floor(i / 5)}`);
+
+    const report = (await (await asAdmin('/api/settings/logins')).json()) as LoginsReport;
+    // The web page uses the names as keys, so each name shows one time
+    expect(report.locked).toEqual([{ address: ATTACKER, username: 'my… (14 characters)', until: expect.any(String) }]);
+    expect(report.lockedUsers).toEqual([{ username: 'my… (14 characters)', until: expect.any(String) }]);
+  });
+
   it('lists a locked computer, and unlocks it', async () => {
     await lockOut(ATTACKER);
     const before = (await (await asAdmin('/api/settings/logins')).json()) as LoginsReport;
