@@ -5,7 +5,7 @@ import {
   ALERT_CHECKS, ALERT_SEVERITIES, ALERT_SUBJECT_IDS, MAX_ALERT_FOR_MINUTES, MAX_ALERT_NAME_LENGTH, MAX_ALERT_QUERY_LENGTH,
   MAX_ALERT_RULES_PER_MACHINE, MAX_IGNORE_PATTERNS, patternProblem, type AlertSubject,
 } from '@local-chatter/shared';
-import { HISTORY_VALUES, isValidIPv4, OPCUA_SECURITY_MODES, STATE_PERIOD_KINDS, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, ROLES, SUPPORTED_MACHINE_TYPES } from '@local-chatter/shared';
+import { HISTORY_VALUES, isValidIPv4, OPCUA_SECURITY_MODES, STATE_PERIOD_KINDS, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, newPasswordProblem, ROLES, SUPPORTED_MACHINE_TYPES } from '@local-chatter/shared';
 
 /** What each route accepts. A value that does not fit gets a 400 reply with the message below. */
 
@@ -266,7 +266,13 @@ const usernameSchema = z.string({ error: 'Username is required' }).trim()
   .max(MAX_USERNAME_LENGTH, `The username must have at most ${MAX_USERNAME_LENGTH} characters`)
   .regex(/^[^:\p{Cc}]+$/u, 'The username cannot have a colon (:) in it');
 
-export const setUpSchema = z.object({ username: usernameSchema, password: passwordSchema }, NOT_AN_OBJECT);
+/** A new password cannot be the username or a common password */
+function checkNewLogin({ username, password }: { username: string; password: string }, context: z.RefinementCtx): void {
+  const problem = newPasswordProblem(password, username);
+  if (problem) context.addIssue({ code: 'custom', message: problem, path: ['password'] });
+}
+
+export const setUpSchema = z.object({ username: usernameSchema, password: passwordSchema }, NOT_AN_OBJECT).superRefine(checkNewLogin);
 
 export const logInSchema = z.object({
   username: usernameSchema,
@@ -311,7 +317,8 @@ export const unlockSchema = z.object({
 const roleSchema = z.enum(ROLES, { error: 'The role must be "viewer", "operator", or "admin"' });
 
 /** A user that an admin adds on the Users and roles tab */
-export const addUserSchema = z.object({ username: usernameSchema, password: passwordSchema, role: roleSchema }, NOT_AN_OBJECT);
+export const addUserSchema = z.object({ username: usernameSchema, password: passwordSchema, role: roleSchema }, NOT_AN_OBJECT)
+  .superRefine(checkNewLogin);
 
 export const changeRoleSchema = z.object({ role: roleSchema }, NOT_AN_OBJECT);
 

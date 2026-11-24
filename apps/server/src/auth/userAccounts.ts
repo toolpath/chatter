@@ -1,7 +1,10 @@
-import type { Role, UserToAdd } from '@local-chatter/shared';
+import { newPasswordProblem, type Role, type UserToAdd } from '@local-chatter/shared';
 import { hashPassword } from './passwords.js';
 import type { SessionStore } from './sessionStore.js';
 import type { User, UserStore } from './userStore.js';
+
+/** The new password breaks the password rule (newPasswordProblem). The message tells the problem. */
+export class PasswordRuleError extends Error {}
 
 /**
  * What an admin does on the Users and roles tab: add users, change their roles,
@@ -26,8 +29,15 @@ export class UserAccounts {
     return this.users.setRole(id, role);
   }
 
-  /** Returns false when there is no such user. Each browser of the user is logged out. */
+  /**
+   * Returns false when there is no such user. Each browser of the user is logged out.
+   * Throws PasswordRuleError when the password is the username of the user or a common password.
+   */
   async setPassword(id: number, password: string): Promise<boolean> {
+    const user = this.users.find(id);
+    if (!user) return false;
+    const problem = newPasswordProblem(password, user.username);
+    if (problem) throw new PasswordRuleError(problem);
     const passwordHash = await hashPassword(password);
     // Read the user after the slow hash, because an admin can remove the user while it runs
     if (!this.users.find(id)) return false;

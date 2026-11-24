@@ -69,6 +69,17 @@ describe('user settings routes', () => {
     expect((await asAdmin('POST', '/settings/users', { username: 'sam', password: PASSWORD, role: 'boss' })).status).toBe(400);
   });
 
+  it('refuses a new user whose password is the username or a common password', async () => {
+    const sameAsName = await asAdmin('POST', '/settings/users', { username: 'machinist', password: 'Machinist', role: 'viewer' });
+    expect(sameAsName.status).toBe(400);
+    expect(await errorOf(sameAsName)).toBe('The password cannot be the username');
+
+    const common = await asAdmin('POST', '/settings/users', { username: 'sam', password: 'qwertyuiop', role: 'viewer' });
+    expect(common.status).toBe(400);
+    expect(await errorOf(common)).toBe('The password is too common. Use a different password');
+    expect(accounts.list().map(user => user.username)).toEqual(['admin']);
+  });
+
   it('changes the role of a user, and the new role works at once', async () => {
     const sam = await userWithRole('sam', 'operator');
 
@@ -100,6 +111,25 @@ describe('user settings routes', () => {
     expect((await asAdmin('PUT', `/settings/users/${sam.id}/password`, { password: 'another-password' })).status).toBe(200);
 
     expect((await send(sam.cookie, 'GET', '/machines')).status).toBe(401);
+  });
+
+  it('refuses a new password that is the username of that user or a common password, and keeps the old password', async () => {
+    const pat = await accounts.add({ username: 'machinist', password: PASSWORD, role: 'operator' });
+
+    const sameAsName = await asAdmin('PUT', `/settings/users/${pat.id}/password`, { password: 'MACHINIST' });
+    expect(sameAsName.status).toBe(400);
+    expect(await errorOf(sameAsName)).toBe('The password cannot be the username');
+
+    const common = await asAdmin('PUT', `/settings/users/${pat.id}/password`, { password: 'password' });
+    expect(common.status).toBe(400);
+    expect(await errorOf(common)).toBe('The password is too common. Use a different password');
+
+    const login = await app.request('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'machinist', password: PASSWORD }),
+    });
+    expect(login.status).toBe(200);
   });
 
   it('removes a user, and logs out their browsers', async () => {

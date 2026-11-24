@@ -135,6 +135,24 @@ describe('npm run reset-password', () => {
     expect(roles(users)).toEqual(['admin: admin', 'sam: operator']);
   });
 
+  it('changes nothing when the password is the username or a common password', async () => {
+    for (const [password, reason] of [
+      ['Bossman01', 'The password cannot be the username'],
+      ['iloveyou', 'The password is too common. Use a different password'],
+    ]) {
+      const { users, sessions, loginLog } = await shop();
+      const terminal = fakeTerminal();
+
+      const done = runPasswordReset({ ...terminal, users, sessions, loginLog });
+      await terminal.type(USERNAME_PROMPT, 'bossman01');
+      await terminal.type(PASSWORD_PROMPT, password);
+
+      expect(await done).toBe(false);
+      expect(terminal.text()).toContain(`${reason}. Nothing changed.`);
+      expect(roles(users)).toEqual(['admin: admin', 'sam: operator']);
+    }
+  });
+
   it('changes nothing when the username has a colon, and tells the rule of the setup', async () => {
     const { users, sessions, loginLog } = await shop();
     const terminal = fakeTerminal();

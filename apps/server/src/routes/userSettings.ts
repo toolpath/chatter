@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import type { CurrentUser } from '../auth/Auth.js';
 import { requirePermission, type LoggedInEnv } from '../auth/authRoutes.js';
-import type { UserAccounts } from '../auth/userAccounts.js';
+import { PasswordRuleError, type UserAccounts } from '../auth/userAccounts.js';
 import { LastAdminError, UsernameTakenError } from '../auth/userStore.js';
 import { checkedJson, checkedParam } from './checks.js';
 import { notFound } from './responses.js';
@@ -21,11 +21,12 @@ function usersReport(accounts: UserAccounts, me: CurrentUser) {
   };
 }
 
-/** Make the change. A change that the user rules do not allow gets a 409 reply. */
+/** Make the change. A change that the user rules do not allow gets a 409 reply, and a bad new password a 400 reply. */
 async function withRulesChecked(c: Context, change: () => Response | Promise<Response>): Promise<Response> {
   try {
     return await change();
   } catch (error) {
+    if (error instanceof PasswordRuleError) return c.json({ error: error.message }, 400);
     if (error instanceof UsernameTakenError || error instanceof LastAdminError) return c.json({ error: error.message }, 409);
     throw error;
   }
@@ -56,11 +57,11 @@ export function userSettingsRoutes(accounts: UserAccounts) {
       return withRulesChecked(c, () => (accounts.changeRole(id, c.req.valid('json').role) ? replyWithUsers(c) : unknownUser(c)));
     })
 
-    .put('/settings/users/:id/password', canManageChatter, checkedParam(userIdParam), checkedJson(setPasswordSchema), async c => {
+    .put('/settings/users/:id/password', canManageChatter, checkedParam(userIdParam), checkedJson(setPasswordSchema), c => {
       const { id } = c.req.valid('param');
       if (id === c.var.user.id) return notYourself(c, 'set your own password');
-      if (!(await accounts.setPassword(id, c.req.valid('json').password))) return unknownUser(c);
-      return replyWithUsers(c);
+      return withRulesChecked(c, async () =>
+        ((await accounts.setPassword(id, c.req.valid('json').password)) ? replyWithUsers(c) : unknownUser(c)));
     })
 
     .delete('/settings/users/:id', canManageChatter, checkedParam(userIdParam), c => {
