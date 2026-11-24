@@ -12,6 +12,7 @@ import type { RequestOrigin } from './proxyTrust.js';
 import { originOf } from './requestOrigin.js';
 import { SESSION_LIFETIME_SECONDS, type SessionClient } from './sessionStore.js';
 import { UsernameTakenError } from './userStore.js';
+import { usernameForLog } from './unknownUsername.js';
 import { cutValue, writeAudit, writeAuditAndLog } from '../logging/audit.js';
 import { createLogger } from '../logging/logger.js';
 
@@ -169,8 +170,9 @@ async function withPasswordCheck<Value>(
   { username, device, success, check }: PasswordTry<Value>,
 ): Promise<Checked<Value>> {
   const recordTry = (result: LoginResult) => {
-    logTry(limiter, { username, address, result, device });
-    withoutFailing('[Login log] Could not save a login try', () => loginLog.record({ username, address, result }));
+    const shown = usernameForLog(auth, username);
+    logTry(limiter, { username: shown, address, result, device });
+    withoutFailing('[Login log] Could not save a login try', () => loginLog.record({ username: shown, address, result }));
   };
   if (limiter.isBlocked(address, username, device)) {
     if (limiter.isFirstBlockedTry(address, username, device)) recordTry('locked');
@@ -202,7 +204,7 @@ function warnAndAudit(message: string, details: Record<string, unknown>): void {
  * The login log keeps only the last 50 tries. The audit log and the server log have a limit of size,
  * so they write only the first MAX_LOGGED_UNKNOWN_USERS tries with an unknown username from one address in LOCK_MINUTES.
  * When that time ends, the next password try writes the count of the other tries. A long username is cut.
- * Never log the password or the cookie.
+ * Never log the password or the cookie. The caller gives an unknown username masked, because it can be a password.
  */
 function logTry(
   limiter: LoginLimiter,

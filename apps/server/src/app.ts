@@ -22,6 +22,7 @@ import type { Auth } from './auth/Auth.js';
 import { authRoutes, isStillLoggedIn, loginOf, requireLogin } from './auth/authRoutes.js';
 import { sessionRoutes } from './auth/sessionRoutes.js';
 import { LoginLimiter } from './auth/LoginLimiter.js';
+import { usernameForLog } from './auth/unknownUsername.js';
 import { LoginLog } from './auth/loginLog.js';
 import { ProxySettings } from './auth/proxySettings.js';
 import { proxySettingsRoutes } from './routes/proxySettings.js';
@@ -116,7 +117,7 @@ export function createApp({
   }),
   ...diagnostics
 }: AppParts) {
-  const loginGuard = { auth, limiter: new LoginLimiter(), loginLog, proxySettings };
+  const loginGuard = { auth, limiter: new LoginLimiter(Date.now, username => usernameForLog(auth, username)), loginLog, proxySettings };
   const api = new Hono()
     // The update helper reads the version here, with no login, to see that the new version runs
     .get('/health', c => c.json({ status: 'ok', uptime: process.uptime(), version, instance: INSTANCE_ID }))
