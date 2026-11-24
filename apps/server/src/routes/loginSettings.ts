@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { LOCK_MINUTES, MAX_FAILURES, MAX_USER_FAILURES, type LoginLimiter } from '../auth/LoginLimiter.js';
 import type { LoginLog } from '../auth/loginLog.js';
-import { usernameForLog } from '../auth/unknownUsername.js';
+import { maskedOnce, usernameForLog } from '../auth/unknownUsername.js';
 import { requirePermission, type LoggedInEnv } from '../auth/authRoutes.js';
 import type { ProxySettings } from '../auth/proxySettings.js';
 import { originOf } from '../auth/requestOrigin.js';
@@ -27,7 +27,12 @@ function loginsReport({ auth, limiter, loginLog }: LoginSettingsParts) {
     limits: { maxWrongPasswords: MAX_FAILURES, maxWrongPasswordsForUser: MAX_USER_FAILURES, lockMinutes: LOCK_MINUTES },
     locked: limiter.lockedAddresses().map(shown),
     lockedUsers: limiter.lockedUsers().map(shown),
-    tries: loginLog.recent().map(loginTry => ({ ...loginTry, at: loginTry.at.toISOString() })),
+    // A row of an older version can have an unknown username in full
+    tries: loginLog.recent().map(loginTry => ({
+      ...loginTry,
+      username: loginTry.result === 'no-such-user' ? maskedOnce(loginTry.username) : loginTry.username,
+      at: loginTry.at.toISOString(),
+    })),
   };
 }
 

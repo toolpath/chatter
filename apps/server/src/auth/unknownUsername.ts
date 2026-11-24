@@ -18,6 +18,15 @@ export function maskUnknownUsername(username: string): string {
   return `${characters.slice(0, shown).join('')}… (${count} ${count === 1 ? 'character' : 'characters'})`;
 }
 
+/** The end of a masked text, for example "… (12 characters)" */
+const MASKED_END = /… \(\d+ characters?\)$/u;
+
+/**
+ * The text masked, but a text that is already masked stays as it is.
+ * An older version saved an unknown username in full in the login log. Settings > Logins masks such a row when it shows it.
+ */
+export const maskedOnce = (text: string): string => (MASKED_END.test(text) ? text : maskUnknownUsername(text));
+
 /** The username for a log: in full for a user that exists, else masked, because it can be a password */
 export const usernameForLog = (users: { hasUser(username: string): boolean }, username: string): string =>
   users.hasUser(username) ? username : maskUnknownUsername(username);
