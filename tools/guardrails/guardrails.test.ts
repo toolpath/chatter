@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { networksOf, type ComposeServiceNetworks } from './composeNetworks';
-import { portsOpened, variablesIn, type ComposePort } from './composePorts';
+import { interpolate, portsOpened, variablesIn, type ComposePort } from './composePorts';
 import { anchorsOf, docsLinksIn, docsPageFile, headingLinksIn } from './docsLinks';
 
 const ROOT = join(import.meta.dirname, '../..');
@@ -170,17 +170,23 @@ describe('history network', () => {
 });
 
 describe('facts that the docs quote', () => {
-  // The docs tell users to run "docker logs chatterbox", and to change "3001:3001" to "127.0.0.1:3001:3001".
+  // The docs tell users to run "docker logs chatterbox", and to set CHATTER_BIND_ADDRESS in a ".env" file.
   const { services } = compose('docker-compose.yml');
+  const chatterPorts = (environment: Record<string, string>) =>
+    (services.chatterbox?.ports ?? []).map(port => interpolate(String(port), environment));
 
   it('keeps the container name chatterbox in docker-compose.yml', () => {
     expect(services).toHaveProperty('chatterbox');
     expect(services.chatterbox.container_name).toBe('chatterbox');
   });
 
-  it('publishes the port of Chatter as "3001:3001" in docker-compose.yml', () => {
-    expect(services).toHaveProperty('chatterbox');
-    expect(services.chatterbox.ports).toContain('3001:3001');
+  it('publishes the port of Chatter as "3001:3001" when CHATTER_BIND_ADDRESS is not set, so on all IPv4 and IPv6 addresses as before', () => {
+    expect(chatterPorts({})).toEqual(['3001:3001']);
+    expect(chatterPorts({ CHATTER_BIND_ADDRESS: '' })).toEqual(['3001:3001']);
+  });
+
+  it.each(['192.168.10.5', '127.0.0.1', '[::1]'])('publishes the port of Chatter only on CHATTER_BIND_ADDRESS=%s', address => {
+    expect(chatterPorts({ CHATTER_BIND_ADDRESS: address })).toEqual([`${address}:3001:3001`]);
   });
 });
 
