@@ -29,7 +29,7 @@ interface SettingsTabProps {
 
 /**
  * Five panels, one under the other: the machine settings, the connection, the alert rules, Advanced, and Delete machine.
- * A user who cannot manage machines sees only the connection. The alert rules are settings, so the server does not give them to that user.
+ * A user who cannot manage machines sees only the connection. Only an Admin can read the alert rules, so the server does not give them to that user.
  */
 export function SettingsTab({ machine, machines, rules, onUpdate, onRemove }: SettingsTabProps) {
   const canManageMachines = useCan('manage-machines');
