@@ -34,3 +34,6 @@ coverage/
 
 # Reports of the code checks (jscpd)
 .quality/
+
+# Private keys, for example a new update signing key (docs/develop/update-key-leak.md)
+*.pem
