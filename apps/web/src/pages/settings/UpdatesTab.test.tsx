@@ -103,6 +103,13 @@ describe('UpdatesTab', () => {
     expect(screen.getAllByText('vmalert/rules.yml')).not.toHaveLength(0);
   });
 
+  it('says to keep the .env file in the chatter folder, so the CHATTER_BIND_ADDRESS setting stays', async () => {
+    await renderTab(report({ helper: null, freeBytes: null }));
+
+    expect(screen.getByText('.env')).toBeInTheDocument();
+    expect(screen.getByText(/Keep it in the/).textContent).toMatch(/Do you have a \.env file\? Keep it in the chatter folder\./);
+  });
+
   it('also shows the commands for Chatter installed with only the docker-compose.yml file', async () => {
     await renderTab(report({ helper: null, freeBytes: null }));
 
