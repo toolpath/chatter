@@ -1033,4 +1033,22 @@ describe('MachineDetailPage', () => {
       }
     });
   });
+
+  describe('a Siemens control', () => {
+    it('shows a Viewer the changed certificate and the security warning above the tabs, with no button', () => {
+      const machine = testMachine({
+        type: 'siemens', opcuaPort: 4840, opcuaSecurity: 'none', opcuaUser: 'OpcUaClient', connected: false,
+        opcuaCertificateChanged: { presentedThumbprint: 'ab'.repeat(32), presentedSha1Thumbprint: 'cd'.repeat(20) },
+        opcuaSecurityWarning: 'Security is None.',
+      } as never);
+      renderPage({ role: 'viewer', machine });
+
+      const banner = screen.getByRole('alert', { name: 'Certificate changed' });
+      expect(within(banner).getByText('AB:'.repeat(32).slice(0, -1))).toBeInTheDocument();
+      expect(within(banner).queryByRole('button')).not.toBeInTheDocument();
+      expect(screen.getByRole('status', { name: 'Security warning' })).toHaveTextContent('Security is None.');
+      const tablist = screen.getByRole('tablist', { name: 'Machine sections' });
+      expect(banner.compareDocumentPosition(tablist) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+  });
 });
