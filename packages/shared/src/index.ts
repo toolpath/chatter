@@ -18,3 +18,4 @@ export * from './toolSync.js';
 export * from './alerts.js';
 export * from './diagnostics.js';
 export * from './savedSecrets.js';
+export * from './passwordRule.js';
