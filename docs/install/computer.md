@@ -41,7 +41,7 @@ On Linux, an older Docker Engine lets other computers reach the alert port 3002 
    ```
 4. Open http://localhost:3001. From another computer on your network, use `http://<this computer's IP>:3001`.
 
-   Chatter answers on all the addresses of this computer. Does the computer have two networks, for example one for the office and one for the machines? To open Chatter on one network only, set `CHATTER_BIND_ADDRESS` in a `.env` file. See [Publish Chatter on one address](../security.md#publish-chatter-on-one-address).
+   Chatter answers on all the addresses of this computer. Does the computer have two networks, for example one for the office and one for the machines? To open Chatter on one network only, set `CHATTER_BIND_ADDRESS` to an IP address in a `.env` file. See [Publish Chatter on one address](../security.md#publish-chatter-on-one-address). When you update Chatter, keep the `.env` file in the `chatter` folder.
 5. Do the steps in [Get started](../guide/get-started.md).
 
 `chatter/README.txt` in the package has the same steps.

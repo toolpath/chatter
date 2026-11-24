@@ -151,18 +151,19 @@ On Linux, Docker sends the traffic of a published port around the rules of ufw a
 By default, Docker publishes port 3001 on all the IPv4 and IPv6 addresses of the computer. To publish it on one address only, do these steps on the computer with Docker:
 
 1. In the `chatter` folder, next to `docker-compose.yml`, make a file with the name `.env`.
-2. Put this line in the file. Use the address of the computer on the network that must reach Chatter:
+2. Put this line in the file. Use the IP address of the computer on the network that must reach Chatter:
    ```bash
    CHATTER_BIND_ADDRESS=192.168.10.5
    ```
 3. In the `chatter` folder, run `docker compose up -d`.
 
-Chatter then answers only on that address. A computer on the other network cannot open Chatter through a different address of this computer. Each computer that can reach the address can still open Chatter.
+Chatter then answers only on that IP address. A computer on the other network cannot open Chatter through a different address of this computer. Each computer that can reach the address can still open Chatter.
 
-- **One address only.** The setting takes one address. With an IPv4 address, Chatter does not answer on IPv6. For an IPv6 address, use brackets, for example `CHATTER_BIND_ADDRESS=[fd00::5]`.
+- **One IP address only.** The setting takes one IP address. Do not use a name, such as `localhost`: Docker does not accept a name, and Chatter does not start. With an IPv4 address, Chatter does not answer on IPv6. For an IPv6 address, use brackets, for example `CHATTER_BIND_ADDRESS=[fd00::5]`.
 - **The address must stay the same.** Give the computer a fixed address on that network. When the address is not on the computer, Docker cannot start Chatter.
 - **`127.0.0.1`.** With `CHATTER_BIND_ADDRESS=127.0.0.1`, only a program on the same computer can open Chatter. Use it when a reverse proxy runs directly on the same computer, not in Docker (see [Use HTTPS](./guide/https.md)). The other computers then open Chatter only through the proxy. A proxy in a Docker container cannot reach `127.0.0.1` of the computer.
 - **Updates.** The Docker package has no `.env` file, so an update does not change your setting. Keep the `.env` file when you replace the `chatter` folder (see [Update Chatter](./guide/update.md)).
+- **Did you change `"3001:3001"` in `docker-compose.yml` in an older version?** For example, to `"127.0.0.1:3001:3001"`. Do not change the new line. Put the IP address in the `.env` file, for example `CHATTER_BIND_ADDRESS=127.0.0.1`.
 - **To go back**, remove the line, then run `docker compose up -d` again.
 - **Not on the Pi card.** The update helper checks Chatter at `127.0.0.1:3001`. With a different address, each update fails the check and goes back to the old version. On the Pi card, use the `DOCKER-USER` rule.
 
