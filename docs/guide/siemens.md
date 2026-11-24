@@ -104,7 +104,12 @@ Sometimes there is no new certificate to trust. For example, the control now sho
 - In the box **Certificate changed**, click **Forget the saved certificate**.
 - Or, on the machine page, open **Settings**. Under **Trusted certificate of the control**, click **Forget the saved certificate**.
 
-The confirm box tells what happens next. Click **Forget the certificate**. Chatter connects at once. That connect trusts the certificate that the control shows then, as the first connect does. So first make sure that the device at the address is your control. The audit log records who forgot the certificate.
+The confirm box tells what happens next. Click **Forget the certificate**. Chatter connects at once:
+
+- If the control shows a certificate then, Chatter trusts it, as the first connect does. So first make sure that the device at the address is your control.
+- If the control shows no certificate, Chatter trusts nothing. A login with a username needs a certificate of the control. So with a username and Security **None**, the machine stays offline (see [What the check protects](#what-the-check-protects)). With no username and Security **None**, Chatter connects with no password.
+
+The audit log records who forgot the certificate.
 
 With the API, send `POST /api/machine/<machine ID>/opcua/forget-certificate` with no body, as in [Trust a new certificate](#trust-a-new-certificate).
 
