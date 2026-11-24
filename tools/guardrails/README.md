@@ -5,8 +5,8 @@ Tests that keep the guardrails in [AGENTS.md](../../AGENTS.md#guardrails):
 - No FANUC FOCAS2 files are in git.
 - `docker-compose.yml` keeps the volume names, and the folder name `chatter` stays in the Docker package and on the Pi card.
 - `docker-compose.yml` and `docker-compose.dev.yml` keep the deduplication of VictoriaMetrics, so a second history restore does not double the samples.
-- `docker-compose.yml` keeps the facts that the docs quote: the container name `chatterbox` (for `docker logs chatterbox`) and the port entry `"3001:3001"` of Chatter (the HTTPS page tells users to change it). To change one, change the docs in the same change.
-- No compose file opens VictoriaMetrics, vmalert or the alert port 3002 to the network.
+- `docker-compose.yml` keeps the facts that the docs quote: the container name `chatterbox` (for `docker logs chatterbox`) and the port of Chatter: `"3001:3001"` when `CHATTER_BIND_ADDRESS` is not set (so Docker publishes it on all IPv4 and IPv6 addresses), and `"<address>:3001:3001"` when it is set (the docs tell users to set it in a `.env` file). To change one, change the docs in the same change.
+- No compose file opens VictoriaMetrics, vmalert or the alert port 3002 to the network. The test reads the variables of a port (`$NAME`, `${NAME}`, `${NAME:-word}`, `${NAME-word}`, `${NAME:+word}`, `${NAME+word}`), with the variables not set and with each variable set to a network address. A variable can change only the host address of a port. A different variable form makes the test fail.
 - VictoriaMetrics and vmalert stay only on the internal network `history` of `docker-compose.yml`, which keeps `internal: true`. Only `chatterbox` is also on `default`. A compose file that Docker Compose merges with `docker-compose.yml` adds no network.
 - The update helper on the Pi (`STEPS` in `update-chatter.sh`) and Chatter (`UPDATE_STEPS` in `packages/shared`) have the same steps, in the same order.
 - Each docs link in the app goes to a page and a heading that exist. The links of released apps (`guide/update#back-up` and `guide/manage`) always stay.

@@ -33,7 +33,7 @@ You do not need to back up first. The update makes a backup for you. If the new 
 ![Settings, Updates on a computer: the steps to update with Docker](../images/chatter-updates-computer.png)
 
 1. [Back up your data](#back-up).
-2. Did you change `docker-compose.yml` or `vmalert/rules.yml`? Copy them to a safe place.
+2. Did you change `docker-compose.yml` or `vmalert/rules.yml`? Copy them to a safe place. Do you have a `.env` file in the `chatter` folder (for example, for `CHATTER_BIND_ADDRESS`)? Copy it too, and put it back in the new `chatter` folder after step 4.
 3. Open the newest release on the GitHub **Releases** page. Download the same Docker package that you used to install Chatter: `amd64` or `arm64`. See [Install on a computer](../install/computer.md).
 4. Unzip it to the same place as before. Its `chatter` folder must replace the old `chatter` folder. Keep the folder name `chatter`. Docker uses the name to find your data.
 5. Did you copy files in step 2? Make the same changes again in the new files. Do not copy an old `docker-compose.yml` over the new one. The new file can have new parts. For example, its `networks:` section keeps the history database away from your network.
